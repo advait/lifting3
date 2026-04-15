@@ -1,8 +1,8 @@
-# l3 Product Spec
+# lifting3 Product Spec
 
 ## 1. Summary
 
-`l3` is a personal workout coaching app for a single user.
+`lifting3` is a single-user workout coaching app.
 
 It combines four things in one durable system:
 
@@ -83,7 +83,7 @@ Overflow menus are acceptable for rare or destructive actions, not for the core 
 
 ## 5. Target User
 
-One user: the app owner.
+One user in MVP.
 
 This matters because the design can assume:
 
@@ -246,6 +246,7 @@ Fields:
 - `id`
 - `workout_id`
 - `order_index`
+- `exercise_schema_id`
 - `name`
 - `normalized_exercise_key`
 - `status`: `planned | active | completed | skipped | replaced`
@@ -258,6 +259,26 @@ Constraints:
 - each exercise has stable identity independent of order
 - reordering must not change IDs
 - a normalized exercise key should survive minor naming variations for analytics and PR detection
+- every exercise must map to a hard schema defined in code
+
+## 7.2.1 Exercise Schemas
+
+Exercise definitions should live in TypeScript as explicit schemas, not as ad hoc user strings.
+
+Each exercise schema should define at least:
+
+- canonical ID
+- canonical display name
+- alias list for import and normalization
+- equipment classification
+- lift category
+- supported logging shape if needed later
+
+Implications:
+
+- MVP does not rely on freeform user-defined exercises as the primary data model
+- imported `lifting2` exercise names must map into code-defined schema IDs
+- aliases handle legacy naming variation without weakening the canonical schema model
 
 ## 7.3 Set
 
@@ -294,6 +315,18 @@ Implications:
 
 - Weight and reps may be prefilled from plan or entered before completion.
 - The act of assigning RPE is the moment that commits "this set happened."
+
+RPE values should support half-step increments.
+
+The quick-entry path must include at least:
+
+- `7`
+- `7.5`
+- `8`
+- `8.5`
+- `9`
+- `9.5`
+- `10`
 
 ## 7.4 Conversation Session
 
@@ -435,7 +468,7 @@ These support fast reads for:
 
 ## 10. Import From lifting2
 
-`l3` should support an initial one-time import from `lifting2` workout TOML files.
+`lifting3` should support an initial one-time import from local `lifting2/entries/workouts` TOML files.
 
 Imported data:
 
@@ -451,17 +484,45 @@ Import mapping:
 - imported exercises preserve order
 - exercise notes become `user_notes`
 - imported workouts start as `completed`
+- imported exercise names map to `exercise_schema_id` through a code-defined alias table
+
+Import safety:
+
+- personal historical workout data is local user data and must not be committed to the public repo
+- the repo may include fixtures later, but they must be synthetic or sanitized
 
 Imported workouts will not initially have rich session history. If desired, later versions can backfill a synthetic session summary, but MVP does not need that.
+
+## 10.1 Public Repo Hygiene
+
+The repository must remain safe to publish.
+
+Rules:
+
+- do not commit real workout history from `lifting2`
+- do not commit real personal notes or coaching notes
+- do not commit secrets, tokens, or local account data
+- any fixtures or screenshots committed to the repo must be synthetic or sanitized
 
 ## 11. Frontend Stack
 
 ## 11.1 Framework
 
+- TypeScript
+- pnpm
+- Ultracite
 - React Router v7
 - React
 - Tailwind CSS
 - shadcn/ui components as source
+
+The package and repo name should be `lifting3`.
+
+UI styling should start from this shadcn theme:
+
+```bash
+pnpm dlx shadcn@latest add https://tweakcn.com/r/themes/cmlk6zefr000004lbe9jygsqc
+```
 
 ## 11.2 UI Composition
 
@@ -591,6 +652,7 @@ Because RPE is the confirmation gesture:
 - the app can support very fast flows when plan and actual match
 - the UI can emphasize RPE entry as the final commit
 - a set with no RPE remains visibly incomplete
+- half-step RPE values such as `7.5`, `8.5`, and `9.5` must be first-class, not hidden in a secondary flow
 
 ## 12.4 Fast Logging UX
 
@@ -602,6 +664,8 @@ The app should support:
 - quick increment/decrement for weight
 - quick increment/decrement for reps
 - rapid RPE input
+
+RPE quick entry should use visible chips/buttons rather than forcing a keyboard path.
 
 Preferred behavior:
 
@@ -641,7 +705,7 @@ Each exercise has:
 
 These should be visible but collapsed by default if empty.
 
-If routines/templates are introduced later, template notes must remain separate from live workout notes. `l3` should not conflate reusable programming cues with session-specific coaching notes.
+If routines/templates are introduced later, template notes must remain separate from live workout notes. `lifting3` should not conflate reusable programming cues with session-specific coaching notes.
 
 ## 12.7 Exercise Reordering and Editing
 
@@ -707,9 +771,7 @@ Whenever historical edits change derived stats:
 
 - PRs and analytics projections must recompute
 
-Optional but recommended:
-
-- allow a freeform correction reason for major historical edits
+Internal correction events remain part of the backend model, but MVP should not expose a visible historical edit log or audit timeline in the UI.
 
 ## 14. Agent UX
 
@@ -1040,4 +1102,4 @@ MVP may defer:
 
 ## 23. Companion Documents
 
-- `hevy-app.md`: teardown of Hevy's IA and interaction patterns, used to inform `l3` workout UX
+- `hevy-app.md`: teardown of Hevy's IA and interaction patterns, used to inform `lifting3` workout UX

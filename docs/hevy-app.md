@@ -22,7 +22,7 @@ Hevy is built around a fast live logging loop, with a clear split between a work
 - Notes are split by context, which is conceptually correct, but the UI pattern can be easy to miss if you do not already know the difference between routine notes and workout notes.
 - The app leans social and community-oriented outside the core logging loop. That is a product strength for Hevy, but it is extra surface area for a solo app.
 
-## Transferable Ideas For `l3`
+## Transferable Ideas For `lifting3`
 
 - Keep a hard separation between planned template state and logged workout facts.
 - Make set completion the primary gesture, and let RPE be the “confirm” action when possible.
@@ -38,7 +38,7 @@ Hevy is built around a fast live logging loop, with a clear split between a work
 
 - Do not bury the most common workout actions under overflow menus if they can be one tap away.
 - Do not conflate routine/template notes with live coaching notes in a way that makes editing ambiguous.
-- Do not make historical workouts feel immutable. For `l3`, older sessions should be easy to revise while preserving an audit trail.
+- Do not make historical workouts feel immutable. For `lifting3`, older sessions should be easy to revise while preserving an audit trail.
 - Do not build social/feed features into the first version. Hevy’s broader community layer is useful for them, but it is not required for a solo coaching product.
 - Do not let the IA fragment into separate islands for logging, history, analytics, and coaching. The user should be able to move from a workout to its history, notes, and coaching thread without losing context.
 
