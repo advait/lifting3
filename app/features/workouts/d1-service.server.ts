@@ -123,7 +123,6 @@ type QueryHistoryToolResult =
         unit: "count" | "e1rm_lbs" | "load_lbs" | "reps" | "volume_lbs" | null;
         value: number | string | null;
       };
-      subject: QueryHistoryToolInput["subject"];
       window: {
         dateFrom: string | null;
         dateTo: string | null;
@@ -2086,7 +2085,6 @@ export function createWorkoutAgentToolService(db: AppDatabase) {
           unit: baseWindowResult.unit,
           value: baseWindowResult.value,
         },
-        subject: input.subject,
         window: {
           dateFrom: input.filters.dateFrom ?? null,
           dateTo: input.filters.dateTo ?? null,

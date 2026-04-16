@@ -12,7 +12,6 @@ const HISTORY_METRICS = [
   "frequency",
   "best_session",
 ] as const;
-const HISTORY_SUBJECTS = ["exercise", "workout"] as const;
 const NOTE_FIELDS = ["coach", "user"] as const;
 
 const nonEmptyStringSchema = z.string().trim().min(1);
@@ -22,7 +21,6 @@ const nullableTrimmedStringSchema = z.string().trim().min(1).nullable();
 const isoDateSchema = z.iso.date();
 const exerciseSchemaIdSchema = z.enum(EXERCISE_SCHEMA_IDS);
 const historyMetricSchema = z.enum(HISTORY_METRICS);
-const historySubjectSchema = z.enum(HISTORY_SUBJECTS);
 const noteFieldSchema = z.enum(NOTE_FIELDS);
 const setKindSchema = z.enum(SET_KINDS);
 const workoutStatusSchema = z.enum(WORKOUT_STATUSES);
@@ -218,7 +216,6 @@ export const queryHistoryToolInputSchema = z.strictObject({
       }
     }),
   metric: historyMetricSchema,
-  subject: historySubjectSchema,
 });
 
 export type ExerciseSetTemplateInput = z.infer<typeof exerciseSetTemplateSchema>;

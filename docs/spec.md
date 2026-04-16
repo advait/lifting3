@@ -1092,7 +1092,6 @@ Inputs are structured, not freeform SQL.
 
 Allowed dimensions:
 
-- subject: `exercise | workout`
 - metric: `top_set | max_load | reps_at_load | e1rm | volume | frequency | best_session`
 - filters: date window, exercise, status, rep range
 - compare window: optional
