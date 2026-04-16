@@ -377,6 +377,9 @@ for (const schema of schemaList) {
 }
 
 export const EXERCISE_SCHEMAS = Object.freeze(schemaList);
+export const EXERCISE_SCHEMA_IDS = Object.freeze(
+  EXERCISE_SCHEMAS.map((schema) => schema.id)
+) as readonly [ExerciseId, ...ExerciseId[]];
 
 export const LIFTING2_EXERCISE_NAMES = Object.freeze(
   EXERCISE_SCHEMAS.flatMap((schema) => schema.lifting2Aliases)
