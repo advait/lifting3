@@ -18,6 +18,7 @@ export const WORKOUT_EVENT_TYPES = [
   "set_removed",
   "set_actuals_updated",
   "set_confirmed",
+  "set_unconfirmed",
   "set_corrected",
   "workout_note_updated",
   "exercise_note_updated",

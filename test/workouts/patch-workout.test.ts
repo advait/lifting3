@@ -460,7 +460,12 @@ describe("createWorkoutRouteService.mutateWorkout", () => {
     expect(result).toMatchObject({
       action: "add_set",
       eventType: "set_added",
-      invalidate: ["workouts:list", "workout:route-workout-add-set", "exercise:front_squat"],
+      invalidate: [
+        "workouts:list",
+        "exercises:list",
+        "workout:route-workout-add-set",
+        "exercise:front_squat",
+      ],
       ok: true,
       version: 2,
       workoutId: "route-workout-add-set",
@@ -514,7 +519,7 @@ describe("createWorkoutRouteService.mutateWorkout", () => {
     expect(result).toMatchObject({
       action: "reorder_exercise",
       eventType: "exercise_reordered",
-      invalidate: ["workouts:list", "workout:route-workout-reorder"],
+      invalidate: ["workouts:list", "exercises:list", "workout:route-workout-reorder"],
       ok: true,
       version: 4,
       workoutId: "route-workout-reorder",
@@ -571,6 +576,7 @@ describe("createWorkoutRouteService.mutateWorkout", () => {
       eventType: "set_confirmed",
       invalidate: [
         "workouts:list",
+        "exercises:list",
         "workout:route-workout-confirm-no-rpe",
         "exercise:bench_press_barbell",
       ],
@@ -592,6 +598,67 @@ describe("createWorkoutRouteService.mutateWorkout", () => {
       weightLbs: 225,
     });
     expect(confirmedSet?.confirmedAt).not.toBeNull();
+  });
+
+  it("unconfirms a set while retaining its logged values", async () => {
+    await insertSeedWorkout({
+      date: "2026-04-16T00:00:00.000Z",
+      exercises: [
+        {
+          exerciseSchemaId: "bench_press_barbell",
+          id: "route-exercise-unconfirm",
+          sets: [
+            {
+              actual: { reps: 5, rpe: 8.5, weightLbs: 225 },
+              confirmedAt: "2026-04-16T09:10:00.000Z",
+              id: "route-unconfirm-set-1",
+              planned: { reps: 5, weightLbs: 225 },
+            },
+          ],
+          status: "completed",
+        },
+      ],
+      id: "route-workout-unconfirm",
+      status: "active",
+      title: "Route Unconfirm Set",
+      version: 1,
+    });
+
+    const result = await workoutRouteService.mutateWorkout({
+      action: "unconfirm_set",
+      exerciseId: "route-exercise-unconfirm",
+      expectedVersion: 1,
+      setId: "route-unconfirm-set-1",
+      workoutId: "route-workout-unconfirm",
+    });
+
+    expect(result).toMatchObject({
+      action: "unconfirm_set",
+      eventType: "set_unconfirmed",
+      invalidate: [
+        "workouts:list",
+        "exercises:list",
+        "workout:route-workout-unconfirm",
+        "exercise:bench_press_barbell",
+      ],
+      ok: true,
+      version: 2,
+      workoutId: "route-workout-unconfirm",
+    });
+    expect(result.eventId).toBe("route-workout-unconfirm-v2-set_unconfirmed");
+
+    const detail = await workoutRouteService.loadWorkoutDetail({
+      workoutId: "route-workout-unconfirm",
+    });
+    const unconfirmedSet = detail.exercises[0]?.sets[0];
+
+    expect(detail.workout.version).toBe(2);
+    expect(unconfirmedSet?.actual).toEqual({
+      reps: 5,
+      rpe: 8.5,
+      weightLbs: 225,
+    });
+    expect(unconfirmedSet?.confirmedAt).toBeNull();
   });
 });
 

@@ -69,6 +69,7 @@ const WORKOUT_ROUTE_ACTIONS = [
   "update_set_planned",
   "update_set_actuals",
   "confirm_set",
+  "unconfirm_set",
   "add_set",
   "remove_set",
   "remove_exercise",
@@ -122,6 +123,7 @@ function getAvailableActions(
     "update_set_designation",
     "update_set_actuals",
     "confirm_set",
+    "unconfirm_set",
     "add_set",
     "remove_set",
     "remove_exercise",
@@ -148,6 +150,7 @@ function getAvailableActions(
         "update_set_designation",
         "update_set_actuals",
         "confirm_set",
+        "unconfirm_set",
         "add_set",
         "remove_set",
         "remove_exercise",
@@ -586,7 +589,7 @@ function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRo
     onClose();
   }, [didSubmit, fetcher.state, onClose]);
 
-  const submitConfirmation = (rpe?: number) => {
+  const submitSetConfirmation = (rpe: number | null) => {
     const formData = new FormData();
     const reps = set.actual.reps ?? set.planned.reps;
     const weightLbs = set.actual.weightLbs ?? set.planned.weightLbs;
@@ -594,12 +597,9 @@ function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRo
     formData.set("action", "confirm_set");
     formData.set("expectedVersion", String(workout.version));
     formData.set("exerciseId", exerciseId);
+    formData.set("rpe", rpe == null ? "" : String(rpe));
     formData.set("setId", set.id);
     formData.set("workoutId", workout.id);
-
-    if (rpe != null) {
-      formData.set("rpe", String(rpe));
-    }
 
     if (reps != null) {
       formData.set("reps", String(reps));
@@ -608,6 +608,19 @@ function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRo
     if (weightLbs != null) {
       formData.set("weightLbs", String(weightLbs));
     }
+
+    setDidSubmit(true);
+    void fetcher.submit(formData, { method: "post" });
+  };
+
+  const submitSetUnconfirmation = () => {
+    const formData = new FormData();
+
+    formData.set("action", "unconfirm_set");
+    formData.set("expectedVersion", String(workout.version));
+    formData.set("exerciseId", exerciseId);
+    formData.set("setId", set.id);
+    formData.set("workoutId", workout.id);
 
     setDidSubmit(true);
     void fetcher.submit(formData, { method: "post" });
@@ -627,7 +640,12 @@ function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRo
             )}
             disabled={fetcher.state !== "idle"}
             onClick={() => {
-              submitConfirmation();
+              if (isSetConfirmed(set) && set.actual.rpe == null) {
+                submitSetUnconfirmation();
+                return;
+              }
+
+              submitSetConfirmation(null);
             }}
             size="xs"
             type="button"
@@ -647,7 +665,12 @@ function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRo
                 disabled={fetcher.state !== "idle"}
                 key={value}
                 onClick={() => {
-                  submitConfirmation(value);
+                  if (isSelected) {
+                    submitSetUnconfirmation();
+                    return;
+                  }
+
+                  submitSetConfirmation(value);
                 }}
                 size="xs"
                 type="button"

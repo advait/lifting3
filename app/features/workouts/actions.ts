@@ -10,6 +10,7 @@ export const WORKOUT_ROUTE_ACTIONS = [
   "update_set_planned",
   "update_set_actuals",
   "confirm_set",
+  "unconfirm_set",
   "add_set",
   "remove_set",
   "remove_exercise",
@@ -123,6 +124,13 @@ export const confirmSetInputSchema = z.strictObject({
   setId: nonEmptyStringSchema,
 });
 
+export const unconfirmSetInputSchema = z.strictObject({
+  action: z.literal("unconfirm_set"),
+  ...workoutActionBaseShape,
+  exerciseId: nonEmptyStringSchema,
+  setId: nonEmptyStringSchema,
+});
+
 export const addSetInputSchema = z.strictObject({
   action: z.literal("add_set"),
   ...workoutActionBaseShape,
@@ -179,6 +187,7 @@ export const workoutMutationInputSchema = z.discriminatedUnion("action", [
   updateSetPlannedInputSchema,
   updateSetActualsInputSchema,
   confirmSetInputSchema,
+  unconfirmSetInputSchema,
   addSetInputSchema,
   removeSetInputSchema,
   removeExerciseInputSchema,
@@ -205,6 +214,7 @@ export type UpdateSetDesignationInput = z.infer<typeof updateSetDesignationInput
 export type UpdateSetPlannedInput = z.infer<typeof updateSetPlannedInputSchema>;
 export type UpdateSetActualsInput = z.infer<typeof updateSetActualsInputSchema>;
 export type ConfirmSetInput = z.infer<typeof confirmSetInputSchema>;
+export type UnconfirmSetInput = z.infer<typeof unconfirmSetInputSchema>;
 export type AddSetInput = z.infer<typeof addSetInputSchema>;
 export type RemoveSetInput = z.infer<typeof removeSetInputSchema>;
 export type RemoveExerciseInput = z.infer<typeof removeExerciseInputSchema>;

@@ -172,6 +172,11 @@ type MutationOperation =
       setId: string;
     }
   | {
+      exerciseId: string;
+      kind: "unconfirm_set";
+      setId: string;
+    }
+  | {
       completedAt?: RouteMutationByAction<"finish_workout">["completedAt"];
       kind: "finish_workout";
     }
@@ -590,6 +595,7 @@ function buildWorkoutDetail(
         previousExercisesBySchemaId.get(exercise.exerciseSchemaId) ?? null,
       ),
     ),
+    loadedAt: new Date().toISOString(),
     progress: getWorkoutSetCounts(record.exercises),
     workout: cloneValue(record.workout),
   });
@@ -770,6 +776,16 @@ function normalizeRouteMutation(input: NonDeleteWorkoutMutationInput): RouteMuta
           actual: input.actual,
           exerciseId: input.exerciseId,
           kind: "confirm_set",
+          setId: input.setId,
+        },
+      };
+    case "unconfirm_set":
+      return {
+        eventType: "set_unconfirmed",
+        includeExerciseInvalidations: true,
+        operation: {
+          exerciseId: input.exerciseId,
+          kind: "unconfirm_set",
           setId: input.setId,
         },
       };
@@ -979,6 +995,18 @@ function applyMutationOperation(
       return {
         invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
         summary: `Confirmed a set in ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
+      };
+    }
+    case "unconfirm_set": {
+      const exercise = findExercise(record, operation.exerciseId);
+      const set = findSet(exercise, operation.setId);
+
+      set.confirmedAt = null;
+      syncExerciseStatus(exercise);
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Marked a set as unconfirmed in ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
       };
     }
     case "add_set": {

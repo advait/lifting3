@@ -9,6 +9,7 @@ import {
   removeSetInputSchema,
   reorderExerciseInputSchema,
   startWorkoutInputSchema,
+  unconfirmSetInputSchema,
   updateSetDesignationInputSchema,
   updateSetPlannedInputSchema,
   updateExerciseNotesInputSchema,
@@ -111,6 +112,13 @@ export function safeParseWorkoutMutationFormData(formData: FormData) {
           rpe: getOptionalNullableNumber(formData, "rpe"),
           weightLbs: getOptionalNullableNumber(formData, "weightLbs"),
         },
+        exerciseId: getFormValue(formData, "exerciseId"),
+        setId: getFormValue(formData, "setId"),
+      });
+    case "unconfirm_set":
+      return unconfirmSetInputSchema.safeParse({
+        action,
+        ...base,
         exerciseId: getFormValue(formData, "exerciseId"),
         setId: getFormValue(formData, "setId"),
       });
