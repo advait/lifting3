@@ -49,8 +49,16 @@ type NavigationItem = {
 };
 
 interface RootSidebarLoaderData {
+  readonly appOrigin: string;
   readonly recentWorkouts: ReadonlyArray<Pick<WorkoutListItem, "date" | "id" | "status" | "title">>;
 }
+
+const APP_DESCRIPTION =
+  "Single-user workout coaching for planning, logging, and reviewing training.";
+const APP_NAME = "lifting3";
+const APP_SHORT_NAME = "L³";
+const BRAND_COLOR = "#f97316";
+const SOCIAL_IMAGE_ALT = "L cubed logo in orange on a deep charcoal tile.";
 
 const NAV_ITEMS: ReadonlyArray<NavigationItem> = [
   {
@@ -89,13 +97,45 @@ export const handle = defineAppEventRouteHandle({
   invalidateKeys: () => ["workouts:list"],
 });
 
-export async function loader({ context }: Route.LoaderArgs) {
+export const links: Route.LinksFunction = () => [
+  { href: "/logo.svg", rel: "icon", sizes: "any", type: "image/svg+xml" },
+  { href: "/favicon.ico", rel: "icon", type: "image/x-icon" },
+  { href: "/apple-touch-icon.png", rel: "apple-touch-icon", sizes: "180x180" },
+  { href: "/manifest.webmanifest", rel: "manifest" },
+];
+
+export const meta: Route.MetaFunction = ({ loaderData }) => {
+  const socialImageUrl = loaderData?.appOrigin ? `${loaderData.appOrigin}/logo.svg` : "/logo.svg";
+
+  return [
+    { title: APP_NAME },
+    { content: APP_DESCRIPTION, name: "description" },
+    { content: APP_NAME, name: "application-name" },
+    { content: APP_SHORT_NAME, name: "apple-mobile-web-app-title" },
+    { content: "yes", name: "apple-mobile-web-app-capable" },
+    { content: "black-translucent", name: "apple-mobile-web-app-status-bar-style" },
+    { content: "yes", name: "mobile-web-app-capable" },
+    { content: "dark", name: "color-scheme" },
+    { content: BRAND_COLOR, name: "theme-color" },
+    { content: BRAND_COLOR, name: "msapplication-TileColor" },
+    { content: APP_NAME, property: "og:site_name" },
+    { content: "website", property: "og:type" },
+    { content: socialImageUrl, property: "og:image" },
+    { content: SOCIAL_IMAGE_ALT, property: "og:image:alt" },
+    { content: "summary", name: "twitter:card" },
+    { content: socialImageUrl, name: "twitter:image" },
+    { content: SOCIAL_IMAGE_ALT, name: "twitter:image:alt" },
+  ];
+};
+
+export async function loader({ context, request }: Route.LoaderArgs) {
   const search = workoutListSearchSchema.parse({});
   const loaderData = await createWorkoutRouteService(getAppDatabase(context)).loadWorkoutList(
     search,
   );
 
   return {
+    appOrigin: new URL(request.url).origin,
     recentWorkouts: loaderData.items.slice(0, 4).map((item) => ({
       date: item.date,
       id: item.id,
@@ -362,10 +402,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <div className="flex min-h-full flex-col pb-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex size-11 items-center justify-center rounded-2xl bg-primary font-semibold text-primary-foreground text-sm shadow-sm">
-                    L3
-                  </div>
-                  <h1 className="truncate font-semibold text-lg tracking-tight">lifting3</h1>
+                  <img
+                    alt=""
+                    className="size-11 shrink-0 rounded-2xl shadow-[0_18px_32px_rgba(249,115,22,0.2)]"
+                    height={44}
+                    src="/logo.svg"
+                    width={44}
+                  />
+                  <h1 className="truncate font-semibold text-lg tracking-tight">{APP_NAME}</h1>
                 </div>
                 <Button
                   aria-label="Close navigation"
