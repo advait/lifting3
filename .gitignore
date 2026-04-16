@@ -8,6 +8,8 @@
 
 # Cloudflare
 /.wrangler/
+/worker-configuration.d.ts
+*.tsbuildinfo
 
 # Local exports / imports
 /tmp/
