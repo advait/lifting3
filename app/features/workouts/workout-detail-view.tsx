@@ -1,6 +1,6 @@
 import { CheckIcon, Clock3Icon, DumbbellIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
-import { useEffect, useState } from "react";
-import { Form, useNavigate } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Form, useFetcher, useNavigate } from "react-router";
 
 import { Button } from "~/components/ui/button";
 import {
@@ -36,6 +36,7 @@ const WORKOUT_ROUTE_ACTIONS = [
   "delete_workout",
   "start_workout",
   "update_set_designation",
+  "update_set_planned",
   "update_set_actuals",
   "confirm_set",
   "skip_set",
@@ -88,6 +89,7 @@ function getAvailableActions(
       return [
         "start_workout",
         "update_set_designation",
+        "update_set_planned",
         "add_set",
         "remove_set",
         "remove_exercise",
@@ -164,14 +166,14 @@ function formatOptionalValue(value: number | null) {
   return value == null ? "\u2014" : String(value);
 }
 
-function formatSetPerformance(set: WorkoutSet | null | undefined) {
-  if (!set) {
+function formatSetPerformance(values: WorkoutSet["previous"]) {
+  if (!values) {
     return "\u2014";
   }
 
-  const weight = set.actual.weightLbs ?? set.planned.weightLbs;
-  const reps = set.actual.reps ?? set.planned.reps;
-  const rpe = set.actual.rpe ?? set.planned.rpe;
+  const weight = values.weightLbs;
+  const reps = values.reps;
+  const rpe = values.rpe;
 
   if (weight == null && reps == null && rpe == null) {
     return "\u2014";
@@ -398,6 +400,131 @@ function SetRpeButton({ set }: { set: WorkoutSet }) {
   );
 }
 
+interface SetWeightCellProps {
+  editAction: "update_set_actuals" | "update_set_planned" | null;
+  exerciseId: string;
+  set: WorkoutSet;
+  workout: WorkoutDetailWorkout;
+}
+
+function SetWeightCell({ editAction, exerciseId, set, workout }: SetWeightCellProps) {
+  const fetcher = useFetcher();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftValue, setDraftValue] = useState("");
+  const [didSubmit, setDidSubmit] = useState(false);
+  const displayValue = set.actual.weightLbs ?? set.planned.weightLbs;
+  const weightFieldName = "weightLbs";
+
+  useEffect(() => {
+    if (!isEditing) {
+      return;
+    }
+
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [isEditing]);
+
+  useEffect(() => {
+    if (fetcher.state !== "idle" || !didSubmit) {
+      return;
+    }
+
+    setDidSubmit(false);
+    setIsEditing(false);
+  }, [didSubmit, fetcher.state]);
+
+  const startEditing = () => {
+    if (!editAction) {
+      return;
+    }
+
+    setDraftValue(displayValue == null ? "" : String(displayValue));
+    setIsEditing(true);
+  };
+
+  const submitValue = () => {
+    if (!editAction || !isEditing) {
+      return;
+    }
+
+    setDidSubmit(true);
+    fetcher.submit(
+      {
+        action: editAction,
+        exerciseId,
+        expectedVersion: String(workout.version),
+        setId: set.id,
+        [weightFieldName]: draftValue,
+        workoutId: workout.id,
+      },
+      { method: "post" },
+    );
+  };
+
+  if (!editAction) {
+    return <span>{formatOptionalValue(displayValue)}</span>;
+  }
+
+  if (!isEditing) {
+    return (
+      <button
+        className="w-full rounded-md px-1 py-1 text-center"
+        onClick={startEditing}
+        type="button"
+      >
+        {formatOptionalValue(displayValue)}
+      </button>
+    );
+  }
+
+  return (
+    <fetcher.Form
+      className="w-full"
+      method="post"
+      onSubmit={() => {
+        setDidSubmit(true);
+      }}
+    >
+      <MutationFields
+        action={editAction}
+        exerciseId={exerciseId}
+        setId={set.id}
+        workoutId={workout.id}
+        workoutVersion={workout.version}
+      />
+      <input
+        autoComplete="off"
+        className="h-8 w-full rounded-md border border-border/70 bg-background px-1 text-center outline-none"
+        enterKeyHint="done"
+        inputMode="decimal"
+        name={weightFieldName}
+        onBlur={submitValue}
+        onChange={(event) => {
+          setDraftValue(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            submitValue();
+          }
+
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setDidSubmit(false);
+            setIsEditing(false);
+          }
+        }}
+        pattern="[0-9]*[.]?[0-9]*"
+        ref={inputRef}
+        step="0.5"
+        type="number"
+        value={draftValue}
+      />
+    </fetcher.Form>
+  );
+}
+
 interface SetPickerModalProps {
   availableActions: readonly WorkoutRouteAction[];
   exerciseId: string;
@@ -445,9 +572,7 @@ function SetPickerModal({
       <section className="relative z-10 w-full max-w-sm rounded-3xl border border-border/80 bg-card/95 p-4 shadow-2xl backdrop-blur-xl">
         <div className="grid gap-1 pb-4">
           <p className="font-semibold text-base tracking-tight">Set {setLabel}</p>
-          <p className="text-muted-foreground text-sm">
-            Choose how this set should be classified.
-          </p>
+          <p className="text-muted-foreground text-sm">Choose how this set should be classified.</p>
         </div>
 
         <div className="grid gap-2">
@@ -460,7 +585,12 @@ function SetPickerModal({
               workoutVersion={workout.version}
             />
             <input name="designation" type="hidden" value="warmup" />
-            <Button className="w-full justify-start" disabled={!canSwitchToWarmup} type="submit" variant="outline">
+            <Button
+              className="w-full justify-start"
+              disabled={!canSwitchToWarmup}
+              type="submit"
+              variant="outline"
+            >
               Warmup Set
             </Button>
           </Form>
@@ -474,7 +604,12 @@ function SetPickerModal({
               workoutVersion={workout.version}
             />
             <input name="designation" type="hidden" value="working" />
-            <Button className="w-full justify-start" disabled={!canSwitchToWorking} type="submit" variant="outline">
+            <Button
+              className="w-full justify-start"
+              disabled={!canSwitchToWorking}
+              type="submit"
+              variant="outline"
+            >
               Regular Set
             </Button>
           </Form>
@@ -487,7 +622,12 @@ function SetPickerModal({
               workoutId={workout.id}
               workoutVersion={workout.version}
             />
-            <Button className="w-full justify-start" disabled={!canRemoveSet} type="submit" variant="destructive">
+            <Button
+              className="w-full justify-start"
+              disabled={!canRemoveSet}
+              type="submit"
+              variant="destructive"
+            >
               Delete Set
             </Button>
           </Form>
@@ -507,7 +647,13 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
   const canRemoveExerciseNow =
     canRemoveExercise && !exercise.sets.some((set) => set.status === "done");
   const canOpenSetPicker =
-    hasAction(availableActions, "update_set_designation") || hasAction(availableActions, "remove_set");
+    hasAction(availableActions, "update_set_designation") ||
+    hasAction(availableActions, "remove_set");
+  const setWeightEditAction = hasAction(availableActions, "update_set_actuals")
+    ? "update_set_actuals"
+    : hasAction(availableActions, "update_set_planned")
+      ? "update_set_planned"
+      : null;
   const lastSet = exercise.sets.at(-1);
   const carryForwardValues = getCarryForwardSetValues(lastSet);
   const removeExerciseFormId = `remove-exercise-${exercise.id}`;
@@ -601,7 +747,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
             </tr>
           </thead>
           <tbody>
-            {exercise.sets.map((set, setIndex) => {
+            {exercise.sets.map((set) => {
               const setLabel =
                 set.designation === "warmup"
                   ? getSetLabel(set, workingSetNumber)
@@ -627,10 +773,15 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
                     </Button>
                   </td>
                   <td className="px-2 py-2 text-center text-muted-foreground leading-relaxed first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
-                    {formatSetPerformance(exercise.sets[setIndex - 1])}
+                    {formatSetPerformance(set.previous)}
                   </td>
                   <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                    {formatOptionalValue(set.actual.weightLbs ?? set.planned.weightLbs)}
+                    <SetWeightCell
+                      editAction={setWeightEditAction}
+                      exerciseId={exercise.id}
+                      set={set}
+                      workout={workout}
+                    />
                   </td>
                   <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
                     {formatOptionalValue(set.actual.reps ?? set.planned.reps)}
@@ -743,8 +894,6 @@ export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewP
   usePublishAppEvent(actionData);
 
   const availableActions = getAvailableActions(loaderData.workout.status);
-  const canEditWorkout =
-    loaderData.workout.status === "planned" || loaderData.workout.status === "active";
 
   useEffect(() => {
     const parsedActionData = workoutMutationResultSchema.safeParse(actionData);
@@ -774,19 +923,6 @@ export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewP
               workout={loaderData.workout}
             />
           ))}
-        </div>
-
-        <div className="pt-4">
-          <Button
-            className="w-full"
-            disabled={!canEditWorkout}
-            size="sm"
-            type="button"
-            variant="secondary"
-          >
-            <PlusIcon />
-            Add Exercise
-          </Button>
         </div>
       </div>
 

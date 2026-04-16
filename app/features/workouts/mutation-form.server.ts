@@ -11,6 +11,7 @@ import {
   skipSetInputSchema,
   startWorkoutInputSchema,
   updateSetDesignationInputSchema,
+  updateSetPlannedInputSchema,
   updateExerciseNotesInputSchema,
   updateSetActualsInputSchema,
   updateWorkoutNotesInputSchema,
@@ -81,6 +82,17 @@ export function safeParseWorkoutMutationFormData(formData: FormData) {
           weightLbs: getOptionalNullableNumber(formData, "weightLbs"),
         },
         exerciseId: getFormValue(formData, "exerciseId"),
+        setId: getFormValue(formData, "setId"),
+      });
+    case "update_set_planned":
+      return updateSetPlannedInputSchema.safeParse({
+        action,
+        ...base,
+        exerciseId: getFormValue(formData, "exerciseId"),
+        planned: {
+          reps: getOptionalNullableNumber(formData, "reps"),
+          weightLbs: getOptionalNullableNumber(formData, "weightLbs"),
+        },
         setId: getFormValue(formData, "setId"),
       });
     case "update_set_designation":

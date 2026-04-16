@@ -73,6 +73,7 @@ export const workoutSetSchema = z
     status: setStatusSchema,
     planned: setValuesSchema,
     actual: setValuesSchema,
+    previous: setValuesSchema.nullable(),
     completedAt: isoDateTimeSchema.nullable(),
   })
   .superRefine((set, context) => {

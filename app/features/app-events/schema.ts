@@ -14,6 +14,7 @@ export const WORKOUT_EVENT_TYPES = [
   "exercise_skipped",
   "set_added",
   "set_designation_updated",
+  "set_planned_updated",
   "set_removed",
   "set_actuals_updated",
   "set_confirmed",

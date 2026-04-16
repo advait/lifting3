@@ -1,5 +1,5 @@
 import type { BatchItem } from "drizzle-orm/batch";
-import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, lte, ne, or } from "drizzle-orm";
 
 import type { AppDatabase } from "../../lib/.server/db/index.ts";
 import {
@@ -70,6 +70,7 @@ function createSet(input: {
   id: string;
   orderIndex: number;
   planned?: Partial<WorkoutSet["planned"]>;
+  previous?: WorkoutSet["previous"];
   status: WorkoutSet["status"];
 }) {
   return workoutSetSchema.parse({
@@ -87,6 +88,7 @@ function createSet(input: {
       rpe: input.planned?.rpe ?? null,
       weightLbs: input.planned?.weightLbs ?? null,
     },
+    previous: input.previous ?? null,
     status: input.status,
   });
 }
@@ -111,12 +113,65 @@ function createExercise(input: {
   });
 }
 
-function decorateExercise(exercise: WorkoutExerciseState) {
+function hasLoggedSetPerformance(set: WorkoutSet) {
+  return set.actual.weightLbs != null || set.actual.reps != null || set.actual.rpe != null;
+}
+
+function hasLoggedExercisePerformance(exercise: WorkoutExerciseState) {
+  return exercise.sets.some((set) => hasLoggedSetPerformance(set));
+}
+
+function getPreviousSetValues(set: WorkoutSet): WorkoutSet["previous"] {
+  if (!hasLoggedSetPerformance(set)) {
+    return null;
+  }
+
+  return {
+    reps: set.actual.reps,
+    rpe: set.actual.rpe,
+    weightLbs: set.actual.weightLbs,
+  };
+}
+
+function getAlignedPreviousSetValues(
+  currentSets: readonly WorkoutSet[],
+  previousExercise: WorkoutExerciseState | null,
+) {
+  if (!previousExercise) {
+    return currentSets.map(() => null);
+  }
+
+  const previousWarmupSets = previousExercise.sets.filter((set) => set.designation === "warmup");
+  const previousWorkingSets = previousExercise.sets.filter((set) => set.designation === "working");
+  let warmupIndex = 0;
+  let workingIndex = 0;
+
+  return currentSets.map((set) => {
+    if (set.designation === "warmup") {
+      const previousSet = previousWarmupSets[warmupIndex];
+      warmupIndex += 1;
+
+      return previousSet ? getPreviousSetValues(previousSet) : null;
+    }
+
+    const previousSet = previousWorkingSets[workingIndex];
+    workingIndex += 1;
+
+    return previousSet ? getPreviousSetValues(previousSet) : null;
+  });
+}
+
+function decorateExercise(
+  exercise: WorkoutExerciseState,
+  previousExercise: WorkoutExerciseState | null = null,
+) {
   const exerciseSchema = getExerciseSchemaById(exercise.exerciseSchemaId);
 
   if (!exerciseSchema) {
     throw new Error(`Unknown exercise schema id: ${exercise.exerciseSchemaId}`);
   }
+
+  const alignedPreviousSetValues = getAlignedPreviousSetValues(exercise.sets, previousExercise);
 
   return workoutExerciseSchema.parse({
     classification: exerciseSchema.classification,
@@ -129,7 +184,10 @@ function decorateExercise(exercise: WorkoutExerciseState) {
     logging: exerciseSchema.logging,
     movementPattern: exerciseSchema.movementPattern,
     orderIndex: exercise.orderIndex,
-    sets: cloneValue(exercise.sets),
+    sets: exercise.sets.map((set, index) => ({
+      ...cloneValue(set),
+      previous: alignedPreviousSetValues[index],
+    })),
     status: exercise.status,
     userNotes: exercise.userNotes,
   });
@@ -185,13 +243,24 @@ function buildWorkoutListItem(record: StoredWorkoutRecord) {
   });
 }
 
-function buildWorkoutDetail(record: StoredWorkoutRecord) {
+function buildWorkoutDetail(
+  record: StoredWorkoutRecord,
+  previousExercisesBySchemaId: ReadonlyMap<
+    WorkoutExerciseState["exerciseSchemaId"],
+    WorkoutExerciseState
+  >,
+) {
   return workoutDetailLoaderDataSchema.parse({
     agentTarget: {
       instanceName: record.workout.id,
       kind: "workout",
     },
-    exercises: record.exercises.map((exercise) => decorateExercise(exercise)),
+    exercises: record.exercises.map((exercise) =>
+      decorateExercise(
+        exercise,
+        previousExercisesBySchemaId.get(exercise.exerciseSchemaId) ?? null,
+      ),
+    ),
     progress: getWorkoutSetCounts(record.exercises),
     workout: cloneValue(record.workout),
   });
@@ -306,6 +375,28 @@ const startWorkout: MutationHandler<"start_workout"> = (record, input, updatedAt
   record.workout.version += 1;
 
   return createMutationResult(input, record, "workout_started");
+};
+
+const updateSetPlanned: MutationHandler<"update_set_planned"> = (record, input, updatedAt) => {
+  if (record.workout.status !== "planned") {
+    throw new WorkoutMutationError(
+      "Planned set values can only be edited before the workout starts.",
+    );
+  }
+
+  const exercise = findExercise(record, input.exerciseId);
+  const set = findSet(exercise, input.setId);
+
+  set.planned = {
+    ...set.planned,
+    ...input.planned,
+  };
+  record.workout.updatedAt = updatedAt;
+  record.workout.version += 1;
+
+  return createMutationResult(input, record, "set_planned_updated", [
+    createExerciseInvalidateKey(exercise.exerciseSchemaId),
+  ]);
 };
 
 const updateSetActuals: MutationHandler<"update_set_actuals"> = (record, input, updatedAt) => {
@@ -535,6 +626,7 @@ const mutationHandlers = {
   start_workout: startWorkout,
   update_exercise_notes: updateExerciseNotes,
   update_set_designation: updateSetDesignation,
+  update_set_planned: updateSetPlanned,
   update_set_actuals: updateSetActuals,
   update_workout_notes: updateWorkoutNotes,
 } satisfies {
@@ -670,6 +762,61 @@ async function loadStoredWorkoutRecord(db: AppDatabase, workoutId: string) {
   const [record] = await loadStoredWorkoutRecords(db, [workoutRow]);
 
   return record;
+}
+
+async function loadPreviousExercisesBySchemaId(
+  db: AppDatabase,
+  record: StoredWorkoutRecord,
+): Promise<Map<WorkoutExerciseState["exerciseSchemaId"], WorkoutExerciseState>> {
+  const exerciseSchemaIds = [
+    ...new Set(record.exercises.map((exercise) => exercise.exerciseSchemaId)),
+  ];
+
+  if (exerciseSchemaIds.length === 0) {
+    return new Map();
+  }
+
+  const priorWorkoutRows = await db
+    .select()
+    .from(workouts)
+    .where(
+      and(
+        ne(workouts.id, record.workout.id),
+        or(
+          lt(workouts.date, record.workout.date),
+          and(
+            eq(workouts.date, record.workout.date),
+            lt(workouts.updatedAt, record.workout.updatedAt),
+          ),
+        ),
+      ),
+    )
+    .orderBy(desc(workouts.date), desc(workouts.updatedAt));
+  const priorRecords = await loadStoredWorkoutRecords(db, priorWorkoutRows);
+  const previousExercisesBySchemaId = new Map<
+    WorkoutExerciseState["exerciseSchemaId"],
+    WorkoutExerciseState
+  >();
+
+  for (const priorRecord of priorRecords) {
+    for (const exercise of priorRecord.exercises) {
+      if (
+        !exerciseSchemaIds.includes(exercise.exerciseSchemaId) ||
+        previousExercisesBySchemaId.has(exercise.exerciseSchemaId) ||
+        !hasLoggedExercisePerformance(exercise)
+      ) {
+        continue;
+      }
+
+      previousExercisesBySchemaId.set(exercise.exerciseSchemaId, cloneValue(exercise));
+
+      if (previousExercisesBySchemaId.size === exerciseSchemaIds.length) {
+        return previousExercisesBySchemaId;
+      }
+    }
+  }
+
+  return previousExercisesBySchemaId;
 }
 
 async function loadCurrentWorkoutVersion(db: AppDatabase, workoutId: string) {
@@ -821,7 +968,10 @@ async function deleteStoredWorkoutRecord(
 export function createWorkoutRouteService(db: AppDatabase): WorkoutRouteService {
   return {
     async loadWorkoutDetail(params: WorkoutDetailParams) {
-      return buildWorkoutDetail(await loadStoredWorkoutRecord(db, params.workoutId));
+      const record = await loadStoredWorkoutRecord(db, params.workoutId);
+      const previousExercisesBySchemaId = await loadPreviousExercisesBySchemaId(db, record);
+
+      return buildWorkoutDetail(record, previousExercisesBySchemaId);
     },
 
     async loadWorkoutList(search: WorkoutListSearch) {
