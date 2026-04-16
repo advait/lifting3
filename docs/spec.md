@@ -169,12 +169,12 @@ Used for both live and historical workouts.
 - ordered exercise list
 - ordered sets inside each exercise
 - clear `done` vs `tbd` treatment
-- agent panel attached to the workout's canonical session
+- agent panel attached to the workout's canonical `WorkoutCoachAgent`
 - direct links into exercise-specific history without losing workout context
 
 ### Coach
 
-General coaching session not tied to a single workout.
+General coaching thread not tied to a single workout.
 
 - programming questions
 - planning
@@ -205,12 +205,12 @@ Derived progress views.
 
 - left sidebar for primary navigation
 - content pane center
-- contextual right rail on workout detail for the workout session agent
+- contextual right rail on workout detail for the canonical workout coach agent
 
 ### Mobile
 
 - bottom navigation for primary areas
-- workout detail keeps a floating `Coach` action that opens the workout session in a drawer/sheet
+- workout detail keeps a floating `Coach` action that opens the canonical workout coach thread in a drawer/sheet
 - active workout gets priority in navigation and resume affordances
 
 ## 6.5 IA Rule
@@ -222,24 +222,23 @@ The user should be able to move fluidly:
 - from a workout to its exercise history
 - from exercise history back to the exact parent workout
 - from a workout into its canonical coaching thread
-- from analytics into concrete historical sessions
+- from analytics into concrete historical workouts
 
 ## 7. Core Domain Model
 
 ## 7.1 Workout
 
-Represents one planned, active, or completed session.
+Represents one planned, active, completed, or canceled workout.
 
 Fields:
 
 - `id`
 - `title`
 - `date`
-- `status`: `draft | active | completed | canceled`
+- `status`: `planned | active | completed | canceled`
 - `source`: `manual | imported | agent`
 - `user_notes`
 - `coach_notes`
-- `primary_session_id`
 - `version`
 - `started_at`
 - `completed_at`
@@ -250,6 +249,13 @@ Notes semantics:
 
 - `user_notes`: the user's own notes
 - `coach_notes`: agent-authored or coaching-oriented notes, preserved separately from user notes
+
+Status semantics:
+
+- `planned`: created but not yet started
+- `active`: started and currently in progress
+- `completed`: finished workout with preserved logged history
+- `canceled`: abandoned workout that should remain visible in history
 
 ## 7.2 Exercise
 
@@ -342,30 +348,39 @@ The quick-entry path must include at least:
 - `9.5`
 - `10`
 
-## 7.4 Conversation Session
+## 7.4 Agent Conversation
 
-Persistent conversation thread stored separately from workout facts.
+Canonical conversation thread implemented as a Cloudflare `AIChatAgent` instance.
 
-Fields:
+Logical fields:
 
-- `id`
+- `agent_class`: `GeneralCoachAgent | WorkoutCoachAgent`
+- `instance_name`
 - `kind`: `general | workout`
 - `workout_id` nullable
-- `title`
-- `status`
-- `created_at`
-- `updated_at`
 
-## 7.5 Message
+Semantics:
 
-Fields:
+- the general coaching thread is `GeneralCoachAgent/default`
+- the canonical workout thread is `WorkoutCoachAgent/{workout.id}`
+- Cloudflare Agents persist message history inside agent storage
+- MVP does not maintain a normalized D1 `sessions` table for chat persistence
+
+## 7.5 Agent Message
+
+Logical message fields the application may reference:
 
 - `id`
-- `session_id`
 - `role`
 - `content`
 - `created_at`
-- `summary_block_id` nullable
+- `agent_class`
+- `instance_name`
+
+Semantics:
+
+- messages are persisted by Cloudflare Agents rather than mirrored into D1 in MVP
+- `source_message_id` on workout events may reference an agent-persisted message
 
 ## 7.6 Workout Event
 
@@ -402,31 +417,34 @@ Each event includes:
 
 ## 8. Conversations and Workouts
 
-## 8.1 Session Model
+## 8.1 Conversation Runtime Model
 
-Use a hybrid model:
+Use Cloudflare Agents happy path:
 
-- one long-lived `general` session for overall coaching
-- one canonical `workout` session per workout
+- one long-lived `GeneralCoachAgent` instance for overall coaching
+- one canonical `WorkoutCoachAgent` instance per workout
 
-This avoids forcing every conversation into a workout while still making workout-specific discussions clean and auditable.
+This keeps one conversation thread per agent instance, which matches `AIChatAgent` cleanly while still making workout-specific discussions auditable and easy to route.
 
 ## 8.2 1:1 Rule
 
 The enforced 1:1 relationship is:
 
-- one workout has exactly one primary workout conversation
+- one workout has exactly one canonical workout conversation
 
 Not:
 
 - every conversation corresponds to one workout
 
+In MVP, the canonical workout conversation is the `WorkoutCoachAgent` instance whose name equals `workout.id`.
+
 ## 8.3 How They Relate
 
-- `workout.primary_session_id` points to the canonical workout thread
+- the workout detail screen opens `WorkoutCoachAgent/{workout.id}`
+- the general coach screen opens `GeneralCoachAgent/default`
 - workout mutations may carry `source_message_id`
-- the workout detail screen always opens the workout's canonical session
-- the general coaching session can create workouts, discuss history, and compare plans across workouts
+- the general coaching thread can create workouts, discuss history, and compare plans across workouts
+- workout history and analytics live in D1, not in agent message history
 
 ## 8.4 Why This Model
 
@@ -435,34 +453,58 @@ This gives:
 - clean historical reasoning attached to each workout
 - a single place to chat during a workout
 - freedom for general planning conversations that span many workouts
+- direct alignment with Cloudflare's one-agent-instance-per-conversation model
 
 ## 9. System Architecture
 
-## 9.1 Durable Backend
+## 9.1 Authoritative Structured Store
 
-Use one top-level `CoachAgent` Durable Object as the authority for MVP.
+Use one shared Cloudflare D1 database as the authoritative store for structured workout data in MVP.
 
-Responsibilities:
+Use Drizzle ORM for:
 
-- profile and preferences
-- sessions and message history
-- workout event log
-- workout materialized state
-- derived analytics projections
-- minimal agent tool execution
+- schema definition
+- migrations
+- query construction
+- transaction-scoped mutation helpers
 
-MVP should not introduce sub-agents unless a clear need emerges. Project Think concepts matter here, but the simplest durable shape is a single authoritative object.
+Responsibilities of D1:
 
-## 9.2 Storage Layers
-
-Within `CoachAgent`:
-
-- normalized domain tables for workouts, exercises, sets, sessions, messages
+- workouts, exercises, and sets
+- top-level and exercise-level notes
 - append-only workout event log
-- derived read models for analytics
-- session summaries / compaction blocks
+- versioned mutation guards
+- derived analytics projections
+- import/export metadata
 
-## 9.3 Materialized Views / Projections
+## 9.2 Agent Runtime
+
+Use Cloudflare `AIChatAgent` as the conversation/runtime layer:
+
+- `GeneralCoachAgent/default` for long-lived general coaching
+- `WorkoutCoachAgent/{workout.id}` for the canonical workout thread
+
+Responsibilities of agents:
+
+- message persistence for their conversation
+- streaming chat
+- tool execution
+- in-context reasoning over assembled workout/history context
+
+Agents are not the authoritative database for workout facts.
+
+## 9.3 Storage Layers
+
+- D1 via Drizzle for authoritative structured data
+- agent-owned Durable Object storage for chat messages and runtime state
+- optional `setState()` for small live-synced UI state if needed later
+
+Important rule:
+
+- cross-workout screens must read from D1
+- MVP must not fan out across many workout agents at request time to build history or analytics
+
+## 9.4 Materialized Views / Projections
 
 At minimum:
 
@@ -525,7 +567,7 @@ Requirements:
 Initial export scope:
 
 - completed workouts
-- draft or active workouts may be added later if needed
+- planned or active workouts may be added later if needed
 
 ## 10.3 Import
 
@@ -558,7 +600,7 @@ Expected legacy mapping in the out-of-band step:
 - legacy exercise names -> canonical `exercise_schema_id`
 - source metadata preserved where useful
 
-Imported workouts will not initially have rich session history. If desired, later versions can backfill a synthetic session summary, but MVP does not need that.
+Imported workouts will not initially have rich agent conversation history. If desired, later versions can backfill synthetic conversation context, but MVP does not need that.
 
 ## 10.5 Public Repo Hygiene
 
@@ -578,6 +620,12 @@ Rules:
 - TypeScript
 - pnpm
 - Ultracite
+- Cloudflare Workers
+- Cloudflare D1
+- Drizzle ORM
+- Cloudflare Agents SDK
+- `AIChatAgent`
+- AI SDK
 - React Router v7
 - React
 - Tailwind CSS
@@ -669,7 +717,7 @@ Each exercise card shows:
 
 ### Agent Panel
 
-Always tied to the workout session.
+Always tied to the workout's canonical coach thread.
 
 Desktop:
 
@@ -864,7 +912,7 @@ The general `Coach` screen is for:
 
 ## 14.2 Workout Coach
 
-Every workout detail screen includes easy access to the workout session agent.
+Every workout detail screen includes easy access to the canonical `WorkoutCoachAgent`.
 
 Use cases:
 
@@ -916,13 +964,13 @@ These may still use the same backend mutation pipeline, but they are not part of
 
 ## 15.2 Context Assembly (Not Tools)
 
-Before the model runs, `CoachAgent` should assemble:
+Before the model runs, the relevant agent should assemble context by reading D1 and derived read models:
 
 - profile and preferences
-- active workout snapshot
+- active workout snapshot when in `WorkoutCoachAgent`
 - recent relevant workouts
 - derived exercise stats
-- session summary
+- recent agent conversation context
 
 This avoids a large family of read tools.
 
@@ -930,9 +978,9 @@ This avoids a large family of read tools.
 
 MVP tool surface:
 
-### `create_workout_draft`
+### `create_workout`
 
-Used mainly in the general coaching session.
+Used mainly in `GeneralCoachAgent`.
 
 Inputs:
 
@@ -941,9 +989,19 @@ Inputs:
 - constraints
 - optional source workout to adapt
 
+Behavior:
+
+- creates a new workout in `planned` status
+- returns the new `workout_id`
+
 ### `patch_workout`
 
-Used mainly in the workout session.
+Available to both agents.
+
+Typical usage:
+
+- `WorkoutCoachAgent` usually patches its own workout
+- `GeneralCoachAgent` may patch any existing workout after loading the latest snapshot
 
 Inputs:
 
@@ -966,6 +1024,7 @@ Supported op types:
 Important rule:
 
 - no op may erase logged facts
+- all tool-backed mutations should call the same D1-backed domain service layer as manual UI actions
 
 ### `query_history`
 
@@ -980,13 +1039,18 @@ Allowed dimensions:
 - filters: date window, exercise, status, rep range
 - compare window: optional
 
+Implementation note:
+
+- `query_history` should read from D1 tables and projections
+- it should not fan out over agent instances
+
 ## 16. Concurrency and Stale Context
 
 This is a first-class design constraint.
 
 ## 16.1 Authority Rule
 
-Agent context is advisory. Durable workout state is authoritative.
+Agent context is advisory. D1-backed workout state is authoritative.
 
 ## 16.2 Required Mutation Guards
 
@@ -994,7 +1058,7 @@ Every mutation, whether from UI or agent, must:
 
 - target stable IDs
 - include `expected_version`
-- run through the authoritative workout reducer
+- run through the authoritative D1-backed workout reducer inside a transaction where applicable
 
 Avoid position-based targeting like "exercise 3" whenever possible.
 
@@ -1081,11 +1145,11 @@ Illustrative logical tables:
 - `workout_exercises`
 - `exercise_sets`
 - `workout_events`
-- `sessions`
-- `messages`
 - `exercise_aliases`
 - `exercise_set_facts`
 - `exercise_prs`
+
+Chat message history is persisted by agent runtime storage, not by app-owned D1 `sessions` / `messages` tables in MVP.
 
 ### Example workout tables
 
@@ -1095,9 +1159,9 @@ workouts
   title
   date
   status
+  source
   user_notes
   coach_notes
-  primary_session_id
   version
   started_at
   completed_at
@@ -1108,6 +1172,7 @@ workout_exercises
   id
   workout_id
   order_index
+  exercise_schema_id
   name
   normalized_exercise_key
   status
@@ -1127,6 +1192,17 @@ exercise_sets
   actual_rpe
   status
   completed_at
+
+workout_events
+  id
+  workout_id
+  version
+  type
+  payload
+  actor_type
+  actor_id
+  source_message_id
+  created_at
 ```
 
 ## 20. API / Backend Boundaries
@@ -1138,12 +1214,15 @@ Not final, but the boundaries should look like this:
 - `GET /api/workouts/:id`
 - `POST /api/workouts`
 - `POST /api/workouts/:id/events`
-- `POST /api/coach/chat`
-- `POST /api/coach/tools/create-workout-draft`
-- `POST /api/coach/tools/patch-workout`
-- `POST /api/coach/tools/query-history`
+- `GET/WS /agents/general-coach/default`
+- `GET/WS /agents/workout-coach/:workoutId`
 
 RR7 loaders/actions can sit on top of these boundaries or call server functions directly depending on deployment shape.
+
+Important rule:
+
+- agent tools should live inside the relevant agent runtime, not as standalone HTTP tool endpoints in MVP
+- manual UI mutations and agent tools should both call the same D1-backed domain service layer
 
 MVP should not expose HTTP import/export endpoints. Import and export are local command workflows only.
 
@@ -1151,6 +1230,8 @@ MVP should not expose HTTP import/export endpoints. Import and export are local 
 
 MVP must include:
 
+- use D1 as the authoritative structured store
+- use Drizzle for D1 migrations and querying
 - export workouts to versioned JSON files validated by a shared Zod schema
 - import workouts from those validated JSON files via a local command
 - support `lifting2` migration through the intermediate JSON format
@@ -1162,8 +1243,8 @@ MVP must include:
 - start and complete a live workout
 - fast set logging
 - clear `tbd` vs `done` state
-- canonical workout session agent on workout detail
-- general coach session
+- canonical `WorkoutCoachAgent` on workout detail
+- long-lived `GeneralCoachAgent` thread
 - minimal analytics
 - PR detection and animation
 
@@ -1173,13 +1254,13 @@ MVP may defer:
 - wearable sync
 - voice mode
 - background agent jobs beyond simple planning
-- multi-program templates beyond draft generation
+- multi-program templates beyond simple workout generation
 
 ## 22. Open Questions
 
 - Should historical correction flows require a reason, or keep the reason optional?
 - Should the active workout screen auto-focus the next `tbd` set after confirming the current one?
-- Should export include only workout state, or also session/message history in a separate format later?
+- Should export include only workout state, or also agent conversation/message history in a separate format later?
 
 ## 23. Companion Documents
 

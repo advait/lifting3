@@ -25,3 +25,4 @@ Current docs:
 
 - `docs/spec.md` — product and architecture spec
 - `docs/hevy-app.md` — Hevy UX teardown informing interaction design
+- `docs/cloudflare-agents.md` — Cloudflare architecture guidance for D1 + Drizzle + AIChatAgent

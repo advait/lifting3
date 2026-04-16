@@ -2,554 +2,393 @@
 
 Reviewed: 2026-04-16
 
-This document explains the subset of the Cloudflare Agents SDK that makes sense for `lifting3`.
+This document explains the Cloudflare architecture that best matches `lifting3` while staying on Cloudflare's path of least resistance.
 
-It is intentionally opinionated. The goal is not to cover every Agents feature. The goal is to map the Cloudflare model onto this repo's actual product shape:
+The core decision is:
 
-- one authoritative `CoachAgent` Durable Object for MVP
-- persistent chat sessions tied to workouts and general coaching
-- durable structured storage for workouts, events, notes, and analytics
-- a narrow, guarded server-side tool surface
-- message compaction and session search
+- use D1 as the authoritative store for structured workout data
+- use Drizzle for D1 schema, migrations, and queries
+- use Cloudflare `AIChatAgent` for canonical conversation threads
+- keep agent tools narrow and server-side
 
-This document omits features we do not plan to use in MVP:
+This document intentionally omits features we do not plan to use in MVP:
 
 - Browser Run / browser tools
-- Dynamic Workers / codemode / sandboxed code execution
-- the full Think base class
-- voice
-- MCP server hosting
+- Dynamic Workers / codemode / sandboxed execution
+- Think as the primary base class
+- Session API / `SessionManager` as the default chat model
 - sub-agents
-- client-side tools unless a concrete browser-only need appears
+- MCP servers
+- voice
 
-## 1. What Cloudflare Agents actually are
+## 1. Recommended architecture
 
-Cloudflare Agents are a programming model on top of Durable Objects.
+Use three major pieces:
 
-The important mental model:
+1. one shared D1 database
+2. one `GeneralCoachAgent` instance
+3. one `WorkoutCoachAgent` instance per workout
 
-- each agent instance is a Durable Object instance
-- each instance has an identity, its own SQLite database, and its own event lifecycle
-- the same instance name always routes back to the same agent instance
-- the instance can hibernate when idle and wake back up on HTTP, WebSocket, email, schedule, or other events
-- persistence lives with the agent instance instead of being reconstructed from an external session store
+Recommended mapping:
 
-For `lifting3`, that maps well to the spec's "one top-level `CoachAgent` Durable Object as the authority for MVP".
+- structured workout state -> D1
+- workout list/history/analytics -> D1
+- general coaching thread -> `GeneralCoachAgent/default`
+- canonical workout thread -> `WorkoutCoachAgent/{workoutId}`
 
-## 2. Which Agents layer we should use
+This gives the app:
 
-Cloudflare gives us three relevant layers:
+- one conversation per agent instance, which matches `AIChatAgent`
+- normal SQL for cross-workout reads
+- no custom app-owned chat persistence layer
+- direct alignment with Cloudflare's documented chat-agent path
 
-1. `Agent`
-2. `AIChatAgent`
-3. `Think`
+## 2. Why this is the Cloudflare happy path
 
-### `Agent`
+Cloudflare's easiest supported chat model is:
 
-`Agent` is the lowest-level and most durable fit for this project.
+- one agent instance
+- one persisted chat thread
+- built-in message persistence
+- streaming responses
+- resumable streams
+- tools defined inside `onChatMessage()`
 
-Use it for:
+That matches:
 
-- authoritative domain state
-- SQLite tables
-- workout reducers and event logs
-- explicit routing
-- custom chat/session handling
-- narrow RPC methods
+- `GeneralCoachAgent/default`
+- `WorkoutCoachAgent/{workoutId}`
 
-### `AIChatAgent`
+It does not match the older design of one top-level `CoachAgent` that owns many chat sessions internally.
 
-`AIChatAgent` is the easiest way to build one chat thread per agent instance. It gives you:
+That older design is still possible, but it pushes you toward the experimental Session API and extra custom architecture. For MVP, it is the harder path.
 
-- automatic message persistence
-- resumable streaming
-- built-in tool continuation
-- `saveMessages`, `persistMessages`, `waitUntilStable`, `onChatResponse`
+## 3. D1 vs agent storage
 
-That is excellent for a pure chat app, but it is not the cleanest fit for this repo's current architecture.
+### Put this in D1
 
-Why:
-
-- `lifting3` wants one authoritative `CoachAgent`
-- `lifting3` wants many chat threads inside that one authority:
-  - one long-lived general coaching session
-  - one canonical workout session per workout
-- `AIChatAgent` is optimized around one persisted chat history per agent instance
-
-Recommendation:
-
-- use `Agent` for `CoachAgent`
-- use the experimental `Session` / `SessionManager` APIs for multi-session conversation storage inside that one agent
-- call the model with AI SDK primitives directly
-
-### `Think`
-
-Project Think is useful as a direction-of-travel document, not as our MVP base class.
-
-Reasons not to build on `Think` yet:
-
-- it is more opinionated than we need
-- it bundles features we explicitly do not want in MVP
-- our product already has a strong domain model and reducer story
-- the spec explicitly says not to introduce sub-agents or a broad tool surface unless a clear need emerges
-
-Use the Project Think primitives selectively. Do not adopt the full "batteries-included" abstraction first.
-
-## 3. Recommended MVP architecture
-
-### One authoritative agent instance
-
-Use one `CoachAgent` class and one stable instance name for the single-user app.
-
-For MVP:
-
-- agent class: `CoachAgent`
-- instance name: `"default"` or another stable fixed value
-
-If the app later becomes multi-user, switch the instance name to a stable opaque user identifier derived from Access identity.
-
-### Storage split
-
-Inside `CoachAgent`, use three storage tiers:
-
-1. `this.sql` for authoritative domain data
-2. `SessionManager` for conversations and compacted session history
-3. `this.setState()` only for small live-synced UI state
-
-That maps directly to the spec:
-
-- SQL tables for workouts, exercises, sets, events, and projections
-- event log and projections in SQLite
-- session summaries / compaction in the session layer
-- minimal synced state for live UX
-
-Important clarification:
-
-- raw chat session/message storage should be owned by `Session` / `SessionManager`
-- do not build a second handwritten chat persistence layer unless we need extra product-specific metadata that the session layer cannot hold
-
-### Strong recommendation: keep workout facts out of chat memory
-
-Chat memory is not the source of truth.
-
-Use sessions for:
-
-- conversational history
-- summarized context
-- long-lived coaching memory
-- session search
-
-Use SQL tables and reducers for:
-
-- workouts
-- exercises
-- sets
-- event versions
-- PRs
-- analytics projections
-
-This preserves the spec rule that structured workout state wins.
-
-## 4. `setState()` vs SQLite
-
-Cloudflare Agents have two persistence styles that are easy to confuse.
-
-### Use `this.setState()` for small synced state
-
-`setState()`:
-
-- persists to SQLite automatically
-- broadcasts to connected clients
-- triggers `onStateChanged()`
-- replaces the whole state object rather than merging partials
-
-For `lifting3`, use it only for things like:
-
-- active stream metadata
-- live UI status
-- optimistic progress state
-- connection-visible flags
-- possibly pending approval state if we ever expose approval through direct agent connections
-
-Do not put the whole workout database into `this.state`.
-
-### Use `this.sql` for authoritative application data
-
-Use SQL for:
+Use D1 as the authoritative structured store for:
 
 - `workouts`
 - `workout_exercises`
 - `exercise_sets`
 - `workout_events`
-- analytics projections
+- notes
+- import/export metadata
+- exercise facts and analytics projections
+- optimistic concurrency state such as `version`
 
-If we use `SessionManager`, let it own the underlying session/message tables. Keep only the app-level linkage we actually need, such as:
+This is where cross-workout queries belong.
 
-- `workout.primary_session_id`
-- optional session metadata references used by app screens or analytics
+### Put this in agent storage
 
-This is the durable system of record.
+Let `AIChatAgent` persist:
 
-## 5. Sessions are the right Cloudflare primitive for this app
+- general coach messages
+- workout coach messages
+- tool call/result history inside those conversations
+- stream recovery state
 
-Cloudflare's Session API is the part of Project Think that best matches `lifting3`.
+Do not mirror that history into app-owned D1 `sessions` / `messages` tables in MVP.
 
-It gives us:
+### Use `setState()` sparingly
 
-- persistent conversation storage
-- tree-structured messages
-- full-text search
-- context blocks
-- compaction
-- generated context tools
-- a `SessionManager` for multiple sessions in one Durable Object
+Only use `setState()` for small live-synced state if needed later, for example:
 
-Important caveat:
+- ephemeral connection-visible UI flags
+- live stream metadata
+- tiny optimistic indicators
 
-- the Session API lives under `agents/experimental/memory/session`
-- Cloudflare says the API surface is stable but may still evolve before graduating into the main package
+Do not put the workout database in `this.state`.
 
-That is acceptable here because it matches the product model unusually well, but we should wrap it behind our own internal abstraction instead of spreading it everywhere.
+## 4. Recommended agent model
 
-## 6. Recommended session model for `lifting3`
+### `GeneralCoachAgent`
 
-Use one `SessionManager` inside `CoachAgent`.
+Use one stable instance:
 
-Suggested mapping:
+- class: `GeneralCoachAgent`
+- name: `"default"`
 
-- general coaching thread -> one SessionManager session
-- workout thread -> one SessionManager session per workout
-- `sessions.id` in app SQL -> SessionManager session ID
-- `workout.primary_session_id` -> the session ID used by SessionManager
+Responsibilities:
 
-Recommended pattern:
+- general planning
+- workout creation
+- broad coaching discussion
+- cross-workout reasoning using D1 reads
+- patching existing workouts when needed
 
-```ts
-import { Agent } from "agents";
-import { SessionManager } from "agents/experimental/memory/session";
+### `WorkoutCoachAgent`
 
-export class CoachAgent extends Agent<Env, CoachUiState> {
-  manager = SessionManager.create(this)
-    .withContext("identity", {
-      provider: {
-        get: async () => "You are the coaching agent for lifting3.",
-      },
-    })
-    .withContext("profile-memory", {
-      description: "Durable coaching memory about the user.",
-      maxTokens: 1200,
-    })
-    .withSearchableHistory("history")
-    .withCachedPrompt()
-    .onCompaction(this.compactSession.bind(this))
-    .compactAfter(100_000);
-}
+Use one instance per workout:
+
+- class: `WorkoutCoachAgent`
+- name: `workoutId`
+
+Responsibilities:
+
+- canonical workout conversation
+- in-workout modifications
+- workout-specific summaries
+- reasoning over the active workout plus recent relevant history
+
+Important rule:
+
+- the workout's canonical conversation identity should just be `WorkoutCoachAgent/{workoutId}`
+- do not invent a second app-level session identity unless a later feature requires it
+
+## 5. Chat transport
+
+The lowest-friction Cloudflare routing model is:
+
+```text
+/agents/general-coach/default
+/agents/workout-coach/:workoutId
 ```
 
-Use session metadata to store app-level references like:
+Use:
 
-- title
-- kind: `general | workout`
-- `workoutId`
-- source
-- model
+- `routeAgentRequest()` in the Worker
+- `useAgent()`
+- `useAgentChat()`
 
-## 7. Context blocks: use them, but keep them narrow
+This should be the primary chat transport.
 
-Sessions support context blocks and auto-generated tools for reading and writing them.
+The rest of the app can still use normal React Router loaders/actions for structured data screens.
 
-That is powerful, but we should be selective.
+## 6. Shared mutation/query layer
 
-### Good uses
+Keep one domain service layer for workout mutations and reads.
 
-- durable coach memory about the user
-- equipment constraints
-- profile/preferences
-- stable instructions
-- searchable historical session summaries
+Both of these should call the same code:
 
-### Bad uses
+- manual UI actions
+- agent tools
 
-- raw workout facts
-- full event logs
-- arbitrary mutable application state
-- giant imported history dumps
+That layer should:
 
-### Default posture
+- use Drizzle against D1
+- enforce `expected_version`
+- append workout events
+- rebuild/update projections
+- reject stale writes with `VERSION_MISMATCH`
 
-Prefer read-only context blocks unless the model truly needs to write to them.
+The important architectural rule is:
 
-If a block is writable, the session layer generates `set_context`.
+- agent tools do not own business rules
+- reducers/services own business rules
 
-That is fine for "coach memory" or "profile memory".
+## 7. Tool design
 
-It is not fine for the canonical workout domain model.
+Keep the tool surface exactly as narrow as the spec wants:
 
-## 8. Compaction: how to use it here
-
-Session compaction is one of the main reasons to use the Session API.
-
-What Cloudflare's compaction does:
-
-- preserves original messages in SQLite
-- stores a summary overlay instead of destructively deleting history
-- protects the head of the conversation
-- protects the most recent tail of the conversation
-- avoids splitting tool call/result pairs
-- updates summaries iteratively on later compactions
-
-This is exactly the behavior we want for long-lived coaching threads.
-
-### Recommended use in `lifting3`
-
-Use compaction for:
-
-- the general coaching session
-- workout chat sessions after they get long
-
-Do not use compaction as a substitute for:
-
-- the workout event log
-- an audit trail
-- derived analytics tables
-
-Those remain in SQL.
-
-### Suggested operating rule
-
-Start with auto-compaction enabled and tune later:
-
-- `.compactAfter(100_000)` is a reasonable initial default
-- only compact chat/session history, never structured workout tables
-
-### Important implementation note
-
-If context blocks change after using `withCachedPrompt()`, call `refreshSystemPrompt()`.
-
-Otherwise the frozen prompt will continue using the old block layout.
-
-## 9. Tool design for `lifting3`
-
-Cloudflare chat tooling supports three tool styles:
-
-- server-side tools
-- client-side tools
-- approval-gated tools via `needsApproval`
-
-For this app, the right default is simple:
-
-- use server-side tools
-- avoid client-side tools
-- use explicit UI confirmation for meaningful mutations
-
-### Server-side tools we should expose
-
-This matches the spec:
-
-- `create_workout_draft`
+- `create_workout`
 - `patch_workout`
 - `query_history`
 
-Design rules:
+Recommended ownership:
 
-- each tool takes narrow structured input
-- each mutation tool targets stable IDs
-- every mutation carries `expected_version`
-- every committed mutation should retain the originating chat message ID when available
-- tool output stays small and structured
-- heavy data stays in SQL or derived summaries, not raw tool output blobs
+- `create_workout` -> `GeneralCoachAgent`
+- `patch_workout` -> both agents
+- `query_history` -> either agent, backed by D1 reads
 
-### What not to do
+Typical usage:
 
-Do not expose:
+- `WorkoutCoachAgent` usually patches its own workout
+- `GeneralCoachAgent` may patch any existing workout after loading the latest snapshot
 
-- one tool per button
-- raw SQL tools
-- generic "edit anything" tools
-- browser-only client tools for normal logging flows
+Define tools inside `onChatMessage()` with AI SDK `tool()`.
 
-The user can already log sets through ordinary UI actions faster than the model can.
-
-### Combining session tools with app tools
-
-If we use writable/searchable context blocks, the session layer can generate tools like:
-
-- `set_context`
-- `search_context`
-- `load_context`
-- `session_search`
-
-Those should be additive, not primary.
-
-The model's main domain surface should still be our explicit app tools.
-
-Conceptually:
+Example shape:
 
 ```ts
-const session = this.manager.getSession(sessionId);
+import { AIChatAgent } from "@cloudflare/ai-chat";
+import { convertToModelMessages, streamText, tool } from "ai";
+import { z } from "zod";
 
-const tools = {
-  ...(await session.tools()),
-  create_workout_draft: createWorkoutDraftTool,
-  patch_workout: patchWorkoutTool,
-  query_history: queryHistoryTool,
-};
+export class WorkoutCoachAgent extends AIChatAgent<Env> {
+  async onChatMessage() {
+    const workoutId = this.name;
+
+    const result = streamText({
+      model: this.model(),
+      messages: await convertToModelMessages(this.messages),
+      tools: {
+        patch_workout: tool({
+          description: "Apply a guarded patch to the active workout.",
+          inputSchema: z.object({
+            workout_id: z.string(),
+            expected_version: z.number(),
+            reason: z.string(),
+            ops: z.array(z.unknown()),
+          }),
+          execute: async (input) =>
+            patchWorkoutWithGuards(this.env.DB, {
+              ...input,
+              sourceMessageId: this.messages.at(-1)?.id,
+            }),
+        }),
+      },
+    });
+
+    return result.toUIMessageStreamResponse();
+  }
+}
 ```
 
-## 10. Approval model
+### Do not use in MVP
 
-Cloudflare supports approval-gated tools with `needsApproval`.
+Avoid:
 
-That is useful, but it should not be our first line of mutation safety.
+- client-side tools
+- generic SQL tools
+- one tool per UI button
+- "edit anything" tools
 
-For `lifting3`, the better default is:
+The user should still log sets faster through direct UI actions than through chat.
 
-- reducer-level validation in the backend
-- explicit conflict handling with `expected_version`
-- a clear diff card in the UI for meaningful agent-authored changes
+## 8. Concurrency and consistency
 
-If we later adopt `AIChatAgent` for some flows, `needsApproval` is a good fit for:
+Moving structured data into D1 means you no longer get implicit single-threaded serialization for workout storage.
 
-- destructive workout edits
-- actions that replace remaining planned work
-- anything the user should explicitly accept before execution
+That is acceptable, but the spec must keep explicit concurrency guards.
 
-But for MVP, visible patch review in the app UI is clearer than pushing all approval semantics into the chat layer.
+Required rules:
 
-## 11. `AIChatAgent` features we should still understand
+- every mutation carries `expected_version`
+- updates run in a D1 transaction where applicable
+- stale writes return `VERSION_MISMATCH`
+- all mutations target stable IDs
+- meaningful events record `source_message_id` when available
 
-Even if we do not build `CoachAgent` on `AIChatAgent` first, a few `AIChatAgent` concepts matter because they inform good design.
+### Important consistency seam
 
-### `persistMessages` vs `saveMessages`
+There is no automatic single transaction spanning:
 
-If we later use `AIChatAgent`:
+- AIChatAgent message persistence in Durable Object storage
+- D1 workout mutation
 
-- `persistMessages` stores messages without triggering a model turn
-- `saveMessages` stores messages and triggers a new turn
+Design implications:
 
-`saveMessages` is serialized and safe for server-driven follow-ups.
+- mutation handlers must be idempotent
+- the event log should be the source of truth for what committed
+- the UI should prefer committed workout state over optimistic chat assumptions
 
-### `waitUntilStable()`
+## 9. Context assembly
 
-If a non-chat entry point triggers turns, Cloudflare recommends `waitUntilStable()` before reading or appending to the chat history.
+Do not build a large read-tool surface.
 
-That avoids colliding with:
+Before the model runs, assemble the needed context on the server from D1:
 
-- an active stream
-- queued continuations
-- pending client-tool interactions
+- profile/preferences
+- active workout snapshot
+- recent relevant workouts
+- derived exercise stats
+- recent milestones / PRs
 
-### `onChatResponse`
+Then pass the assembled context into the model prompt or tool layer.
 
-This hook runs after a turn completes and persistence is finished.
+This preserves the spec's "context assembly, not tool sprawl" principle.
 
-That is useful if we later want to trigger sequential follow-up work after a response is fully stored.
+## 10. What about compaction?
 
-### Message row size protection
+If the goal is strict Cloudflare happy path, do not start with the Session API just to get message compaction.
 
-`AIChatAgent` automatically protects against SQLite's 2 MB row limit by compacting huge tool outputs and truncating oversized text parts.
+Instead, in MVP:
 
-That is valuable if we ever move to `AIChatAgent`.
+- use `AIChatAgent`
+- let it handle normal message persistence and resumable streaming
+- rely on `pruneMessages()` or similar model-context trimming for what the LLM sees
+- rely on built-in row-size protection for oversized message/tool payloads
 
-If we stay on `Agent` + `SessionManager`, we need to adopt the same discipline ourselves:
+What `AIChatAgent` already gives you:
 
-- never persist giant tool outputs directly
-- store heavy artifacts elsewhere
-- persist summaries, IDs, and structured small results
+- automatic message persistence
+- resumable streams
+- row-size protection for large message/tool payloads
 
-## 12. Routing and instance access
+What it does not give you as the primary model:
 
-Cloudflare supports a default route shape:
+- explicit Session API compaction overlays
+- multi-session search inside one agent
 
-```text
-/agents/{agent-name}/{instance-name}
-```
+If later you need:
 
-with `routeAgentRequest()`.
+- long-lived searchable coaching memory
+- explicit non-destructive summary overlays
+- session forking
 
-That is useful if we expose direct WebSocket or HTTP agent endpoints.
+then evaluate the Session API as a phase-2 enhancement. It is not the MVP happy path.
 
-For this app, there are two valid patterns.
+## 11. Drizzle + D1 guidance
 
-### Pattern A: direct agent route
+Use Drizzle as the only application-facing persistence layer for D1.
 
-Use `routeAgentRequest()` and connect the browser directly to:
+Recommended uses:
 
-- `/agents/coach-agent/default`
+- schema definitions in TypeScript
+- migration files checked into the repo
+- query helpers for reads
+- transaction-scoped service functions for guarded writes
 
-Pros:
+Recommended posture:
 
-- easy real-time connections
-- natural fit for WebSocket-based agent UX
+- D1 schema is the authoritative structured model
+- Drizzle migrations are the authoritative schema history
+- agent tool handlers should call typed Drizzle services, not inline SQL
 
-Cons:
+## 12. Cross-workout reads
 
-- pushes more of the chat transport model directly into the UI
+This is the main reason D1 is preferable here.
 
-### Pattern B: app routes call the agent internally
+The following should read D1 directly:
 
-Use normal React Router loaders/actions and look up the agent from Worker code with `getAgentByName()`.
+- Home
+- Workouts list
+- Analytics
+- General coach history lookups
+- PR views
 
-Pros:
+Do not build these by querying many workout agents at request time.
 
-- keeps the app's server boundary in one place
-- simpler if most traffic is ordinary app CRUD
-- a better fit for the current repo structure
+That would be the main operational trap if workout truth lived inside per-workout DO storage.
 
-Cons:
+## 13. What not to use in MVP
 
-- more custom work for live streaming chat transport
+Skip these until the core product is working:
 
-For MVP, Pattern B is the safer default unless we decide that chat streaming must be agent-native from day one.
+- Think as the main base class
+- Session API as the default chat layer
+- sub-agents
+- Browser Run
+- sandboxed code execution
+- self-authored tools
+- MCP server hosting
+- workflow-based orchestration for ordinary chat turns
 
-## 13. `@callable()` is optional here
+This is not anti-Cloudflare. It is just staying on the shortest path.
 
-`@callable()` is for external WebSocket RPC into an agent.
+## 14. Required repo/config changes
 
-Use it when:
-
-- the browser talks directly to the agent
-- a mobile client talks directly to the agent
-- another external runtime talks to the agent over the agent protocol
-
-Do not use it for same-worker internal calls.
-
-Inside the Worker, use Durable Object RPC via `getAgentByName()` instead.
-
-For this repo, that means:
-
-- internal app code -> use `getAgentByName()`
-- direct browser-to-agent connection -> consider `@callable()` only if needed
-
-If we do use `@callable()`, Cloudflare's current requirements matter:
-
-- add the `agents/vite` plugin
-- extend `agents/tsconfig` or at least target `ES2021`
-- do not enable `experimentalDecorators`
-
-## 14. Minimal repo changes required before implementation
-
-The repo does not yet have Agents packages or Durable Object bindings configured.
-
-Before implementation, we will need at least:
+The repo will need at least:
 
 - `agents`
+- `@cloudflare/ai-chat`
 - `ai`
-- a provider package such as `workers-ai-provider`
+- `workers-ai-provider` or another AI SDK provider
+- `drizzle-orm`
+- `drizzle-kit`
 - `zod`
 
-Potentially later:
-
-- `@cloudflare/ai-chat` if we explicitly adopt `AIChatAgent`
-
-Wrangler will also need:
+Wrangler will need at minimum:
 
 - `nodejs_compat`
-- a Durable Object binding for `CoachAgent`
-- a `new_sqlite_classes` migration for `CoachAgent`
-- optionally an `AI` binding if we start with Workers AI
+- a D1 binding, for example `DB`
+- Durable Object bindings for `GeneralCoachAgent` and `WorkoutCoachAgent`
+- `new_sqlite_classes` migrations for both agent classes
+- optionally an `AI` binding if using Workers AI
 
-Illustrative `wrangler.jsonc` shape:
+Illustrative shape:
 
 ```jsonc
 {
@@ -558,15 +397,30 @@ Illustrative `wrangler.jsonc` shape:
   "main": "./workers/app.ts",
   "compatibility_date": "2026-04-16",
   "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lifting3",
+      "database_id": "replace-me"
+    }
+  ],
   "durable_objects": {
-    "bindings": [{ "name": "CoachAgent", "class_name": "CoachAgent" }]
+    "bindings": [
+      { "name": "GeneralCoachAgent", "class_name": "GeneralCoachAgent" },
+      { "name": "WorkoutCoachAgent", "class_name": "WorkoutCoachAgent" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CoachAgent"] }],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["GeneralCoachAgent", "WorkoutCoachAgent"]
+    }
+  ],
   "observability": { "enabled": true }
 }
 ```
 
-If we start with Workers AI:
+If using Workers AI:
 
 ```jsonc
 {
@@ -574,59 +428,36 @@ If we start with Workers AI:
 }
 ```
 
-## 15. What we should deliberately not use in MVP
+## 15. Final recommendation
 
-Skip these until the core workout system is solid:
+For `lifting3`, the Cloudflare-native architecture should be:
 
-- `Think` as the main base class
-- sub-agents
-- Browser Run / browser tools
-- sandboxed code execution
-- Dynamic Workers / codemode
-- self-authored tools
-- broad client-side tool surfaces
-- MCP servers
-- workflow-based orchestration unless a real background job need appears
+1. D1 as the authoritative store for structured workout data.
+2. Drizzle for D1 schema, migrations, and queries.
+3. `GeneralCoachAgent/default` for the general coach thread.
+4. `WorkoutCoachAgent/{workoutId}` for the canonical workout thread.
+5. Direct chat via `routeAgentRequest()` and `useAgentChat()`.
+6. Shared D1-backed domain services used by both UI actions and agent tools.
 
-This is not anti-Cloudflare. It is discipline.
+That gives you the part of Cloudflare that helps most:
 
-The app already has a strong domain model. The main risk is adding too much agent machinery too early.
+- built-in durable chat runtime
+- direct conversation routing
+- DO-backed message persistence
+- resumable streams
+- ordinary SQL for app data
+- clean cross-workout querying
 
-## 16. Final recommendation
-
-For `lifting3`, the recommended Cloudflare architecture is:
-
-1. Build one `CoachAgent extends Agent`.
-2. Use one stable agent instance for MVP.
-3. Store workouts, events, projections, and notes in `this.sql`.
-4. Use `SessionManager` for the general coaching thread plus one workout thread per workout.
-5. Enable session compaction and searchable history.
-6. Keep domain tools narrow and server-side.
-7. Keep direct app actions outside the LLM tool surface.
-8. Treat Project Think as a source of primitives, not as the product architecture.
-
-This gives us the part of Cloudflare Agents that actually helps:
-
-- durable identity
-- built-in SQLite
-- persistent sessions
-- compaction
-- search
-- tool calling
-- optional real-time transport
-
-without dragging in the parts the product does not need yet.
+without forcing the workout database itself into Durable Object storage.
 
 ## Official references
 
 - Cloudflare Agents overview: https://developers.cloudflare.com/agents/
 - Agents API: https://developers.cloudflare.com/agents/api-reference/agents-api/
-- Configuration: https://developers.cloudflare.com/agents/api-reference/configuration/
+- Chat agents: https://developers.cloudflare.com/agents/api-reference/chat-agents/
 - Routing: https://developers.cloudflare.com/agents/api-reference/routing/
 - Store and sync state: https://developers.cloudflare.com/agents/api-reference/store-and-sync-state/
-- Chat agents: https://developers.cloudflare.com/agents/api-reference/chat-agents/
-- Sessions: https://developers.cloudflare.com/agents/api-reference/sessions/
-- Human in the loop: https://developers.cloudflare.com/agents/concepts/human-in-the-loop/
-- Autonomous responses: https://developers.cloudflare.com/agents/guides/autonomous-responses/
 - Using AI models: https://developers.cloudflare.com/agents/api-reference/using-ai-models/
-- Project Think blog post: https://blog.cloudflare.com/project-think/
+- D1: https://developers.cloudflare.com/d1/
+- Durable Objects: https://developers.cloudflare.com/durable-objects/
+- Project Think: https://blog.cloudflare.com/project-think/
