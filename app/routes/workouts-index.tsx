@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { defineAppEventRouteHandle } from "~/features/app-events/client";
 import { workoutListSearchSchema } from "~/features/workouts/contracts";
 import { createWorkoutRouteService } from "~/features/workouts/d1-service.server";
+import { WorkoutStatusBadge } from "~/features/workouts/workout-status-badge";
 import { getAppDatabase } from "~/lib/.server/router-context";
 
 import type { Route } from "./+types/workouts-index";
@@ -124,18 +125,17 @@ export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="font-medium text-base">{item.title}</h2>
-                    <Badge variant="outline">{item.status}</Badge>
+                    <WorkoutStatusBadge size="sm" status={item.status} />
                     <Badge variant="secondary">{item.source}</Badge>
                   </div>
                   <p className="text-muted-foreground text-sm">
                     {new Date(item.date).toLocaleDateString()} · {item.exerciseCount} exercises ·{" "}
-                    {item.counts.done} / {item.counts.total} sets confirmed
+                    {item.counts.confirmed} / {item.counts.total} sets confirmed
                   </p>
                 </div>
                 <div className="grid min-w-36 gap-1 text-right text-muted-foreground text-xs">
-                  <span>tbd: {item.counts.tbd}</span>
-                  <span>done: {item.counts.done}</span>
-                  <span>skipped: {item.counts.skipped}</span>
+                  <span>confirmed: {item.counts.confirmed}</span>
+                  <span>unconfirmed: {item.counts.unconfirmed}</span>
                   <span>v{item.version}</span>
                 </div>
               </div>
@@ -158,7 +158,7 @@ export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
               <>
                 <p className="font-medium">{activeWorkout.title}</p>
                 <p className="text-muted-foreground">
-                  {activeWorkout.counts.done} / {activeWorkout.counts.total} sets confirmed
+                  {activeWorkout.counts.confirmed} / {activeWorkout.counts.total} sets confirmed
                 </p>
                 <Button asChild size="sm">
                   <Link to={`/workouts/${activeWorkout.id}`}>Resume workout</Link>

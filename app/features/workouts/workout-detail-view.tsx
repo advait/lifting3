@@ -47,6 +47,7 @@ import type {
   WorkoutExercise,
   WorkoutSet,
 } from "./contracts";
+import { WorkoutStatusBadge } from "./workout-status-badge";
 
 const REST_TIMER_PLACEHOLDER = "02:00";
 const RPE_OPTIONS = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10] as const;
@@ -122,7 +123,6 @@ function getAvailableActions(
     "update_set_designation",
     "update_set_actuals",
     "confirm_set",
-    "skip_set",
     "add_set",
     "remove_set",
     "remove_exercise",
@@ -149,7 +149,6 @@ function getAvailableActions(
         "update_set_designation",
         "update_set_actuals",
         "confirm_set",
-        "skip_set",
         "add_set",
         "remove_set",
         "remove_exercise",
@@ -166,6 +165,10 @@ function getAvailableActions(
     default:
       return [];
   }
+}
+
+function isSetConfirmed(set: WorkoutSet) {
+  return set.confirmedAt != null;
 }
 
 function hasAction(availableActions: readonly WorkoutRouteAction[], action: WorkoutRouteAction) {
@@ -252,40 +255,12 @@ function getSetLabel(set: WorkoutSet, workingSetNumber: number) {
   return set.designation === "warmup" ? "W" : String(workingSetNumber);
 }
 
-function getWorkoutStatusClass(status: WorkoutDetailWorkout["status"]) {
-  switch (status) {
-    case "active":
-      return "border-emerald-500/25 bg-emerald-500/10 text-emerald-100";
-    case "completed":
-      return "border-sky-500/25 bg-sky-500/10 text-sky-100";
-    case "canceled":
-      return "border-rose-500/25 bg-rose-500/10 text-rose-100";
-    case "planned":
-    default:
-      return "border-border/80 bg-transparent text-muted-foreground";
-  }
-}
-
-function getWorkoutStatusLabel(status: WorkoutDetailWorkout["status"]) {
-  switch (status) {
-    case "active":
-      return "Active";
-    case "completed":
-      return "Completed";
-    case "canceled":
-      return "Canceled";
-    case "planned":
-    default:
-      return "Planned";
-  }
-}
-
 function getWorkoutDurationLabel(durationMs: number | null) {
   return durationMs == null ? "Not started" : formatDuration(durationMs);
 }
 
 const workoutMetaPillClassName =
-  "inline-flex h-7 min-w-0 items-center justify-center rounded-full border px-2.5 text-[11px] font-medium leading-none tracking-[0.08em] uppercase whitespace-nowrap";
+  "inline-flex h-7 min-w-0 items-center justify-center rounded-full border px-2.5 text-[11px] font-medium leading-none uppercase whitespace-nowrap";
 
 function getWorkoutDurationMs(workout: WorkoutDetailWorkout, nowMs: number) {
   if (!workout.startedAt) {
@@ -382,11 +357,7 @@ function WorkoutOverviewCard({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="grid grid-cols-3 gap-2">
-                <div
-                  className={cn(workoutMetaPillClassName, getWorkoutStatusClass(workout.status))}
-                >
-                  <span className="truncate">{getWorkoutStatusLabel(workout.status)}</span>
-                </div>
+                <WorkoutStatusBadge className="min-w-0" size="lg" status={workout.status} />
 
                 <div
                   className={cn(workoutMetaPillClassName, "border-border/70 text-muted-foreground")}
@@ -571,24 +542,27 @@ function SetRpeButton({
   onToggle: () => void;
   set: WorkoutSet;
 }) {
-  const isComplete = set.status === "done" && set.actual.rpe != null;
+  const isConfirmed = isSetConfirmed(set);
+  const hasConfirmedRpe = isConfirmed && set.actual.rpe != null;
 
   return (
     <Button
-      aria-label={isComplete ? `RPE ${set.actual.rpe}` : "Set incomplete"}
+      aria-label={
+        hasConfirmedRpe ? `RPE ${set.actual.rpe}` : isConfirmed ? "Set confirmed" : "Set incomplete"
+      }
       aria-pressed={isOpen}
       className={cn(
         "min-w-12 rounded-full",
         canChoose && isOpen && "border-foreground/20 bg-muted text-foreground",
-        isComplete ? "bg-emerald-600 text-white hover:bg-emerald-500" : "text-muted-foreground",
+        isConfirmed ? "bg-emerald-600 text-white hover:bg-emerald-500" : "text-muted-foreground",
       )}
       disabled={!canChoose}
       onClick={onToggle}
       size="xs"
       type="button"
-      variant={isComplete ? "default" : "outline"}
+      variant={isConfirmed ? "default" : "outline"}
     >
-      {isComplete ? set.actual.rpe : <CheckIcon />}
+      {hasConfirmedRpe ? set.actual.rpe : <CheckIcon />}
     </Button>
   );
 }
@@ -642,7 +616,7 @@ function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRo
       <td className="px-4 py-2 sm:px-2" colSpan={5}>
         <div className="flex items-center justify-center gap-1.5">
           {RPE_OPTIONS.map((value) => {
-            const isSelected = set.status === "done" && set.actual.rpe === value;
+            const isSelected = isSetConfirmed(set) && set.actual.rpe === value;
 
             return (
               <Button
@@ -823,7 +797,7 @@ function SetPickerModal({
   workout,
 }: SetPickerModalProps) {
   const canUpdateSetDesignation = hasAction(availableActions, "update_set_designation");
-  const canRemoveSet = hasAction(availableActions, "remove_set") && set.status !== "done";
+  const canRemoveSet = hasAction(availableActions, "remove_set") && !isSetConfirmed(set);
   const canSwitchToWarmup = canUpdateSetDesignation && set.designation !== "warmup";
   const canSwitchToWorking = canUpdateSetDesignation && set.designation !== "working";
 
@@ -926,8 +900,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
   const canConfirmSet = hasAction(availableActions, "confirm_set");
   const canEditExerciseNotes = hasAction(availableActions, "update_exercise_notes");
   const canRemoveExercise = hasAction(availableActions, "remove_exercise");
-  const canRemoveExerciseNow =
-    canRemoveExercise && !exercise.sets.some((set) => set.status === "done");
+  const canRemoveExerciseNow = canRemoveExercise && !exercise.sets.some(isSetConfirmed);
   const canOpenSetPicker =
     hasAction(availableActions, "update_set_designation") ||
     hasAction(availableActions, "remove_set");
@@ -1259,16 +1232,18 @@ function SessionSummarySection({ exercisesCount, progress, workout }: SessionSum
 
       <div className="mx-auto grid w-full max-w-xs grid-cols-3 gap-3 text-center">
         <div className="grid justify-items-center gap-1">
-          <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">TBD</p>
-          <p className="font-medium">{progress.tbd}</p>
+          <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">Total</p>
+          <p className="font-medium">{progress.total}</p>
         </div>
         <div className="grid justify-items-center gap-1">
-          <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">Done</p>
-          <p className="font-medium">{progress.done}</p>
+          <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">Confirmed</p>
+          <p className="font-medium">{progress.confirmed}</p>
         </div>
         <div className="grid justify-items-center gap-1">
-          <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">Skipped</p>
-          <p className="font-medium">{progress.skipped}</p>
+          <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">
+            Unconfirmed
+          </p>
+          <p className="font-medium">{progress.unconfirmed}</p>
         </div>
       </div>
 

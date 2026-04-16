@@ -36,6 +36,7 @@ import {
 import type { WorkoutAgentTarget, WorkoutListItem } from "./features/workouts/contracts";
 import { workoutListSearchSchema } from "./features/workouts/contracts";
 import { createWorkoutRouteService } from "./features/workouts/d1-service.server";
+import { WorkoutStatusBadge } from "./features/workouts/workout-status-badge";
 import { getAppDatabase } from "./lib/.server/router-context";
 import { cn } from "./lib/utils";
 import "./app.css";
@@ -233,9 +234,7 @@ function WorkoutsSidebarSection({
                 >
                   <div className="flex items-start justify-between gap-2">
                     <p className="min-w-0 flex-1 truncate font-medium text-sm">{workout.title}</p>
-                    <span className="shrink-0 text-[11px] text-muted-foreground capitalize">
-                      {workout.status}
-                    </span>
+                    <WorkoutStatusBadge className="shrink-0" size="sm" status={workout.status} />
                   </div>
                   <p className="mt-1 text-[11px] text-muted-foreground">
                     {sidebarWorkoutDateFormatter.format(new Date(workout.date))}

@@ -1,6 +1,5 @@
 import { Link } from "react-router";
 
-import { Badge } from "~/components/ui/badge";
 import {
   Card,
   CardAction,
@@ -12,6 +11,7 @@ import {
 import { defineAppEventRouteHandle } from "~/features/app-events/client";
 import { workoutListSearchSchema } from "~/features/workouts/contracts";
 import { createWorkoutRouteService } from "~/features/workouts/d1-service.server";
+import { WorkoutStatusBadge } from "~/features/workouts/workout-status-badge";
 import { getAppDatabase } from "~/lib/.server/router-context";
 
 import type { Route } from "./+types/home";
@@ -46,7 +46,7 @@ type WorkoutListItem = Route.ComponentProps["loaderData"]["items"][number];
 type WorkoutExerciseSummary = WorkoutListItem["exerciseSummaries"][number];
 
 function formatExerciseProgress(exercise: WorkoutExerciseSummary) {
-  return `${exercise.completedSetCount}/${exercise.totalSetCount} sets`;
+  return `${exercise.confirmedSetCount}/${exercise.totalSetCount} sets`;
 }
 
 function formatTopSet(topSet: WorkoutExerciseSummary["topSet"]) {
@@ -121,9 +121,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               <Card className="border-border/70 bg-card/95 pb-0 transition-[transform,box-shadow,background-color] duration-300 hover:-translate-y-0.5 hover:bg-card hover:shadow-xl hover:shadow-black/5 hover:ring-primary/20">
                 <CardHeader className="gap-3">
                   <CardAction className="flex flex-wrap gap-2">
-                    <Badge className="border-border/70 bg-background/60" variant="outline">
-                      {item.status}
-                    </Badge>
+                    <WorkoutStatusBadge size="sm" status={item.status} />
                   </CardAction>
                   <CardTitle className="pr-20">{item.title}</CardTitle>
                   <CardDescription>
