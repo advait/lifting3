@@ -9,6 +9,7 @@ The core decision is:
 - use D1 as the authoritative store for structured workout data
 - use Drizzle for D1 schema, migrations, and queries
 - use Cloudflare `AIChatAgent` for canonical conversation threads
+- use a singleton `AppEvents/default` Durable Object for best-effort live fanout
 - keep agent tools narrow and server-side
 
 This document intentionally omits features we do not plan to use in MVP:
@@ -23,11 +24,12 @@ This document intentionally omits features we do not plan to use in MVP:
 
 ## 1. Recommended architecture
 
-Use three major pieces:
+Use four major pieces:
 
 1. one shared D1 database
 2. one `GeneralCoachAgent` instance
 3. one `WorkoutCoachAgent` instance per workout
+4. one singleton `AppEvents/default` Durable Object
 
 Recommended mapping:
 
@@ -35,12 +37,14 @@ Recommended mapping:
 - workout list/history/analytics -> D1
 - general coaching thread -> `GeneralCoachAgent/default`
 - canonical workout thread -> `WorkoutCoachAgent/{workoutId}`
+- global live mutation fanout -> `AppEvents/default`
 
 This gives the app:
 
 - one conversation per agent instance, which matches `AIChatAgent`
 - normal SQL for cross-workout reads
 - no custom app-owned chat persistence layer
+- one global listener for best-effort invalidation in a single-user app
 - direct alignment with Cloudflare's documented chat-agent path
 
 ## 2. Why this is the Cloudflare happy path
@@ -63,7 +67,7 @@ It does not match the older design of one top-level `CoachAgent` that owns many 
 
 That older design is still possible, but it pushes you toward the experimental Session API and extra custom architecture. For MVP, it is the harder path.
 
-## 3. D1 vs agent storage
+## 3. D1 vs agent/event storage
 
 ### Put this in D1
 
@@ -91,6 +95,20 @@ Let `AIChatAgent` persist:
 
 Do not mirror that history into app-owned D1 `sessions` / `messages` tables in MVP.
 
+### Put this in `AppEvents/default`
+
+Use the singleton DO for:
+
+- global WebSocket listeners
+- best-effort broadcast of mutation notifications after committed writes
+- tiny ephemeral connection metadata if needed later
+
+Do not put into `AppEvents/default`:
+
+- authoritative workout state
+- queryable history
+- replayable event logs
+
 ### Use `setState()` sparingly
 
 Only use `setState()` for small live-synced state if needed later, for example:
@@ -116,7 +134,7 @@ Responsibilities:
 - workout creation
 - broad coaching discussion
 - cross-workout reasoning using D1 reads
-- patching existing workouts when needed
+- patching any workout when needed, including historical corrections
 
 ### `WorkoutCoachAgent`
 
@@ -135,6 +153,7 @@ Responsibilities:
 Important rule:
 
 - the workout's canonical conversation identity should just be `WorkoutCoachAgent/{workoutId}`
+- `WorkoutCoachAgent` is the canonical in-context thread for a workout, not the exclusive mutation owner
 - do not invent a second app-level session identity unless a later feature requires it
 
 ## 5. Chat transport
@@ -156,6 +175,14 @@ This should be the primary chat transport.
 
 The rest of the app can still use normal React Router loaders/actions for structured data screens.
 
+Use a separate global WebSocket transport for live invalidation:
+
+```text
+/events/default
+```
+
+That route should connect to the singleton `AppEvents/default` Durable Object.
+
 ## 6. Shared mutation/query layer
 
 Keep one domain service layer for workout mutations and reads.
@@ -172,6 +199,7 @@ That layer should:
 - append workout events
 - rebuild/update projections
 - reject stale writes with `VERSION_MISMATCH`
+- publish a best-effort invalidation envelope to `AppEvents/default` after commit
 
 The important architectural rule is:
 
@@ -196,6 +224,7 @@ Typical usage:
 
 - `WorkoutCoachAgent` usually patches its own workout
 - `GeneralCoachAgent` may patch any existing workout after loading the latest snapshot
+- cross-workout correction requests from `GeneralCoachAgent` should still decompose into one guarded patch per target workout
 
 Define tools inside `onChatMessage()` with AI SDK `tool()`.
 
@@ -267,12 +296,15 @@ There is no automatic single transaction spanning:
 
 - AIChatAgent message persistence in Durable Object storage
 - D1 workout mutation
+- `AppEvents/default` notification broadcast
 
 Design implications:
 
 - mutation handlers must be idempotent
-- the event log should be the source of truth for what committed
+- D1 state plus persisted `workout_events` should be the source of truth for what committed
+- live broadcast is best-effort and non-authoritative
 - the UI should prefer committed workout state over optimistic chat assumptions
+- WebSocket listeners should treat notifications as invalidation hints and refetch from D1-backed reads
 
 ## 9. Context assembly
 
@@ -385,7 +417,8 @@ Wrangler will need at minimum:
 - `nodejs_compat`
 - a D1 binding, for example `DB`
 - Durable Object bindings for `GeneralCoachAgent` and `WorkoutCoachAgent`
-- `new_sqlite_classes` migrations for both agent classes
+- a Durable Object binding for `AppEvents`
+- migration entries for all three Durable Object classes
 - optionally an `AI` binding if using Workers AI
 
 Illustrative shape:
@@ -407,13 +440,18 @@ Illustrative shape:
   "durable_objects": {
     "bindings": [
       { "name": "GeneralCoachAgent", "class_name": "GeneralCoachAgent" },
-      { "name": "WorkoutCoachAgent", "class_name": "WorkoutCoachAgent" }
+      { "name": "WorkoutCoachAgent", "class_name": "WorkoutCoachAgent" },
+      { "name": "AppEvents", "class_name": "AppEvents" }
     ]
   },
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["GeneralCoachAgent", "WorkoutCoachAgent"]
+      "new_sqlite_classes": [
+        "GeneralCoachAgent",
+        "WorkoutCoachAgent",
+        "AppEvents"
+      ]
     }
   ],
   "observability": { "enabled": true }
@@ -436,14 +474,16 @@ For `lifting3`, the Cloudflare-native architecture should be:
 2. Drizzle for D1 schema, migrations, and queries.
 3. `GeneralCoachAgent/default` for the general coach thread.
 4. `WorkoutCoachAgent/{workoutId}` for the canonical workout thread.
-5. Direct chat via `routeAgentRequest()` and `useAgentChat()`.
-6. Shared D1-backed domain services used by both UI actions and agent tools.
+5. `AppEvents/default` as a singleton WebSocket fanout hub for best-effort invalidation.
+6. Direct chat via `routeAgentRequest()` and `useAgentChat()`.
+7. Shared D1-backed domain services used by both UI actions and agent tools.
 
 That gives you the part of Cloudflare that helps most:
 
 - built-in durable chat runtime
 - direct conversation routing
 - DO-backed message persistence
+- one global live notification channel for a single-user app
 - resumable streams
 - ordinary SQL for app data
 - clean cross-workout querying

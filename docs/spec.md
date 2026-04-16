@@ -17,7 +17,7 @@ The core product bet is:
 
 - structured workout state is the source of truth
 - conversations are persistent and useful, but advisory
-- all edits, whether manual or agent-authored, flow through a single authoritative event log
+- all committed edits, whether manual or agent-authored, flow through one authoritative mutation pipeline that appends persisted workout events and may emit live notifications
 
 ## 2. Goals
 
@@ -415,6 +415,11 @@ Each event includes:
 - `source_message_id` nullable
 - `created_at`
 
+Semantics:
+
+- `workout_events` is persisted domain history in D1
+- live notifications may forward event metadata through `AppEvents/default`, but those broadcasts are non-authoritative and replay is not required in MVP
+
 ## 8. Conversations and Workouts
 
 ## 8.1 Conversation Runtime Model
@@ -443,6 +448,8 @@ In MVP, the canonical workout conversation is the `WorkoutCoachAgent` instance w
 - the workout detail screen opens `WorkoutCoachAgent/{workout.id}`
 - the general coach screen opens `GeneralCoachAgent/default`
 - workout mutations may carry `source_message_id`
+- `GeneralCoachAgent` may patch any workout, including historical corrections, through the same guarded mutation service layer as the workout-specific agent
+- `WorkoutCoachAgent` remains the canonical in-context conversation for one workout, not the exclusive mutation owner
 - the general coaching thread can create workouts, discuss history, and compare plans across workouts
 - workout history and analytics live in D1, not in agent message history
 
@@ -490,6 +497,7 @@ Responsibilities of agents:
 - streaming chat
 - tool execution
 - in-context reasoning over assembled workout/history context
+- issuing guarded mutations through the shared D1-backed domain service layer
 
 Agents are not the authoritative database for workout facts.
 
@@ -497,14 +505,45 @@ Agents are not the authoritative database for workout facts.
 
 - D1 via Drizzle for authoritative structured data
 - agent-owned Durable Object storage for chat messages and runtime state
+- singleton `AppEvents/default` Durable Object for global live notification fanout
 - optional `setState()` for small live-synced UI state if needed later
 
 Important rule:
 
 - cross-workout screens must read from D1
+- live notification payloads are invalidation hints, not authoritative state
+- one global listener is acceptable in MVP because the app is single-user
 - MVP must not fan out across many workout agents at request time to build history or analytics
 
-## 9.4 Materialized Views / Projections
+## 9.4 Live Notification Fanout
+
+Use a singleton `AppEvents/default` Durable Object as the app's live notification hub.
+
+Responsibilities:
+
+- keep track of active WebSocket listeners
+- broadcast best-effort mutation notifications after committed writes
+- optionally hold tiny connection-scoped ephemeral state if needed later
+
+Non-responsibilities:
+
+- it is not an authoritative store for workout state
+- it does not replace D1 reads
+- it does not need replayable event history in MVP
+
+Recommended notification envelope:
+
+- `type`
+- `workout_id`
+- `version`
+- `event_id`
+- `invalidate[]`
+
+Client rule:
+
+- treat a notification as a signal to refetch D1-backed data, not as committed truth by itself
+
+## 9.5 Materialized Views / Projections
 
 At minimum:
 
@@ -958,7 +997,6 @@ These are deterministic mutations from UI controls:
 - `update_workout_notes`
 - `update_exercise_notes`
 - `finish_workout`
-- `undo_last_event`
 
 These may still use the same backend mutation pipeline, but they are not part of the model's exposed tool surface.
 
@@ -1002,6 +1040,7 @@ Typical usage:
 
 - `WorkoutCoachAgent` usually patches its own workout
 - `GeneralCoachAgent` may patch any existing workout after loading the latest snapshot
+- `GeneralCoachAgent` may issue historical correction flows across multiple past workouts, but each committed patch still targets one workout and one expected version at a time
 
 Inputs:
 
@@ -1082,6 +1121,20 @@ Examples:
 
 - removing an exercise with logged sets becomes "skip remaining" or "replace remaining"
 - removing a completed set becomes a correction flow
+
+## 16.5 Live Sync Behavior
+
+After a committed mutation:
+
+- the shared mutation pipeline updates D1 state
+- appends a `workout_events` row in D1
+- then emits a best-effort notification to `AppEvents/default`
+
+Notification delivery is advisory:
+
+- clients must refetch authoritative state from D1-backed loaders or queries
+- clients must not treat the notification payload as the source of truth
+- missed notifications are acceptable because the next refetch recovers the latest committed state
 
 ## 17. PR Detection and Celebration
 
@@ -1214,6 +1267,7 @@ Not final, but the boundaries should look like this:
 - `GET /api/workouts/:id`
 - `POST /api/workouts`
 - `POST /api/workouts/:id/events`
+- `GET/WS /events/default`
 - `GET/WS /agents/general-coach/default`
 - `GET/WS /agents/workout-coach/:workoutId`
 
@@ -1243,6 +1297,7 @@ MVP must include:
 - start and complete a live workout
 - fast set logging
 - clear `tbd` vs `done` state
+- global live notification fanout via singleton `AppEvents/default`
 - canonical `WorkoutCoachAgent` on workout detail
 - long-lived `GeneralCoachAgent` thread
 - minimal analytics
