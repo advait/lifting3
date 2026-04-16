@@ -96,27 +96,10 @@ This repo is intentionally single-user for now and assumes perimeter access thro
 
 The default local URL is `http://localhost:43110`.
 
-## Commands
-
-```bash
-pnpm dev
-pnpm build
-pnpm preview
-pnpm deploy
-pnpm check
-pnpm fix
-pnpm typecheck
-pnpm test
-pnpm db:migrate:local
-pnpm db:migrate:remote
-pnpm db:seed:local
-pnpm db:seed:remote
-pnpm validate:workout-interchange -- <path>
-pnpm verify:lifting2-exercises
 ```
 
 ## Reference Docs
 
 - [docs/spec.md](docs/spec.md) - product and architecture spec
-- [docs/hevy-app.md](docs/hevy-app.md) - interaction and UX reference notes
 - [docs/cloudflare-agents.md](docs/cloudflare-agents.md) - Cloudflare architecture guidance for D1, Drizzle, and Agents
+```
