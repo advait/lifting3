@@ -400,21 +400,32 @@ function SetRpeButton({ set }: { set: WorkoutSet }) {
   );
 }
 
-interface SetWeightCellProps {
+interface EditableSetNumberCellProps {
   editAction: "update_set_actuals" | "update_set_planned" | null;
+  fieldName: "reps" | "weightLbs";
+  inputMode: "decimal" | "numeric";
   exerciseId: string;
   set: WorkoutSet;
+  step?: "0.5" | "1";
   workout: WorkoutDetailWorkout;
 }
 
-function SetWeightCell({ editAction, exerciseId, set, workout }: SetWeightCellProps) {
+function EditableSetNumberCell({
+  editAction,
+  exerciseId,
+  fieldName,
+  inputMode,
+  set,
+  step = "1",
+  workout,
+}: EditableSetNumberCellProps) {
   const fetcher = useFetcher();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [draftValue, setDraftValue] = useState("");
   const [didSubmit, setDidSubmit] = useState(false);
-  const displayValue = set.actual.weightLbs ?? set.planned.weightLbs;
-  const weightFieldName = "weightLbs";
+  const displayValue = set.actual[fieldName] ?? set.planned[fieldName];
+  const pattern = inputMode === "numeric" ? "[0-9]*" : "[0-9]*[.]?[0-9]*";
 
   useEffect(() => {
     if (!isEditing) {
@@ -455,7 +466,7 @@ function SetWeightCell({ editAction, exerciseId, set, workout }: SetWeightCellPr
         exerciseId,
         expectedVersion: String(workout.version),
         setId: set.id,
-        [weightFieldName]: draftValue,
+        [fieldName]: draftValue,
         workoutId: workout.id,
       },
       { method: "post" },
@@ -497,8 +508,8 @@ function SetWeightCell({ editAction, exerciseId, set, workout }: SetWeightCellPr
         autoComplete="off"
         className="h-8 w-full rounded-md border border-border/70 bg-background px-1 text-center outline-none"
         enterKeyHint="done"
-        inputMode="decimal"
-        name={weightFieldName}
+        inputMode={inputMode}
+        name={fieldName}
         onBlur={submitValue}
         onChange={(event) => {
           setDraftValue(event.target.value);
@@ -515,10 +526,10 @@ function SetWeightCell({ editAction, exerciseId, set, workout }: SetWeightCellPr
             setIsEditing(false);
           }
         }}
-        pattern="[0-9]*[.]?[0-9]*"
+        pattern={pattern}
         ref={inputRef}
-        step="0.5"
-        type="number"
+        step={step}
+        type="text"
         value={draftValue}
       />
     </fetcher.Form>
@@ -776,15 +787,26 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
                     {formatSetPerformance(set.previous)}
                   </td>
                   <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                    <SetWeightCell
+                    <EditableSetNumberCell
                       editAction={setWeightEditAction}
                       exerciseId={exercise.id}
+                      fieldName="weightLbs"
+                      inputMode="decimal"
                       set={set}
+                      step="0.5"
                       workout={workout}
                     />
                   </td>
                   <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                    {formatOptionalValue(set.actual.reps ?? set.planned.reps)}
+                    <EditableSetNumberCell
+                      editAction={setWeightEditAction}
+                      exerciseId={exercise.id}
+                      fieldName="reps"
+                      inputMode="numeric"
+                      set={set}
+                      step="1"
+                      workout={workout}
+                    />
                   </td>
                   <td className="px-2 py-2 text-center pr-4 sm:px-2 sm:pr-2">
                     <SetRpeButton set={set} />
