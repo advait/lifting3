@@ -1,5 +1,7 @@
 import { tool } from "ai";
 
+import { createSettingsService } from "~/features/settings/d1-service.server";
+import { setUserProfileToolInputSchema } from "~/features/settings/agent-tools";
 import type { AppDatabase } from "~/lib/.server/db";
 import {
   createWorkoutToolInputSchema,
@@ -53,5 +55,16 @@ export function createCreateWorkoutTool(db: AppDatabase) {
       "Create a new planned workout. Use this from the general coach when the user asks for a new session or a day adapted from a prior workout.",
     execute: async (input) => workoutToolService.createWorkout(input),
     inputSchema: createWorkoutToolInputSchema,
+  });
+}
+
+export function createSetUserProfileTool(db: AppDatabase) {
+  const settingsService = createSettingsService(db);
+
+  return tool({
+    description:
+      "Save or replace the persistent user profile used in future chats. Use this for durable goals, constraints, injuries, schedule, equipment, preferences, or other standing context. Pass null to clear the saved profile.",
+    execute: async (input) => settingsService.setUserProfile(input.userProfile),
+    inputSchema: setUserProfileToolInputSchema,
   });
 }

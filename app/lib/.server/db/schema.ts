@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
+import { APP_SETTING_KEYS } from "../../../features/settings/contracts.ts";
 import { EXERCISE_SCHEMA_IDS } from "../../../features/exercises/schema.ts";
 import { SET_KINDS, WORKOUT_STATUSES } from "../../../features/workouts/interchange.ts";
 
@@ -33,6 +34,18 @@ export const workouts = sqliteTable(
     index("workouts_source_idx").on(table.source),
     index("workouts_updated_at_idx").on(table.updatedAt),
   ],
+);
+
+/** Simple key/value app settings that persist durable user-level defaults outside a workout. */
+export const appSettings = sqliteTable(
+  "app_settings",
+  {
+    key: text("key", { enum: APP_SETTING_KEYS }).primaryKey(),
+    value: text("value").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [index("app_settings_updated_at_idx").on(table.updatedAt)],
 );
 
 /**
@@ -109,6 +122,8 @@ export const exerciseSetsRelations = relations(exerciseSets, ({ one }) => ({
 
 export type WorkoutRow = typeof workouts.$inferSelect;
 export type NewWorkoutRow = typeof workouts.$inferInsert;
+export type AppSettingRow = typeof appSettings.$inferSelect;
+export type NewAppSettingRow = typeof appSettings.$inferInsert;
 export type WorkoutExerciseRow = typeof workoutExercises.$inferSelect;
 export type NewWorkoutExerciseRow = typeof workoutExercises.$inferInsert;
 export type ExerciseSetRow = typeof exerciseSets.$inferSelect;

@@ -1,5 +1,6 @@
 import { AIChatAgent } from "@cloudflare/ai-chat";
 import { convertToModelMessages, stepCountIs, streamText } from "ai";
+import { createSettingsService } from "~/features/settings/d1-service.server";
 import { createWorkoutRouteService } from "~/features/workouts/d1-service.server";
 import type {
   WorkoutDetailLoaderData,
@@ -9,13 +10,18 @@ import type {
 import { WorkoutNotFoundError } from "~/features/workouts/service";
 import { createAppDatabase } from "~/lib/.server/db";
 import {
-  DEFAULT_AI_GATEWAY_ID,
   buildExerciseCatalogPrompt,
+  buildUserProfilePrompt,
   createCoachLanguageModel,
+  createErrorAwareChatResponse,
+  createErrorChatResponse,
   createStaticChatResponse,
-  getLatestUserText,
 } from "./coach-agent-helpers";
-import { createPatchWorkoutTool, createQueryHistoryTool } from "./coach-agent-tools";
+import {
+  createPatchWorkoutTool,
+  createQueryHistoryTool,
+  createSetUserProfileTool,
+} from "./coach-agent-tools";
 
 const EXERCISE_SUMMARY_LIMIT = 6;
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -79,46 +85,6 @@ function summarizeExercise(exercise: WorkoutExercise) {
     .join(", ");
 }
 
-function buildWorkoutCoachFallbackReply(
-  loaderData: WorkoutDetailLoaderData,
-  latestUserText: string | null,
-) {
-  const nextOpenSet = findNextOpenSet(loaderData);
-  const exerciseLines = loaderData.exercises
-    .slice(0, EXERCISE_SUMMARY_LIMIT)
-    .map((exercise) => `- ${summarizeExercise(exercise)}`);
-  const notes = [loaderData.workout.coachNotes, loaderData.workout.userNotes]
-    .flatMap((note) => {
-      const trimmedNote = note?.trim();
-
-      return trimmedNote ? [trimmedNote] : [];
-    })
-    .join(" | ");
-  const nextSetLine = nextOpenSet
-    ? `Next open set: ${nextOpenSet.exercise.displayName} -> ${formatSetValues(nextOpenSet.set)}.`
-    : "No open sets remain in this workout.";
-
-  return [
-    `Workout Coach is attached to "${loaderData.workout.title}" (${loaderData.workout.id}).`,
-    `AI Gateway inference is unavailable, so this reply is using the deterministic fallback for gateway "${DEFAULT_AI_GATEWAY_ID}". Server-side workout tools are unavailable in this mode.`,
-    "",
-    `Status: ${loaderData.workout.status}. Date: ${dateFormatter.format(new Date(loaderData.workout.date))}.`,
-    `Progress: ${loaderData.progress.confirmed} confirmed, ${loaderData.progress.unconfirmed} unconfirmed across ${loaderData.progress.total} sets.`,
-    nextSetLine,
-    notes.length > 0 ? `Notes: ${notes}` : null,
-    "",
-    "Exercise snapshot:",
-    ...exerciseLines,
-    loaderData.exercises.length > EXERCISE_SUMMARY_LIMIT
-      ? `- ${loaderData.exercises.length - EXERCISE_SUMMARY_LIMIT} more exercises not shown in this summary.`
-      : null,
-    latestUserText ? "" : null,
-    latestUserText ? `Last user message: ${latestUserText}` : null,
-  ]
-    .filter((line) => line !== null)
-    .join("\n");
-}
-
 function buildWorkoutPatchReference(loaderData: WorkoutDetailLoaderData) {
   return loaderData.exercises
     .map((exercise) => [
@@ -132,7 +98,10 @@ function buildWorkoutPatchReference(loaderData: WorkoutDetailLoaderData) {
     .join("\n");
 }
 
-function buildWorkoutCoachSystemPrompt(loaderData: WorkoutDetailLoaderData) {
+function buildWorkoutCoachSystemPrompt(
+  loaderData: WorkoutDetailLoaderData,
+  userProfile: string | null,
+) {
   const nextOpenSet = findNextOpenSet(loaderData);
   const exerciseLines = loaderData.exercises
     .slice(0, EXERCISE_SUMMARY_LIMIT)
@@ -152,6 +121,8 @@ function buildWorkoutCoachSystemPrompt(loaderData: WorkoutDetailLoaderData) {
     "Use patch_workout for workout edits and query_history for structured comparisons.",
     "Do not claim that workout data changed unless patch_workout returned ok: true.",
     "If patch_workout returns ok: false with VERSION_MISMATCH, explain that the workout changed and the user should retry after refresh.",
+    "",
+    buildUserProfilePrompt(userProfile),
     "",
     `Workout: ${loaderData.workout.title} (${loaderData.workout.id})`,
     `Version: ${loaderData.workout.version}`,
@@ -193,15 +164,13 @@ export class WorkoutCoachAgent extends AIChatAgent<Env> {
     onFinish: Parameters<AIChatAgent<Env>["onChatMessage"]>[0],
     options: Parameters<AIChatAgent<Env>["onChatMessage"]>[1],
   ) {
-    const latestUserText = getLatestUserText(this.messages);
-
     try {
-      const loaderData = await createWorkoutRouteService(
-        createAppDatabase(this.env),
-      ).loadWorkoutDetail({ workoutId: this.name });
       const db = createAppDatabase(this.env);
-
-      const fallbackReply = buildWorkoutCoachFallbackReply(loaderData, latestUserText);
+      const settingsService = createSettingsService(db);
+      const [loaderData, userProfile] = await Promise.all([
+        createWorkoutRouteService(db).loadWorkoutDetail({ workoutId: this.name }),
+        settingsService.loadUserProfile(),
+      ]);
 
       try {
         const result = streamText({
@@ -210,26 +179,36 @@ export class WorkoutCoachAgent extends AIChatAgent<Env> {
           model: createCoachLanguageModel(this.env),
           onFinish,
           stopWhen: stepCountIs(5),
-          system: buildWorkoutCoachSystemPrompt(loaderData),
+          system: buildWorkoutCoachSystemPrompt(loaderData, userProfile),
           tools: {
             patch_workout: createPatchWorkoutTool(db, this.name),
             query_history: createQueryHistoryTool(db),
+            set_user_profile: createSetUserProfileTool(db),
           },
         });
 
-        return result.toUIMessageStreamResponse({
-          originalMessages: this.messages,
+        return createErrorAwareChatResponse({
+          logPrefix: "[WorkoutCoachAgent] Streaming inference failed:",
+          messages: this.messages,
+          stream: result.toUIMessageStream(),
         });
       } catch (error) {
-        console.error("[WorkoutCoachAgent] Streaming inference failed:", error);
-        return createStaticChatResponse(this.messages, fallbackReply);
+        return createErrorChatResponse({
+          error,
+          logPrefix: "[WorkoutCoachAgent] Streaming inference failed:",
+          messages: this.messages,
+        });
       }
     } catch (error) {
       if (error instanceof WorkoutNotFoundError) {
         return createStaticChatResponse(this.messages, `I could not find workout "${this.name}".`);
       }
 
-      throw error;
+      return createErrorChatResponse({
+        error,
+        logPrefix: "[WorkoutCoachAgent] Failed to prepare workout context:",
+        messages: this.messages,
+      });
     }
   }
 }
