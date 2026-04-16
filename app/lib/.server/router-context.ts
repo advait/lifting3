@@ -4,7 +4,7 @@ import { createAppDatabase, type AppDatabase } from "./db/index.ts";
 
 /** Carries the Cloudflare request primitives through RR7 middleware, loaders, and actions. */
 export interface AppRequestContext {
-  db: AppDatabase | null;
+  db: AppDatabase;
   env: Env;
   executionContext: ExecutionContext;
 }
@@ -12,7 +12,7 @@ export interface AppRequestContext {
 type RouterContextReader = Pick<RouterContextProvider, "get">;
 
 export const appRequestContext = createContext<AppRequestContext>();
-export const appDatabaseContext = createContext<AppDatabase | null>();
+export const appDatabaseContext = createContext<AppDatabase>();
 export const cloudflareEnvContext = createContext<Env>();
 export const executionContextContext = createContext<ExecutionContext>();
 
@@ -39,20 +39,8 @@ export const createAppRouterContext = (
 export const getAppRequestContext = (context: RouterContextReader): AppRequestContext =>
   context.get(appRequestContext);
 
-export const getOptionalAppDatabase = (context: RouterContextReader): AppDatabase | null =>
+export const getAppDatabase = (context: RouterContextReader): AppDatabase =>
   context.get(appDatabaseContext);
-
-export const getAppDatabase = (context: RouterContextReader): AppDatabase => {
-  const db = context.get(appDatabaseContext);
-
-  if (db === null) {
-    throw new Error(
-      "D1 database binding is not configured in router context. Add `DB` to wrangler.jsonc before using the app database.",
-    );
-  }
-
-  return db;
-};
 
 export const getCloudflareEnv = (context: RouterContextReader): Env =>
   context.get(cloudflareEnvContext);

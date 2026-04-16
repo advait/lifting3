@@ -3,6 +3,15 @@
   "name": "lifting3",
   "compatibility_date": "2026-04-16",
   "main": "./workers/app.ts",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lifting3",
+      "database_id": "fc6b0e66-4f5e-4838-9e89-b0a96e1c51be",
+      "preview_database_id": "fc6b0e66-4f5e-4838-9e89-b0a96e1c51be",
+      "migrations_dir": "./drizzle"
+    }
+  ],
   "observability": {
     "enabled": true,
   },

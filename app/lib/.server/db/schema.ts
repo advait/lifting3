@@ -8,12 +8,12 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
-import { EXERCISE_SCHEMA_IDS } from "~/features/exercises/schema.ts";
+import { EXERCISE_SCHEMA_IDS } from "../../../features/exercises/schema.ts";
 import {
   SET_KINDS,
   SET_STATUSES,
   WORKOUT_STATUSES,
-} from "~/features/workouts/interchange.ts";
+} from "../../../features/workouts/interchange.ts";
 
 const WORKOUT_SOURCES = ["manual", "imported", "agent"] as const;
 const EXERCISE_STATUSES = [
