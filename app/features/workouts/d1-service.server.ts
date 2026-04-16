@@ -61,6 +61,7 @@ type CreateWorkoutToolResult =
       invalidate: ReturnType<typeof uniqueInvalidateKeys>;
       ok: true;
       title: string;
+      version: number;
       workoutId: string;
       workoutUrl: string;
     }
@@ -2214,6 +2215,7 @@ export function createWorkoutAgentToolService(db: AppDatabase) {
         ),
         ok: true,
         title: record.workout.title,
+        version: record.workout.version,
         workoutId: record.workout.id,
         workoutUrl: `/workouts/${record.workout.id}`,
       };

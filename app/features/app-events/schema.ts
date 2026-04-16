@@ -5,6 +5,7 @@ const versionSchema = z.int().nonnegative();
 
 export const WORKOUT_EVENT_TYPES = [
   "workout_created",
+  "workout_updated",
   "workout_deleted",
   "workout_started",
   "exercise_added",

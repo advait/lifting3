@@ -1,4 +1,5 @@
 import {
+  getToolCallId,
   getToolApproval,
   getToolInput,
   getToolOutput,
@@ -21,10 +22,13 @@ import {
   XIcon,
 } from "lucide-react";
 import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
+import { Streamdown } from "streamdown";
 
 import { LocalDateTime } from "~/components/local-date-time";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { publishAppEvent } from "~/features/app-events/client";
+import { type AppEventEnvelope, appInvalidateKeySchema } from "~/features/app-events/schema";
 import type { WorkoutAgentTarget } from "~/features/workouts/contracts";
 import { cn } from "~/lib/utils";
 
@@ -46,14 +50,67 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function parseInvalidateKeys(value: unknown) {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null;
+  }
+
+  const parsedKeys = value.flatMap((item) => {
+    const parsedKey = appInvalidateKeySchema.safeParse(item);
+
+    return parsedKey.success ? [parsedKey.data] : [];
+  });
+
+  return parsedKeys.length === value.length ? parsedKeys : null;
+}
+
+function parseToolMutationEnvelope(
+  toolName: string,
+  toolCallId: string,
+  output: unknown,
+): AppEventEnvelope | null {
+  if (!isRecord(output) || output.ok !== true) {
+    return null;
+  }
+
+  const invalidate = parseInvalidateKeys(output.invalidate);
+  const workoutId = typeof output.workoutId === "string" ? output.workoutId : null;
+  const version = typeof output.version === "number" ? output.version : null;
+
+  if (!invalidate || !workoutId || version == null) {
+    return null;
+  }
+
+  switch (toolName) {
+    case "create_workout":
+      return {
+        eventId: `${workoutId}-v${version}-workout_created-${toolCallId}`,
+        invalidate,
+        type: "workout_created",
+        version,
+        workoutId,
+      };
+    case "patch_workout":
+      return {
+        eventId: `${workoutId}-v${version}-workout_updated-${toolCallId}`,
+        invalidate,
+        type: "workout_updated",
+        version,
+        workoutId,
+      };
+    default:
+      return null;
+  }
+}
+
 function getTextPartText(part: CoachMessagePart) {
   if (part.type !== "text") {
     return null;
   }
 
-  const text = part.text.trim();
+  const text = part.text;
 
-  return text.length > 0 ? text : null;
+  return text.trim().length > 0 ? text : null;
 }
 
 function getToolLabel(toolName: string) {
@@ -584,12 +641,24 @@ function ToolPartCard({
 
 function renderMessagePart(
   onApprovalResponse: (approvalId: string, approved: boolean) => void,
+  options: {
+    isAnimating: boolean;
+    role: UIMessage["role"];
+  },
   part: CoachMessagePart,
   key: string,
 ) {
   const text = getTextPartText(part);
 
   if (text) {
+    if (options.role === "assistant") {
+      return (
+        <Streamdown className="text-sm leading-relaxed" isAnimating={options.isAnimating} key={key}>
+          {text}
+        </Streamdown>
+      );
+    }
+
     return (
       <p className="whitespace-pre-wrap" key={key}>
         {text}
@@ -656,6 +725,9 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
   const dragStartYRef = useRef<number | null>(null);
   const didDragRef = useRef(false);
   const discussionEndRef = useRef<HTMLDivElement | null>(null);
+  const observedToolStatesRef = useRef<Map<string, ReturnType<typeof getToolPartState>>>(new Map());
+  const publishedToolEventIdsRef = useRef<Set<string>>(new Set());
+  const hasObservedLiveAgentActivityRef = useRef(false);
   const agent = useAgent({
     agent: agentConfig.agent,
     enabled: isOpen,
@@ -682,6 +754,43 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
     setDraft("");
     clearError();
   });
+  const publishToolMutationEvents = useEffectEvent((nextMessages: readonly UIMessage[]) => {
+    const nextObservedToolStates = new Map<string, ReturnType<typeof getToolPartState>>();
+
+    for (const message of nextMessages) {
+      for (const part of message.parts) {
+        if (!isToolUIPart(part)) {
+          continue;
+        }
+
+        const toolCallId = getToolCallId(part);
+        const toolState = getToolPartState(part);
+        const previousToolState = observedToolStatesRef.current.get(toolCallId);
+        const shouldPublishFromTransition =
+          toolState === "complete" &&
+          (previousToolState != null
+            ? previousToolState !== "complete"
+            : hasObservedLiveAgentActivityRef.current);
+
+        if (shouldPublishFromTransition) {
+          const envelope = parseToolMutationEnvelope(
+            getToolName(part),
+            toolCallId,
+            getToolOutput(part),
+          );
+
+          if (envelope && !publishedToolEventIdsRef.current.has(envelope.eventId)) {
+            publishedToolEventIdsRef.current.add(envelope.eventId);
+            publishAppEvent(envelope);
+          }
+        }
+
+        nextObservedToolStates.set(toolCallId, toolState);
+      }
+    }
+
+    observedToolStatesRef.current = nextObservedToolStates;
+  });
 
   const scrollDiscussionToTail = () => {
     discussionEndRef.current?.scrollIntoView({
@@ -691,7 +800,18 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
 
   useEffect(() => {
     resetThreadState();
+    observedToolStatesRef.current = new Map();
+    publishedToolEventIdsRef.current = new Set();
+    hasObservedLiveAgentActivityRef.current = false;
   }, [threadKey]);
+
+  useEffect(() => {
+    if (isBusy) {
+      hasObservedLiveAgentActivityRef.current = true;
+    }
+
+    publishToolMutationEvents(messages);
+  }, [isBusy, messages]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -723,6 +843,9 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
     void stop();
     clearError();
     clearHistory();
+    observedToolStatesRef.current = new Map();
+    publishedToolEventIdsRef.current = new Set();
+    hasObservedLiveAgentActivityRef.current = false;
     setDraft("");
   };
   const activityStatusLabel = isSubmitting
@@ -865,11 +988,19 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
                 </div>
               ) : (
                 visibleMessages.map((message) => {
+                  const isAnimatingAssistantMessage =
+                    message.role === "assistant" &&
+                    isStreaming &&
+                    message.id === visibleMessages.at(-1)?.id;
                   const renderedParts = message.parts
                     .map((part, index) =>
                       renderMessagePart(
                         (approvalId, approved) => {
                           addToolApprovalResponse({ approved, id: approvalId });
+                        },
+                        {
+                          isAnimating: isAnimatingAssistantMessage,
+                          role: message.role,
                         },
                         part,
                         `${message.id}:${part.type}:${index}`,
