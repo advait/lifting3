@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import { appInvalidateKeySchema, workoutEventTypeSchema } from "../app-events/schema.ts";
-import { EXERCISE_SCHEMA_IDS } from "../exercises/schema.ts";
 import { SET_KINDS } from "./interchange.ts";
 
 export const WORKOUT_ROUTE_ACTIONS = [
@@ -21,7 +20,6 @@ const nonEmptyStringSchema = z.string().trim().min(1);
 const nonNegativeIntegerSchema = z.int().nonnegative();
 const isoDateTimeSchema = z.iso.datetime({ offset: true });
 const nullableTrimmedStringSchema = z.string().trim().min(1).nullable();
-const exerciseSchemaIdSchema = z.enum(EXERCISE_SCHEMA_IDS);
 const setKindSchema = z.enum(SET_KINDS);
 const workoutRouteActionSchema = z.enum(WORKOUT_ROUTE_ACTIONS);
 
