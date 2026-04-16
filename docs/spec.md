@@ -197,6 +197,8 @@ Derived progress views.
 - available equipment
 - unit preferences
 - default progression preferences
+- global model preference stored as a Cloudflare AI Gateway model ID
+- default model value: `openai/gpt-5.4`
 - note on imported workout sources
 
 ## 6.4 Navigation Model
@@ -491,6 +493,13 @@ Use Cloudflare `AIChatAgent` as the conversation/runtime layer:
 - `GeneralCoachAgent/default` for long-lived general coaching
 - `WorkoutCoachAgent/{workout.id}` for the canonical workout thread
 
+Model selection rule:
+
+- store one global model preference in user settings
+- use the exact Cloudflare AI Gateway model ID string
+- default it to `openai/gpt-5.4`
+- do not introduce app-level model aliases in MVP
+
 Responsibilities of agents:
 
 - message persistence for their conversation
@@ -522,14 +531,17 @@ Use a singleton `AppEvents/default` Durable Object as the app's live notificatio
 Responsibilities:
 
 - keep track of active WebSocket listeners
-- broadcast best-effort mutation notifications after committed writes
-- optionally hold tiny connection-scoped ephemeral state if needed later
+- broadcast best-effort mutation notifications after every committed persisted mutation
+- remain stateless with respect to app data, aside from transient connection bookkeeping needed for fanout
 
 Non-responsibilities:
 
 - it is not an authoritative store for workout state
 - it does not replace D1 reads
 - it does not need replayable event history in MVP
+- it does not persist durable app state, event backlogs, or read models
+
+The notification envelope should be validated by a shared Zod schema in code.
 
 Recommended notification envelope:
 
@@ -538,6 +550,14 @@ Recommended notification envelope:
 - `version`
 - `event_id`
 - `invalidate[]`
+
+Recommended invalidation keys include at minimum:
+
+- `home`
+- `workouts:list`
+- `workout:{workout_id}`
+- `analytics`
+- `exercise:{exercise_schema_id}`
 
 Client rule:
 
@@ -661,6 +681,7 @@ Rules:
 - Ultracite
 - Cloudflare Workers
 - Cloudflare D1
+- Cloudflare AI Gateway
 - Drizzle ORM
 - Cloudflare Agents SDK
 - `AIChatAgent`
@@ -1000,6 +1021,10 @@ These are deterministic mutations from UI controls:
 
 These may still use the same backend mutation pipeline, but they are not part of the model's exposed tool surface.
 
+If a direct app action persists to D1, it also participates in cross-tab live sync.
+
+This includes lightweight persisted changes such as `draft_set_fields`.
+
 ## 15.2 Context Assembly (Not Tools)
 
 Before the model runs, the relevant agent should assemble context by reading D1 and derived read models:
@@ -1041,6 +1066,12 @@ Typical usage:
 - `WorkoutCoachAgent` usually patches its own workout
 - `GeneralCoachAgent` may patch any existing workout after loading the latest snapshot
 - `GeneralCoachAgent` may issue historical correction flows across multiple past workouts, but each committed patch still targets one workout and one expected version at a time
+
+For a multi-workout correction request:
+
+- the system may partially succeed
+- the response should include an explicit per-workout result summary
+- one failed workout must not roll back unrelated successful corrections in MVP
 
 Inputs:
 
@@ -1129,6 +1160,8 @@ After a committed mutation:
 - the shared mutation pipeline updates D1 state
 - appends a `workout_events` row in D1
 - then emits a best-effort notification to `AppEvents/default`
+
+This applies to all persisted changes, including lightweight draft-state mutations such as `draft_set_fields`.
 
 Notification delivery is advisory:
 

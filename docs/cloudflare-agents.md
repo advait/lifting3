@@ -9,6 +9,7 @@ The core decision is:
 - use D1 as the authoritative store for structured workout data
 - use Drizzle for D1 schema, migrations, and queries
 - use Cloudflare `AIChatAgent` for canonical conversation threads
+- use one global user-selected AI Gateway model ID for inference, defaulting to `openai/gpt-5.4`
 - use a singleton `AppEvents/default` Durable Object for best-effort live fanout
 - keep agent tools narrow and server-side
 
@@ -100,14 +101,15 @@ Do not mirror that history into app-owned D1 `sessions` / `messages` tables in M
 Use the singleton DO for:
 
 - global WebSocket listeners
-- best-effort broadcast of mutation notifications after committed writes
-- tiny ephemeral connection metadata if needed later
+- best-effort broadcast of mutation notifications after every committed persisted mutation
+- transient connection bookkeeping only
 
 Do not put into `AppEvents/default`:
 
 - authoritative workout state
 - queryable history
 - replayable event logs
+- durable app state of any kind
 
 ### Use `setState()` sparingly
 
@@ -201,6 +203,12 @@ That layer should:
 - reject stale writes with `VERSION_MISMATCH`
 - publish a best-effort invalidation envelope to `AppEvents/default` after commit
 
+For multi-workout correction flows:
+
+- execute one guarded patch per target workout
+- allow partial success
+- return an explicit per-workout result summary to the caller
+
 The important architectural rule is:
 
 - agent tools do not own business rules
@@ -225,6 +233,9 @@ Typical usage:
 - `WorkoutCoachAgent` usually patches its own workout
 - `GeneralCoachAgent` may patch any existing workout after loading the latest snapshot
 - cross-workout correction requests from `GeneralCoachAgent` should still decompose into one guarded patch per target workout
+- all persisted mutations, including lightweight draft writes, should emit the same live invalidation flow
+
+The invalidation envelope should use a shared Zod schema in code so UI emitters and listeners validate the same contract.
 
 Define tools inside `onChatMessage()` with AI SDK `tool()`.
 
@@ -238,9 +249,10 @@ import { z } from "zod";
 export class WorkoutCoachAgent extends AIChatAgent<Env> {
   async onChatMessage() {
     const workoutId = this.name;
+    const modelId = await loadGlobalModelSetting(this.env.DB);
 
     const result = streamText({
-      model: this.model(),
+      model: gatewayLanguageModel(this.env, modelId),
       messages: await convertToModelMessages(this.messages),
       tools: {
         patch_workout: tool({
@@ -264,6 +276,37 @@ export class WorkoutCoachAgent extends AIChatAgent<Env> {
   }
 }
 ```
+
+### Model selection and inference
+
+Use one global user setting for the active model.
+
+Rules:
+
+- store the exact Cloudflare AI Gateway model ID in user settings
+- default it to `openai/gpt-5.4`
+- use Cloudflare AI Gateway taxonomy directly
+- do not define app-level model aliases
+- do not define per-agent model mappings in MVP
+
+Example stored values:
+
+- `openai/gpt-5.4`
+- `anthropic/claude-opus-4-1`
+- `google/gemini-2.5-pro`
+
+Inference flow:
+
+- the client sends a message to a Cloudflare agent route
+- `AIChatAgent` persists the thread and handles chat/runtime concerns
+- the agent reads the global model setting from D1
+- the agent passes that exact model ID to an AI SDK model created through Cloudflare AI Gateway
+
+Important rule:
+
+- Cloudflare Agents are the chat/runtime layer
+- Cloudflare AI Gateway is the inference routing layer
+- the app stores one vendor-qualified model ID, not a local alias
 
 ### Do not use in MVP
 
@@ -305,6 +348,7 @@ Design implications:
 - live broadcast is best-effort and non-authoritative
 - the UI should prefer committed workout state over optimistic chat assumptions
 - WebSocket listeners should treat notifications as invalidation hints and refetch from D1-backed reads
+- `AppEvents/default` should stay stateless apart from transient connection tracking
 
 ## 9. Context assembly
 
@@ -407,7 +451,7 @@ The repo will need at least:
 - `agents`
 - `@cloudflare/ai-chat`
 - `ai`
-- `workers-ai-provider` or another AI SDK provider
+- `ai-gateway-provider`
 - `drizzle-orm`
 - `drizzle-kit`
 - `zod`
@@ -419,7 +463,7 @@ Wrangler will need at minimum:
 - Durable Object bindings for `GeneralCoachAgent` and `WorkoutCoachAgent`
 - a Durable Object binding for `AppEvents`
 - migration entries for all three Durable Object classes
-- optionally an `AI` binding if using Workers AI
+- environment/config for Cloudflare AI Gateway access
 
 Illustrative shape:
 
@@ -458,13 +502,7 @@ Illustrative shape:
 }
 ```
 
-If using Workers AI:
-
-```jsonc
-{
-  "ai": { "binding": "AI" }
-}
-```
+Do not require a Workers AI binding for MVP inference.
 
 ## 15. Final recommendation
 
@@ -474,9 +512,11 @@ For `lifting3`, the Cloudflare-native architecture should be:
 2. Drizzle for D1 schema, migrations, and queries.
 3. `GeneralCoachAgent/default` for the general coach thread.
 4. `WorkoutCoachAgent/{workoutId}` for the canonical workout thread.
-5. `AppEvents/default` as a singleton WebSocket fanout hub for best-effort invalidation.
-6. Direct chat via `routeAgentRequest()` and `useAgentChat()`.
-7. Shared D1-backed domain services used by both UI actions and agent tools.
+5. one global user model setting storing an AI Gateway model ID, defaulting to `openai/gpt-5.4`
+6. Cloudflare AI Gateway as the inference routing layer for that model ID
+7. `AppEvents/default` as a singleton WebSocket fanout hub for best-effort invalidation.
+8. Direct chat via `routeAgentRequest()` and `useAgentChat()`.
+9. Shared D1-backed domain services used by both UI actions and agent tools.
 
 That gives you the part of Cloudflare that helps most:
 
@@ -498,6 +538,8 @@ without forcing the workout database itself into Durable Object storage.
 - Routing: https://developers.cloudflare.com/agents/api-reference/routing/
 - Store and sync state: https://developers.cloudflare.com/agents/api-reference/store-and-sync-state/
 - Using AI models: https://developers.cloudflare.com/agents/api-reference/using-ai-models/
+- AI Gateway: https://developers.cloudflare.com/ai-gateway/
+- AI Gateway + Vercel AI SDK: https://developers.cloudflare.com/ai-gateway/integrations/vercel-ai-sdk/
 - D1: https://developers.cloudflare.com/d1/
 - Durable Objects: https://developers.cloudflare.com/durable-objects/
 - Project Think: https://blog.cloudflare.com/project-think/
