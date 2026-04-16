@@ -2,16 +2,17 @@ import { DatabaseZapIcon, RulerIcon, SlidersHorizontalIcon } from "lucide-react"
 
 import { ComingSoonBadge } from "~/components/coming-soon-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { createPageMeta } from "~/lib/meta";
 
 import type { Route } from "./+types/settings";
 
-export const meta: Route.MetaFunction = () => [
-  { title: "Settings | lifting3" },
-  {
-    name: "description",
-    content: "Training defaults, unit preferences, equipment rules, and environment controls.",
-  },
-];
+export const meta: Route.MetaFunction = ({ location, matches }) =>
+  createPageMeta({
+    description: "Training defaults, unit preferences, equipment rules, and environment controls.",
+    location,
+    matches,
+    title: "Settings | lifting3",
+  });
 
 const SETTINGS_AREAS = [
   {

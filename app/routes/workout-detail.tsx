@@ -14,6 +14,7 @@ import { createWorkoutRouteService } from "~/features/workouts/d1-service.server
 import { handleWorkoutPostAction } from "~/features/workouts/workout-action.server";
 import { WorkoutNotFoundError } from "~/features/workouts/service";
 import { WorkoutDetailView } from "~/features/workouts/workout-detail-view";
+import { createPageMeta } from "~/lib/meta";
 import { getAppDatabase } from "~/lib/.server/router-context";
 
 import type { Route } from "./+types/workout-detail";
@@ -54,15 +55,14 @@ export const handle = defineAppEventRouteHandle({
   },
 });
 
-export const meta: Route.MetaFunction = ({ loaderData }) => [
-  {
+export const meta: Route.MetaFunction = ({ loaderData, location, matches }) =>
+  createPageMeta({
+    description:
+      "Review exercise order, notes, sets, and live logging context for this workout session.",
+    location,
+    matches,
     title: loaderData ? `${loaderData.workout.title} | lifting3` : "Workout | lifting3",
-  },
-  {
-    name: "description",
-    content: "Workout detail with RR7 loaders, forms, and app-event revalidation.",
-  },
-];
+  });
 
 export function shouldRevalidate({
   actionResult,

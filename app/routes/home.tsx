@@ -3,6 +3,7 @@ import { defineAppEventRouteHandle } from "~/features/app-events/client";
 import { workoutListSearchSchema } from "~/features/workouts/contracts";
 import { createWorkoutRouteService } from "~/features/workouts/d1-service.server";
 import { WorkoutListCard } from "~/features/workouts/workout-list-card";
+import { createPageMeta } from "~/lib/meta";
 import { getAppDatabase } from "~/lib/.server/router-context";
 
 import type { Route } from "./+types/home";
@@ -11,13 +12,14 @@ export const handle = defineAppEventRouteHandle({
   invalidateKeys: () => ["workouts:list"],
 });
 
-export const meta: Route.MetaFunction = () => [
-  { title: "lifting3" },
-  {
-    name: "description",
-    content: "Recent workouts from the shared D1-backed workout loader.",
-  },
-];
+export const meta: Route.MetaFunction = ({ location, matches }) =>
+  createPageMeta({
+    description:
+      "Plan workouts, log sets fast, and jump back into recent training with coach-guided structure.",
+    location,
+    matches,
+    title: "lifting3",
+  });
 
 export function loader({ context }: Route.LoaderArgs) {
   const search = workoutListSearchSchema.parse({});

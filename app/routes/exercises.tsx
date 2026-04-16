@@ -6,6 +6,7 @@ import { defineAppEventRouteHandle } from "~/features/app-events/client";
 import { type ExerciseListSearch, exerciseListSearchSchema } from "~/features/exercises/contracts";
 import { createExerciseRouteService } from "~/features/exercises/d1-service.server";
 import { ExerciseListCard } from "~/features/exercises/exercise-list-card";
+import { createPageMeta } from "~/lib/meta";
 import { getAppDatabase } from "~/lib/.server/router-context";
 
 import type { Route } from "./+types/exercises";
@@ -47,13 +48,14 @@ export const handle = defineAppEventRouteHandle({
   invalidateKeys: () => ["exercises:list"],
 });
 
-export const meta: Route.MetaFunction = () => [
-  { title: "Exercises | lifting3" },
-  {
-    name: "description",
-    content: "Exercise catalog cards with workout counts, logged sessions, and max weight history.",
-  },
-];
+export const meta: Route.MetaFunction = ({ location, matches }) =>
+  createPageMeta({
+    description:
+      "Browse the exercise catalog, filter by type or equipment, and see how each lift shows up in your training history.",
+    location,
+    matches,
+    title: "Exercises | lifting3",
+  });
 
 function createFilterHref(currentFilters: ExerciseListSearch, patch: Partial<ExerciseListSearch>) {
   const nextFilters = {

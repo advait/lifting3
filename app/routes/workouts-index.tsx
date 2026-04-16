@@ -5,6 +5,7 @@ import { defineAppEventRouteHandle } from "~/features/app-events/client";
 import { workoutListSearchSchema } from "~/features/workouts/contracts";
 import { createWorkoutRouteService } from "~/features/workouts/d1-service.server";
 import { WorkoutListCard } from "~/features/workouts/workout-list-card";
+import { createPageMeta } from "~/lib/meta";
 import { getAppDatabase } from "~/lib/.server/router-context";
 
 import type { Route } from "./+types/workouts-index";
@@ -23,13 +24,14 @@ export const handle = defineAppEventRouteHandle({
   invalidateKeys: () => ["workouts:list"],
 });
 
-export const meta: Route.MetaFunction = () => [
-  { title: "Workouts | lifting3" },
-  {
-    name: "description",
-    content: "Historical workouts and active session entry points.",
-  },
-];
+export const meta: Route.MetaFunction = ({ location, matches }) =>
+  createPageMeta({
+    description:
+      "Browse planned, active, and completed workouts, then jump back into the sessions that matter.",
+    location,
+    matches,
+    title: "Workouts | lifting3",
+  });
 
 function createFilterHref(
   currentFilters: Route.ComponentProps["loaderData"]["filters"],

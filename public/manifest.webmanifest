@@ -2,12 +2,15 @@
   "name": "lifting3",
   "short_name": "L³",
   "description": "Single-user workout coaching for planning, logging, and reviewing training.",
+  "id": "/",
+  "lang": "en-US",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#111317",
   "theme_color": "#f97316",
   "orientation": "portrait",
+  "prefer_related_applications": false,
   "categories": ["health", "fitness", "productivity"],
   "icons": [
     {
@@ -45,6 +48,22 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/pwa-screenshot-home.png",
+      "sizes": "580x1274",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Home screen showing recent workouts and coach-driven planning"
+    },
+    {
+      "src": "/pwa-screenshot-logging.png",
+      "sizes": "580x738",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Active workout logging with weight, reps, and quick RPE input"
     }
   ]
 }

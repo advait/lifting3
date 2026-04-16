@@ -30,6 +30,8 @@ import { LocalDateTime } from "./components/local-date-time";
 import { Button } from "./components/ui/button";
 import { Separator } from "./components/ui/separator";
 import { CoachSheet } from "./features/coach/coach-sheet";
+import { InstallAppCallout } from "./features/pwa/install-callout";
+import { usePwaRegistration } from "./features/pwa/install";
 import {
   defineAppEventRouteHandle,
   type AppEventRouteHandle,
@@ -39,6 +41,7 @@ import type { WorkoutAgentTarget, WorkoutListItem } from "./features/workouts/co
 import { workoutListSearchSchema } from "./features/workouts/contracts";
 import { createWorkoutRouteService } from "./features/workouts/d1-service.server";
 import { WorkoutStatusBadge } from "./features/workouts/workout-status-badge";
+import { APP_DESCRIPTION, APP_NAME, createPageMeta } from "./lib/meta";
 import { getAppDatabase } from "./lib/.server/router-context";
 import { cn } from "./lib/utils";
 import "./app.css";
@@ -54,13 +57,6 @@ interface RootSidebarLoaderData {
   readonly appOrigin: string;
   readonly recentWorkouts: ReadonlyArray<Pick<WorkoutListItem, "date" | "id" | "status" | "title">>;
 }
-
-const APP_DESCRIPTION =
-  "Single-user workout coaching for planning, logging, and reviewing training.";
-const APP_NAME = "lifting3";
-const APP_SHORT_NAME = "L³";
-const BRAND_COLOR = "#f97316";
-const SOCIAL_IMAGE_ALT = "L cubed logo in orange on a deep charcoal tile.";
 
 const NAV_ITEMS: ReadonlyArray<NavigationItem> = [
   {
@@ -107,29 +103,13 @@ export const links: Route.LinksFunction = () => [
   { href: "/manifest.webmanifest", rel: "manifest" },
 ];
 
-export const meta: Route.MetaFunction = ({ loaderData }) => {
-  const socialImageUrl = loaderData?.appOrigin ? `${loaderData.appOrigin}/logo.svg` : "/logo.svg";
-
-  return [
-    { title: APP_NAME },
-    { content: APP_DESCRIPTION, name: "description" },
-    { content: APP_NAME, name: "application-name" },
-    { content: APP_SHORT_NAME, name: "apple-mobile-web-app-title" },
-    { content: "yes", name: "apple-mobile-web-app-capable" },
-    { content: "black-translucent", name: "apple-mobile-web-app-status-bar-style" },
-    { content: "yes", name: "mobile-web-app-capable" },
-    { content: "dark", name: "color-scheme" },
-    { content: BRAND_COLOR, name: "theme-color" },
-    { content: BRAND_COLOR, name: "msapplication-TileColor" },
-    { content: APP_NAME, property: "og:site_name" },
-    { content: "website", property: "og:type" },
-    { content: socialImageUrl, property: "og:image" },
-    { content: SOCIAL_IMAGE_ALT, property: "og:image:alt" },
-    { content: "summary", name: "twitter:card" },
-    { content: socialImageUrl, name: "twitter:image" },
-    { content: SOCIAL_IMAGE_ALT, name: "twitter:image:alt" },
-  ];
-};
+export const meta: Route.MetaFunction = ({ location, matches }) =>
+  createPageMeta({
+    description: APP_DESCRIPTION,
+    location,
+    matches,
+    title: APP_NAME,
+  });
 
 export async function loader({ context, request }: Route.LoaderArgs) {
   const search = workoutListSearchSchema.parse({});
@@ -385,7 +365,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <html className="dark" lang="en">
       <head>
         <meta charSet="utf-8" />
-        <meta content="width=device-width, initial-scale=1" name="viewport" />
+        <meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport" />
         <Meta />
         <Links />
       </head>
@@ -442,6 +422,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <NavigationLink item={item} key={item.to} />
                 ))}
               </nav>
+
+              <div className="mt-5">
+                <InstallAppCallout />
+              </div>
             </div>
           </aside>
 
@@ -524,6 +508,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   useAppEventRevalidation();
+  usePwaRegistration();
 
   return <Outlet />;
 }

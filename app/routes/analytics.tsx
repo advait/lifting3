@@ -2,16 +2,17 @@ import { ActivityIcon, Clock3Icon, DumbbellIcon } from "lucide-react";
 
 import { ComingSoonBadge } from "~/components/coming-soon-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { createPageMeta } from "~/lib/meta";
 
 import type { Route } from "./+types/analytics";
 
-export const meta: Route.MetaFunction = () => [
-  { title: "Analytics | lifting3" },
-  {
-    name: "description",
-    content: "Strength trends, training volume, and workout drill-downs across your history.",
-  },
-];
+export const meta: Route.MetaFunction = ({ location, matches }) =>
+  createPageMeta({
+    description: "Strength trends, training volume, and workout drill-downs across your history.",
+    location,
+    matches,
+    title: "Analytics | lifting3",
+  });
 
 const ANALYTICS_REPORTS = [
   {

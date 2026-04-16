@@ -64,6 +64,32 @@ function parseInvalidateKeys(value: unknown) {
   return parsedKeys.length === value.length ? parsedKeys : null;
 }
 
+async function getInitialCoachMessages({ url }: { url: string }): Promise<UIMessage[]> {
+  try {
+    const getMessagesUrl = new URL(url);
+
+    getMessagesUrl.pathname += "/get-messages";
+
+    const response = await fetch(getMessagesUrl.toString());
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const text = await response.text();
+
+    if (!text.trim()) {
+      return [];
+    }
+
+    const parsedMessages = JSON.parse(text);
+
+    return Array.isArray(parsedMessages) ? parsedMessages : [];
+  } catch {
+    return [];
+  }
+}
+
 function parseToolMutationEnvelope(
   toolName: string,
   toolCallId: string,
@@ -744,7 +770,10 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
     sendMessage,
     status,
     stop,
-  } = useAgentChat({ agent });
+  } = useAgentChat({
+    agent,
+    getInitialMessages: getInitialCoachMessages,
+  });
   const isSubmitting = status === "submitted";
   const isBusy = isSubmitting || isStreaming;
   const chatErrorMessage = error ? getChatErrorMessage(error) : null;
