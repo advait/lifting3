@@ -354,6 +354,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const activeItem =
     NAV_ITEMS.find((item) => isNavItemActive(location.pathname, item)) ?? NAV_ITEMS[0];
   const coachTarget = getCoachTarget(matches);
+  const coachTargetKey = `${coachTarget.kind}:${coachTarget.instanceName}`;
   const pageTitle = getPageTitle(matches, activeItem.label);
   const topBarAction = getTopBarAction(matches);
 
@@ -510,6 +511,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             onClose={() => {
               setCoachOpen(false);
             }}
+            key={coachTargetKey}
             target={coachTarget}
           />
         </div>
