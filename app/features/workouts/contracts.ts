@@ -224,6 +224,7 @@ export const workoutDetailLoaderDataSchema = z.strictObject({
   exercises: z.array(workoutExerciseSchema),
   progress: workoutSetCountsSchema,
   agentTarget: workoutAgentTargetSchema,
+  loadedAt: isoDateTimeSchema,
 });
 
 export type WorkoutListSearch = z.infer<typeof workoutListSearchSchema>;

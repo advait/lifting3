@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
 
+import { LocalDateTime } from "~/components/local-date-time";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import type { WorkoutAgentTarget } from "~/features/workouts/contracts";
@@ -38,10 +39,6 @@ const SHEET_CLOSE_DRAG_THRESHOLD_PX = 120;
 const TOOL_SUMMARY_LIMIT = 3;
 const historyValueFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
-});
-const shortDateFormatter = new Intl.DateTimeFormat("en-US", {
-  day: "numeric",
-  month: "short",
 });
 
 type CoachMessagePart = UIMessage["parts"][number];
@@ -382,7 +379,7 @@ function renderQueryHistoryToolBody(
 
             return [
               {
-                date: shortDateFormatter.format(new Date(session.date)),
+                date: session.date,
                 title: session.title,
                 value:
                   typeof session.value === "number"
@@ -416,7 +413,11 @@ function renderQueryHistoryToolBody(
                 <span className="min-w-0 truncate text-foreground">{session.title}</span>
                 <span className="shrink-0 text-muted-foreground">
                   {session.value ? `${session.value} • ` : ""}
-                  {session.date}
+                  <LocalDateTime
+                    formatOptions={{ day: "numeric", month: "short" }}
+                    value={session.date}
+                    valueKind="calendar-date"
+                  />
                 </span>
               </div>
             ))}
@@ -667,6 +668,8 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
   const isSubmitting = status === "submitted";
   const isBusy = isSubmitting || isStreaming;
   const chatErrorMessage = error ? getChatErrorMessage(error) : null;
+  const visibleMessages = isOpen ? messages : [];
+  const visibleChatErrorMessage = isOpen ? chatErrorMessage : null;
   const resetThreadState = useEffectEvent(() => {
     setDraft("");
     clearError();
@@ -848,12 +851,12 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
         <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4">
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="grid min-h-full content-start gap-3">
-              {messages.length === 0 && !chatErrorMessage ? (
+              {visibleMessages.length === 0 && !visibleChatErrorMessage ? (
                 <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-4 text-muted-foreground text-sm leading-relaxed">
                   {agentConfig.emptyState}
                 </div>
               ) : (
-                messages.map((message) => {
+                visibleMessages.map((message) => {
                   const renderedParts = message.parts
                     .map((part, index) =>
                       renderMessagePart(
@@ -891,8 +894,8 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
                   );
                 })
               )}
-              {chatErrorMessage ? (
-                <CoachErrorCard message={chatErrorMessage} onDismiss={clearError} />
+              {visibleChatErrorMessage ? (
+                <CoachErrorCard message={visibleChatErrorMessage} onDismiss={clearError} />
               ) : null}
               <div aria-hidden className="h-px w-full" ref={discussionEndRef} />
             </div>

@@ -26,6 +26,7 @@ import {
 } from "react-router";
 
 import type { Route } from "./+types/root";
+import { LocalDateTime } from "./components/local-date-time";
 import { Button } from "./components/ui/button";
 import { Separator } from "./components/ui/separator";
 import { CoachSheet } from "./features/coach/coach-sheet";
@@ -90,10 +91,6 @@ const NAV_ITEMS: ReadonlyArray<NavigationItem> = [
   },
 ] as const;
 
-const sidebarWorkoutDateFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeZone: "UTC",
-});
 const DEFAULT_COACH_TARGET = {
   instanceName: "default",
   kind: "general",
@@ -283,7 +280,11 @@ function WorkoutsSidebarSection({
                     <WorkoutStatusBadge className="shrink-0" size="sm" status={workout.status} />
                   </div>
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    {sidebarWorkoutDateFormatter.format(new Date(workout.date))}
+                    <LocalDateTime
+                      formatOptions={{ dateStyle: "medium" }}
+                      value={workout.date}
+                      valueKind="calendar-date"
+                    />
                   </p>
                 </Link>
               );

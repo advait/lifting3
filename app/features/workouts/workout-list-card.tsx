@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 
+import { LocalDateTime } from "~/components/local-date-time";
 import {
   Card,
   CardAction,
@@ -11,10 +12,6 @@ import {
 
 import type { WorkoutListExerciseSummary, WorkoutListItem } from "./contracts";
 import { WorkoutStatusBadge } from "./workout-status-badge";
-
-const workoutListDateFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-});
 
 const workoutListWeightFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
@@ -89,7 +86,12 @@ export function WorkoutListCard({ item }: { item: WorkoutListItem }) {
           </CardAction>
           <CardTitle className="pr-20">{item.title}</CardTitle>
           <CardDescription>
-            {workoutListDateFormatter.format(new Date(item.date))} · {item.exerciseCount} exercises
+            <LocalDateTime
+              formatOptions={{ dateStyle: "medium" }}
+              value={item.date}
+              valueKind="calendar-date"
+            />{" "}
+            · {item.exerciseCount} exercises
           </CardDescription>
         </CardHeader>
         <CardContent className="px-0">

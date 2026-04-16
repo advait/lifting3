@@ -29,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { LocalDateTime } from "~/components/local-date-time";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,17 +52,6 @@ import { WorkoutStatusBadge } from "./workout-status-badge";
 
 const REST_TIMER_PLACEHOLDER = "02:00";
 const RPE_OPTIONS = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10] as const;
-const workoutDateFormatter = new Intl.DateTimeFormat("en-US", {
-  day: "numeric",
-  month: "short",
-  timeZone: "UTC",
-});
-const workoutFullDateFormatter = new Intl.DateTimeFormat("en-US", {
-  day: "numeric",
-  month: "short",
-  timeZone: "UTC",
-  year: "numeric",
-});
 const WORKOUT_ROUTE_ACTIONS = [
   "delete_workout",
   "start_workout",
@@ -102,6 +92,7 @@ interface ExerciseCardProps {
 
 interface WorkoutOverviewCardProps {
   availableActions: readonly WorkoutRouteAction[];
+  initialNowMs: number;
   isHistoricalEditMode: boolean;
   onEnterHistoricalEditMode: () => void;
   workout: WorkoutDetailWorkout;
@@ -195,14 +186,6 @@ function MutationFields({
   );
 }
 
-function formatWorkoutDate(value: string) {
-  return workoutFullDateFormatter.format(new Date(value));
-}
-
-function formatWorkoutDateChip(value: string) {
-  return workoutDateFormatter.format(new Date(value));
-}
-
 function formatDuration(durationMs: number) {
   const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
   const hours = Math.floor(totalSeconds / 3600);
@@ -291,12 +274,13 @@ function getWorkoutDurationMs(workout: WorkoutDetailWorkout, nowMs: number) {
 
 function WorkoutOverviewCard({
   availableActions,
+  initialNowMs,
   isHistoricalEditMode,
   onEnterHistoricalEditMode,
   workout,
 }: WorkoutOverviewCardProps) {
   const notesFetcher = useFetcher();
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [nowMs, setNowMs] = useState(initialNowMs);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isNotesDialogOpen, setIsNotesDialogOpen] = useState(false);
   const [draftWorkoutNotes, setDraftWorkoutNotes] = useState(workout.userNotes ?? "");
@@ -370,7 +354,12 @@ function WorkoutOverviewCard({
                 <div
                   className={cn(workoutMetaPillClassName, "border-border/70 text-muted-foreground")}
                 >
-                  <span className="truncate">{formatWorkoutDateChip(workout.date)}</span>
+                  <LocalDateTime
+                    className="truncate"
+                    formatOptions={{ day: "numeric", month: "short" }}
+                    value={workout.date}
+                    valueKind="calendar-date"
+                  />
                 </div>
               </div>
             </div>
@@ -1293,7 +1282,13 @@ function SessionSummarySection({ exercisesCount, progress, workout }: SessionSum
       <dl className="grid gap-2 text-muted-foreground">
         <div className="flex items-center justify-between gap-3">
           <dt>Date</dt>
-          <dd className="text-foreground">{formatWorkoutDate(workout.date)}</dd>
+          <dd className="text-foreground">
+            <LocalDateTime
+              formatOptions={{ day: "numeric", month: "short", year: "numeric" }}
+              value={workout.date}
+              valueKind="calendar-date"
+            />
+          </dd>
         </div>
         <div className="flex items-center justify-between gap-3">
           <dt>Exercises</dt>
@@ -1302,15 +1297,21 @@ function SessionSummarySection({ exercisesCount, progress, workout }: SessionSum
         <div className="flex items-center justify-between gap-3">
           <dt>Started</dt>
           <dd className="text-foreground">
-            {workout.startedAt ? new Date(workout.startedAt).toLocaleTimeString() : "Not started"}
+            {workout.startedAt ? (
+              <LocalDateTime formatOptions={{ timeStyle: "medium" }} value={workout.startedAt} />
+            ) : (
+              "Not started"
+            )}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-3">
           <dt>Completed</dt>
           <dd className="text-foreground">
-            {workout.completedAt
-              ? new Date(workout.completedAt).toLocaleTimeString()
-              : "Not finished"}
+            {workout.completedAt ? (
+              <LocalDateTime formatOptions={{ timeStyle: "medium" }} value={workout.completedAt} />
+            ) : (
+              "Not finished"
+            )}
           </dd>
         </div>
       </dl>
@@ -1363,6 +1364,7 @@ export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewP
       <div className="grid gap-0">
         <WorkoutOverviewCard
           availableActions={availableActions}
+          initialNowMs={Date.parse(loaderData.loadedAt)}
           isHistoricalEditMode={isHistoricalEditMode}
           onEnterHistoricalEditMode={() => {
             setIsHistoricalEditMode(true);
