@@ -21,7 +21,7 @@ import {
   WrenchIcon,
   XIcon,
 } from "lucide-react";
-import { startTransition, useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -643,6 +643,7 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const agentConfig = getAgentConfig(target);
+  const threadKey = `${target.kind}:${target.instanceName}`;
   const dragStartYRef = useRef<number | null>(null);
   const didDragRef = useRef(false);
   const discussionEndRef = useRef<HTMLDivElement | null>(null);
@@ -666,6 +667,10 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
   const isSubmitting = status === "submitted";
   const isBusy = isSubmitting || isStreaming;
   const chatErrorMessage = error ? getChatErrorMessage(error) : null;
+  const resetThreadState = useEffectEvent(() => {
+    setDraft("");
+    clearError();
+  });
 
   const scrollDiscussionToTail = () => {
     discussionEndRef.current?.scrollIntoView({
@@ -674,9 +679,8 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
   };
 
   useEffect(() => {
-    setDraft("");
-    clearError();
-  }, [clearError, target.instanceName, target.kind]);
+    resetThreadState();
+  }, [threadKey]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -690,7 +694,7 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [isOpen, messages, status, target.instanceName, target.kind]);
+  }, [isOpen, messages, status, threadKey]);
 
   useEffect(() => {
     if (isOpen) {
