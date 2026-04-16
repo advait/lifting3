@@ -328,6 +328,23 @@ const updateSetActuals: MutationHandler<"update_set_actuals"> = (record, input, 
   ]);
 };
 
+const updateSetDesignation: MutationHandler<"update_set_designation"> = (
+  record,
+  input,
+  updatedAt,
+) => {
+  const exercise = findExercise(record, input.exerciseId);
+  const set = findSet(exercise, input.setId);
+
+  set.designation = input.designation;
+  record.workout.updatedAt = updatedAt;
+  record.workout.version += 1;
+
+  return createMutationResult(input, record, "set_designation_updated", [
+    createExerciseInvalidateKey(exercise.exerciseSchemaId),
+  ]);
+};
+
 const confirmSet: MutationHandler<"confirm_set"> = (record, input, updatedAt) => {
   const exercise = findExercise(record, input.exerciseId);
   const set = findSet(exercise, input.setId);
@@ -517,6 +534,7 @@ const mutationHandlers = {
   skip_set: skipSet,
   start_workout: startWorkout,
   update_exercise_notes: updateExerciseNotes,
+  update_set_designation: updateSetDesignation,
   update_set_actuals: updateSetActuals,
   update_workout_notes: updateWorkoutNotes,
 } satisfies {

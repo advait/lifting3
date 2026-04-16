@@ -6,6 +6,7 @@ import { SET_KINDS } from "./interchange.ts";
 export const WORKOUT_ROUTE_ACTIONS = [
   "delete_workout",
   "start_workout",
+  "update_set_designation",
   "update_set_actuals",
   "confirm_set",
   "skip_set",
@@ -94,6 +95,14 @@ export const updateSetActualsInputSchema = z.strictObject({
   setId: nonEmptyStringSchema,
 });
 
+export const updateSetDesignationInputSchema = z.strictObject({
+  action: z.literal("update_set_designation"),
+  ...workoutActionBaseShape,
+  designation: setKindSchema,
+  exerciseId: nonEmptyStringSchema,
+  setId: nonEmptyStringSchema,
+});
+
 export const confirmSetInputSchema = z.strictObject({
   action: z.literal("confirm_set"),
   ...workoutActionBaseShape,
@@ -165,6 +174,7 @@ export const finishWorkoutInputSchema = z.strictObject({
 export const workoutMutationInputSchema = z.discriminatedUnion("action", [
   deleteWorkoutInputSchema,
   startWorkoutInputSchema,
+  updateSetDesignationInputSchema,
   updateSetActualsInputSchema,
   confirmSetInputSchema,
   skipSetInputSchema,
@@ -190,6 +200,7 @@ export const workoutMutationResultSchema = z.strictObject({
 
 export type StartWorkoutInput = z.infer<typeof startWorkoutInputSchema>;
 export type DeleteWorkoutInput = z.infer<typeof deleteWorkoutInputSchema>;
+export type UpdateSetDesignationInput = z.infer<typeof updateSetDesignationInputSchema>;
 export type UpdateSetActualsInput = z.infer<typeof updateSetActualsInputSchema>;
 export type ConfirmSetInput = z.infer<typeof confirmSetInputSchema>;
 export type SkipSetInput = z.infer<typeof skipSetInputSchema>;

@@ -10,6 +10,7 @@ import {
   reorderExerciseInputSchema,
   skipSetInputSchema,
   startWorkoutInputSchema,
+  updateSetDesignationInputSchema,
   updateExerciseNotesInputSchema,
   updateSetActualsInputSchema,
   updateWorkoutNotesInputSchema,
@@ -79,6 +80,14 @@ export function safeParseWorkoutMutationFormData(formData: FormData) {
           reps: getOptionalNullableNumber(formData, "reps"),
           weightLbs: getOptionalNullableNumber(formData, "weightLbs"),
         },
+        exerciseId: getFormValue(formData, "exerciseId"),
+        setId: getFormValue(formData, "setId"),
+      });
+    case "update_set_designation":
+      return updateSetDesignationInputSchema.safeParse({
+        action,
+        ...base,
+        designation: getFormValue(formData, "designation"),
         exerciseId: getFormValue(formData, "exerciseId"),
         setId: getFormValue(formData, "setId"),
       });

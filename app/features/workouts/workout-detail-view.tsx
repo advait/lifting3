@@ -35,6 +35,7 @@ const workoutFullDateFormatter = new Intl.DateTimeFormat("en-US", {
 const WORKOUT_ROUTE_ACTIONS = [
   "delete_workout",
   "start_workout",
+  "update_set_designation",
   "update_set_actuals",
   "confirm_set",
   "skip_set",
@@ -86,6 +87,7 @@ function getAvailableActions(
     case "planned":
       return [
         "start_workout",
+        "update_set_designation",
         "add_set",
         "remove_set",
         "remove_exercise",
@@ -95,6 +97,7 @@ function getAvailableActions(
       ];
     case "active":
       return [
+        "update_set_designation",
         "update_set_actuals",
         "confirm_set",
         "skip_set",
@@ -395,14 +398,123 @@ function SetRpeButton({ set }: { set: WorkoutSet }) {
   );
 }
 
+interface SetPickerModalProps {
+  availableActions: readonly WorkoutRouteAction[];
+  exerciseId: string;
+  onClose: () => void;
+  set: WorkoutSet;
+  setLabel: string;
+  workout: WorkoutDetailWorkout;
+}
+
+function SetPickerModal({
+  availableActions,
+  exerciseId,
+  onClose,
+  set,
+  setLabel,
+  workout,
+}: SetPickerModalProps) {
+  const canUpdateSetDesignation = hasAction(availableActions, "update_set_designation");
+  const canRemoveSet = hasAction(availableActions, "remove_set") && set.status !== "done";
+  const canSwitchToWarmup = canUpdateSetDesignation && set.designation !== "warmup";
+  const canSwitchToWorking = canUpdateSetDesignation && set.designation !== "working";
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 px-4 pb-4 pt-12 backdrop-blur-sm sm:items-center sm:p-6">
+      <button
+        aria-label="Close set picker"
+        className="absolute inset-0"
+        onClick={onClose}
+        type="button"
+      />
+      <section className="relative z-10 w-full max-w-sm rounded-3xl border border-border/80 bg-card/95 p-4 shadow-2xl backdrop-blur-xl">
+        <div className="grid gap-1 pb-4">
+          <p className="font-semibold text-base tracking-tight">Set {setLabel}</p>
+          <p className="text-muted-foreground text-sm">
+            Choose how this set should be classified.
+          </p>
+        </div>
+
+        <div className="grid gap-2">
+          <Form method="post" onSubmit={onClose}>
+            <MutationFields
+              action="update_set_designation"
+              exerciseId={exerciseId}
+              setId={set.id}
+              workoutId={workout.id}
+              workoutVersion={workout.version}
+            />
+            <input name="designation" type="hidden" value="warmup" />
+            <Button className="w-full justify-start" disabled={!canSwitchToWarmup} type="submit" variant="outline">
+              Warmup Set
+            </Button>
+          </Form>
+
+          <Form method="post" onSubmit={onClose}>
+            <MutationFields
+              action="update_set_designation"
+              exerciseId={exerciseId}
+              setId={set.id}
+              workoutId={workout.id}
+              workoutVersion={workout.version}
+            />
+            <input name="designation" type="hidden" value="working" />
+            <Button className="w-full justify-start" disabled={!canSwitchToWorking} type="submit" variant="outline">
+              Regular Set
+            </Button>
+          </Form>
+
+          <Form method="post" onSubmit={onClose}>
+            <MutationFields
+              action="remove_set"
+              exerciseId={exerciseId}
+              setId={set.id}
+              workoutId={workout.id}
+              workoutVersion={workout.version}
+            />
+            <Button className="w-full justify-start" disabled={!canRemoveSet} type="submit" variant="destructive">
+              Delete Set
+            </Button>
+          </Form>
+        </div>
+
+        <Button className="mt-3 w-full" onClick={onClose} type="button" variant="ghost">
+          Cancel
+        </Button>
+      </section>
+    </div>
+  );
+}
+
 function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps) {
   const canAddSet = hasAction(availableActions, "add_set");
   const canRemoveExercise = hasAction(availableActions, "remove_exercise");
   const canRemoveExerciseNow =
     canRemoveExercise && !exercise.sets.some((set) => set.status === "done");
+  const canOpenSetPicker =
+    hasAction(availableActions, "update_set_designation") || hasAction(availableActions, "remove_set");
   const lastSet = exercise.sets.at(-1);
   const carryForwardValues = getCarryForwardSetValues(lastSet);
   const removeExerciseFormId = `remove-exercise-${exercise.id}`;
+  const [selectedSetForPicker, setSelectedSetForPicker] = useState<{
+    label: string;
+    set: WorkoutSet;
+  } | null>(null);
   let workingSetNumber = 0;
 
   return (
@@ -498,7 +610,21 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
               return (
                 <tr className="odd:bg-background/45 even:bg-transparent" key={set.id}>
                   <td className="px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                    {setLabel}
+                    <Button
+                      className="h-auto min-w-8 rounded-full px-2 py-1 font-medium"
+                      disabled={!canOpenSetPicker}
+                      onClick={() => {
+                        setSelectedSetForPicker({
+                          label: setLabel,
+                          set,
+                        });
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      {setLabel}
+                    </Button>
                   </td>
                   <td className="px-2 py-2 text-center text-muted-foreground leading-relaxed first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
                     {formatSetPerformance(exercise.sets[setIndex - 1])}
@@ -547,6 +673,19 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
           </Button>
         </div>
       )}
+
+      {selectedSetForPicker ? (
+        <SetPickerModal
+          availableActions={availableActions}
+          exerciseId={exercise.id}
+          onClose={() => {
+            setSelectedSetForPicker(null);
+          }}
+          set={selectedSetForPicker.set}
+          setLabel={selectedSetForPicker.label}
+          workout={workout}
+        />
+      ) : null}
     </section>
   );
 }
