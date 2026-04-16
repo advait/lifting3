@@ -233,7 +233,7 @@ Typical usage:
 - `WorkoutCoachAgent` usually patches its own workout
 - `GeneralCoachAgent` may patch any existing workout after loading the latest snapshot
 - cross-workout correction requests from `GeneralCoachAgent` should still decompose into one guarded patch per target workout
-- all persisted mutations, including lightweight draft writes, should emit the same live invalidation flow
+- all persisted mutations, including lightweight set-field updates, should emit the same live invalidation flow
 
 The invalidation envelope should use a shared Zod schema in code so UI emitters and listeners validate the same contract.
 
@@ -347,7 +347,7 @@ Design implications:
 - D1 state plus persisted `workout_events` should be the source of truth for what committed
 - live broadcast is best-effort and non-authoritative
 - the UI should prefer committed workout state over optimistic chat assumptions
-- WebSocket listeners should treat notifications as invalidation hints and refetch from D1-backed reads
+- WebSocket listeners should treat notifications as invalidation hints and trigger RR7 loader revalidation or fetcher reloads from D1-backed reads
 - `AppEvents/default` should stay stateless apart from transient connection tracking
 
 ## 9. Context assembly

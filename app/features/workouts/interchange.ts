@@ -6,7 +6,7 @@ export const WORKOUT_INTERCHANGE_FORMAT = "lifting3.workout" as const;
 export const WORKOUT_INTERCHANGE_VERSION = 1 as const;
 
 export const WORKOUT_STATUSES = [
-  "draft",
+  "planned",
   "active",
   "completed",
   "canceled",

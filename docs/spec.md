@@ -318,25 +318,26 @@ Fields:
 - `actual_weight_lbs` nullable
 - `actual_reps` nullable
 - `actual_rpe` nullable
-- `status`: `tbd | draft | done | skipped`
+- `status`: `tbd | done | skipped`
 - `completed_at` nullable
 
 Set semantics:
 
-- `tbd`: planned but not yet performed
-- `draft`: some actual fields entered, but set not confirmed
+- `tbd`: not yet confirmed; may still carry partial actual fields entered ahead of confirmation
 - `done`: confirmed completed
 - `skipped`: intentionally skipped
 
-Critical product rule:
+Critical product rules:
 
-- Setting `actual_rpe` is the default confirmation action for a set.
-- A set is not considered `done` until `actual_rpe` is populated.
+- Setting `actual_rpe` is the default confirmation action for a live set.
+- The user may enter actual weight/reps while the set remains `tbd`.
+- A workout may be completed even if some remaining sets are still `tbd`.
 
 Implications:
 
-- Weight and reps may be prefilled from plan or entered before completion.
-- The act of assigning RPE is the moment that commits "this set happened."
+- Weight and reps may be prefilled from plan or entered before confirmation.
+- The act of assigning RPE is usually the fastest way to commit "this set happened."
+- Completed workouts may preserve leftover planned work as `tbd` when the session ends early.
 
 RPE values should support half-step increments.
 
@@ -398,7 +399,7 @@ Examples:
 - `exercise_skipped`
 - `set_added`
 - `set_removed`
-- `set_drafted`
+- `set_actuals_updated`
 - `set_confirmed`
 - `set_corrected`
 - `workout_note_updated`
@@ -562,6 +563,7 @@ Recommended invalidation keys include at minimum:
 Client rule:
 
 - treat a notification as a signal to refetch D1-backed data, not as committed truth by itself
+- RR7 clients should map `invalidate[]` keys to route-level `revalidator.revalidate()` calls for the currently mounted routes
 
 ## 9.5 Materialized Views / Projections
 
@@ -606,6 +608,12 @@ The interchange payload should include at minimum:
 - ordered sets
 - source metadata
 
+Locked enum decisions for MVP:
+
+- workout `status`: `planned | active | completed | canceled`
+- set `status`: `tbd | done | skipped`
+- a `completed` workout may still contain `tbd` sets
+
 The interchange format should be stable enough to support:
 
 - local export from `lifting3`
@@ -638,7 +646,8 @@ Requirements:
 - import consumes a directory of workout JSON files
 - every imported file must pass Zod validation before persistence
 - imported workouts preserve order, notes, and canonical exercise schema IDs
-- imported workouts start as `completed` unless the interchange format explicitly supports another status
+- imported workouts preserve the supported workout `status` from the interchange file
+- imported `completed` workouts may retain `tbd` sets
 
 MVP should not implement direct import from legacy TOML files in application code.
 
@@ -804,12 +813,12 @@ Fields shown inline:
 
 Set row states:
 
-- `tbd`: muted background, no completion marker
-- `draft`: accent border or partial state styling
+- `tbd`: muted background, no completion marker, but may still show partially entered actual values
 - `done`: strong completed treatment with timestamp/check
 - `skipped`: crossed or muted with explicit label
 
 The set list must make it impossible to confuse planned work with confirmed work.
+A `tbd` row with partial actual values may use stronger input emphasis, but it must not share the `done` visual treatment.
 
 ## 12.3 Confirmation Model
 
@@ -819,6 +828,8 @@ The default flow for a set:
 2. Weight and reps are reviewed or adjusted.
 3. User sets RPE.
 4. Setting RPE confirms the set and transitions it to `done`.
+
+If the workout ends before all planned work is confirmed, the remaining sets may stay `tbd` when the workout is completed.
 
 This is the key product behavior.
 
@@ -1009,7 +1020,7 @@ Avoid tool sprawl by separating direct app actions from agent tools.
 These are deterministic mutations from UI controls:
 
 - `start_workout`
-- `draft_set_fields`
+- `update_set_actuals`
 - `confirm_set`
 - `skip_set`
 - `add_set`
@@ -1023,7 +1034,7 @@ These may still use the same backend mutation pipeline, but they are not part of
 
 If a direct app action persists to D1, it also participates in cross-tab live sync.
 
-This includes lightweight persisted changes such as `draft_set_fields`.
+This includes lightweight persisted changes such as `update_set_actuals`.
 
 ## 15.2 Context Assembly (Not Tools)
 
@@ -1161,12 +1172,13 @@ After a committed mutation:
 - appends a `workout_events` row in D1
 - then emits a best-effort notification to `AppEvents/default`
 
-This applies to all persisted changes, including lightweight draft-state mutations such as `draft_set_fields`.
+This applies to all persisted changes, including lightweight set-field updates such as `update_set_actuals`.
 
 Notification delivery is advisory:
 
 - clients must refetch authoritative state from D1-backed loaders or queries
 - clients must not treat the notification payload as the source of truth
+- RR7 routes should use loader revalidation as the refresh boundary, typically via `useRevalidator()` when a matching invalidation key arrives
 - missed notifications are acceptable because the next refetch recovers the latest committed state
 
 ## 17. PR Detection and Celebration
@@ -1305,6 +1317,12 @@ Not final, but the boundaries should look like this:
 - `GET/WS /agents/workout-coach/:workoutId`
 
 RR7 loaders/actions can sit on top of these boundaries or call server functions directly depending on deployment shape.
+
+RR7 read/write rule:
+
+- route loaders are the authoritative UI refresh boundary
+- route actions or fetcher actions should call the shared mutation layer
+- app-event notifications should trigger route revalidation rather than direct client-side patching of authoritative workout state
 
 Important rule:
 
