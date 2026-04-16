@@ -5,6 +5,7 @@
 .dev.vars
 .dev.vars*
 /node_modules/
+/.vscode/
 
 # React Router
 /.react-router/
