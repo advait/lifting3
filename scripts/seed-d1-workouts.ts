@@ -13,6 +13,7 @@ import {
 } from "../app/features/workouts/contracts.ts";
 
 type SeedMode = "local" | "remote";
+type LegacySeedSetStatus = "done" | "skipped" | "tbd";
 
 interface SeedWorkoutRecord {
   readonly exercises: readonly WorkoutExerciseState[];
@@ -22,9 +23,10 @@ interface SeedWorkoutRecord {
 interface SeedSetInput {
   readonly actual?: Partial<WorkoutSet["actual"]>;
   readonly completedAt?: string | null;
+  readonly confirmedAt?: string | null;
   readonly designation: WorkoutSet["designation"];
   readonly planned?: Partial<WorkoutSet["planned"]>;
-  readonly status?: WorkoutSet["status"];
+  readonly status?: LegacySeedSetStatus;
 }
 
 interface SeedExerciseInput {
@@ -62,7 +64,7 @@ function createSet(exerciseId: string, orderIndex: number, input: SeedSetInput) 
       rpe: input.actual?.rpe ?? null,
       weightLbs: input.actual?.weightLbs ?? null,
     },
-    completedAt: input.completedAt ?? null,
+    confirmedAt: input.confirmedAt ?? input.completedAt ?? null,
     designation: input.designation,
     id: `set-${exerciseId}-${orderIndex + 1}`,
     orderIndex,
@@ -71,7 +73,7 @@ function createSet(exerciseId: string, orderIndex: number, input: SeedSetInput) 
       rpe: input.planned?.rpe ?? null,
       weightLbs: input.planned?.weightLbs ?? null,
     },
-    status: input.status ?? "tbd",
+    previous: null,
   });
 }
 
@@ -1059,14 +1061,13 @@ function buildSeedSql(records: readonly SeedWorkoutRecord[]) {
             exercise.id,
             set.orderIndex,
             set.designation,
-            set.status,
             set.planned.weightLbs,
             set.planned.reps,
             set.planned.rpe,
             set.actual.weightLbs,
             set.actual.reps,
             set.actual.rpe,
-            set.completedAt,
+            set.confirmedAt,
           ] satisfies ReadonlyArray<number | string | null>,
       ),
     ),
@@ -1116,14 +1117,13 @@ function buildSeedSql(records: readonly SeedWorkoutRecord[]) {
         "exercise_id",
         "order_index",
         "designation",
-        "status",
         "planned_weight_lbs",
         "planned_reps",
         "planned_rpe",
         "actual_weight_lbs",
         "actual_reps",
         "actual_rpe",
-        "completed_at",
+        "confirmed_at",
       ],
       setRows,
     ),

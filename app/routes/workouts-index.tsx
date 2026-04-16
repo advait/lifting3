@@ -1,11 +1,10 @@
 import { data, Link } from "react-router";
-import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { defineAppEventRouteHandle } from "~/features/app-events/client";
 import { workoutListSearchSchema } from "~/features/workouts/contracts";
 import { createWorkoutRouteService } from "~/features/workouts/d1-service.server";
-import { WorkoutStatusBadge } from "~/features/workouts/workout-status-badge";
+import { WorkoutListCard } from "~/features/workouts/workout-list-card";
 import { getAppDatabase } from "~/lib/.server/router-context";
 
 import type { Route } from "./+types/workouts-index";
@@ -79,18 +78,16 @@ export function loader({ context, request }: Route.LoaderArgs) {
 }
 
 export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
-  const activeWorkout = loaderData.items.find((item) => item.id === loaderData.activeWorkoutId);
-
   return (
-    <section className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.8fr)]">
-      <Card className="border-border/70 bg-card/90">
-        <CardHeader className="gap-4 md:flex-row md:items-end md:justify-between">
+    <section className="grid gap-4">
+      <div className="grid gap-4">
+        <div className="grid gap-4 md:flex md:items-end md:justify-between">
           <div>
-            <CardTitle>Workouts</CardTitle>
-            <CardDescription>
-              D1-backed RR7 loaders now drive the list and detail routes through the shared workout
-              contracts.
-            </CardDescription>
+            <h1 className="font-semibold text-2xl tracking-tight">Workouts</h1>
+            <p className="mt-1 text-muted-foreground text-sm">
+              Browse recent sessions, filter the list, and jump back into anything still in
+              progress.
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             {FILTER_ITEMS.map((filter) => {
@@ -113,76 +110,24 @@ export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
               );
             })}
           </div>
-        </CardHeader>
-        <CardContent className="grid gap-3">
-          {loaderData.items.map((item) => (
-            <Link
-              className="rounded-2xl border border-border/80 bg-background/80 px-4 py-4 transition-colors hover:bg-accent/40"
-              key={item.id}
-              to={`/workouts/${item.id}`}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="font-medium text-base">{item.title}</h2>
-                    <WorkoutStatusBadge size="sm" status={item.status} />
-                    <Badge variant="secondary">{item.source}</Badge>
-                  </div>
-                  <p className="text-muted-foreground text-sm">
-                    {new Date(item.date).toLocaleDateString()} · {item.exerciseCount} exercises ·{" "}
-                    {item.counts.confirmed} / {item.counts.total} sets confirmed
-                  </p>
-                </div>
-                <div className="grid min-w-36 gap-1 text-right text-muted-foreground text-xs">
-                  <span>confirmed: {item.counts.confirmed}</span>
-                  <span>unconfirmed: {item.counts.unconfirmed}</span>
-                  <span>v{item.version}</span>
-                </div>
-              </div>
-            </Link>
-          ))}
-        </CardContent>
-      </Card>
+        </div>
 
-      <div className="grid gap-4">
-        <Card className="border-border/70 bg-card/90">
-          <CardHeader>
-            <CardTitle>Active Workout</CardTitle>
-            <CardDescription>
-              The list loader surfaces the currently active workout so home and workouts can share
-              the same read model later.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {activeWorkout ? (
-              <>
-                <p className="font-medium">{activeWorkout.title}</p>
-                <p className="text-muted-foreground">
-                  {activeWorkout.counts.confirmed} / {activeWorkout.counts.total} sets confirmed
-                </p>
-                <Button asChild size="sm">
-                  <Link to={`/workouts/${activeWorkout.id}`}>Resume workout</Link>
-                </Button>
-              </>
-            ) : (
-              <p className="text-muted-foreground">No active workout is loaded right now.</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/70 bg-card/90">
-          <CardHeader>
-            <CardTitle>Import / Export Boundary</CardTitle>
-            <CardDescription>
-              The interchange format remains the only supported boundary for moving workouts in or
-              out of the app.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-muted-foreground text-sm">
-            <p>Per-workout JSON files validated by the shared Zod schema.</p>
-            <p>The current app keeps this boundary visible without HTTP import/export endpoints.</p>
-          </CardContent>
-        </Card>
+        {loaderData.items.length > 0 ? (
+          <div className="grid gap-4">
+            {loaderData.items.map((item) => (
+              <WorkoutListCard item={item} key={item.id} />
+            ))}
+          </div>
+        ) : (
+          <Card className="border-border/70 bg-card/90">
+            <CardHeader>
+              <CardTitle>No workouts match these filters</CardTitle>
+              <CardDescription>
+                Try clearing filters or widen the date range to bring sessions back into view.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        )}
       </div>
     </section>
   );

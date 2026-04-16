@@ -7,7 +7,7 @@ import {
   createWorkoutAgentToolService,
   createWorkoutRouteService,
 } from "../../app/features/workouts/d1-service.server";
-import type { SetKind, SetStatus, WorkoutStatus } from "../../app/features/workouts/interchange";
+import type { SetKind, WorkoutStatus } from "../../app/features/workouts/interchange";
 import * as dbSchema from "../../app/lib/.server/db/schema";
 
 const db = drizzle(env.DB, { schema: dbSchema });
@@ -16,6 +16,7 @@ const workoutRouteService = createWorkoutRouteService(db);
 
 type ExerciseSchemaId = (typeof EXERCISE_SCHEMA_IDS)[number];
 type ExerciseStatus = "planned" | "active" | "completed" | "skipped" | "replaced";
+type LegacySetStatus = "done" | "skipped" | "tbd";
 type WorkoutSource = "manual" | "imported" | "agent";
 type SeedValues = {
   reps?: number | null;
@@ -25,10 +26,11 @@ type SeedValues = {
 type SeedSet = {
   actual?: SeedValues;
   completedAt?: string | null;
+  confirmedAt?: string | null;
   designation?: SetKind;
   id: string;
   planned?: SeedValues;
-  status?: SetStatus;
+  status?: LegacySetStatus;
 };
 type SeedExercise = {
   coachNotes?: string | null;
@@ -62,6 +64,10 @@ function createStoredValues(values?: SeedValues) {
     rpe: values?.rpe ?? null,
     weightLbs: values?.weightLbs ?? null,
   };
+}
+
+function isSetConfirmed(set: { confirmedAt: string | null }) {
+  return set.confirmedAt != null;
 }
 
 async function resetWorkoutTables() {
@@ -107,7 +113,7 @@ async function insertSeedWorkout(workout: SeedWorkout) {
         actualReps: actual.reps,
         actualRpe: actual.rpe,
         actualWeightLbs: actual.weightLbs,
-        completedAt: set.completedAt ?? null,
+        confirmedAt: set.confirmedAt ?? set.completedAt ?? null,
         designation: set.designation ?? "working",
         exerciseId: exercise.id,
         id: set.id,
@@ -115,7 +121,6 @@ async function insertSeedWorkout(workout: SeedWorkout) {
         plannedReps: planned.reps,
         plannedRpe: planned.rpe,
         plannedWeightLbs: planned.weightLbs,
-        status: set.status ?? "tbd",
       });
     }
   }
@@ -223,21 +228,20 @@ describe("createWorkoutAgentToolService.patchWorkout", () => {
       exerciseSchemaId: "bench_press_barbell",
       status: "replaced",
     });
-    expect(detail.exercises[0]?.sets.map((set) => set.status)).toEqual([
-      "done",
-      "skipped",
-      "skipped",
+    expect(detail.exercises[0]?.sets.map((set) => isSetConfirmed(set))).toEqual([
+      true,
+      false,
+      false,
     ]);
     expect(detail.exercises[0]?.sets[0]).toMatchObject({
       actual: { reps: 5, rpe: 8.5, weightLbs: 225 },
-      status: "done",
     });
     expect(detail.exercises[1]).toMatchObject({
       exerciseSchemaId: "bench_press_dumbbell",
       status: "planned",
     });
     expect(detail.exercises[1]?.sets).toHaveLength(2);
-    expect(detail.exercises[1]?.sets.every((set) => set.status === "tbd")).toBe(true);
+    expect(detail.exercises[1]?.sets.every((set) => !isSetConfirmed(set))).toBe(true);
     expect(detail.exercises[2]).toMatchObject({
       id: "exercise-row",
       orderIndex: 2,
@@ -301,7 +305,7 @@ describe("createWorkoutAgentToolService.patchWorkout", () => {
 
     expect(exercise?.status).toBe("completed");
     expect(exercise?.coachNotes).toBe("Original cue\nStop after the top set today.");
-    expect(exercise?.sets.map((set) => set.status)).toEqual(["done", "skipped", "skipped"]);
+    expect(exercise?.sets.map((set) => isSetConfirmed(set))).toEqual([true, false, false]);
     expect(exercise?.sets[0]?.actual.weightLbs).toBe(315);
     expect(exercise?.sets[1]?.actual).toEqual({
       reps: null,
@@ -370,11 +374,11 @@ describe("createWorkoutAgentToolService.patchWorkout", () => {
     expect(detail.workout.version).toBe(4);
     expect(detail.exercises[0]?.sets[0]).toMatchObject({
       planned: { reps: 4, rpe: 8, weightLbs: 245 },
-      status: "done",
+      confirmedAt: "2026-04-16T09:10:00.000Z",
     });
     expect(detail.exercises[0]?.sets[1]).toMatchObject({
       planned: { reps: 4, rpe: 8, weightLbs: 245 },
-      status: "tbd",
+      confirmedAt: null,
     });
   });
 
@@ -419,6 +423,114 @@ describe("createWorkoutAgentToolService.patchWorkout", () => {
 
     expect(detail.workout.version).toBe(2);
     expect(detail.workout.coachNotes).toBeNull();
+  });
+});
+
+describe("createWorkoutRouteService.mutateWorkout", () => {
+  it("uses the shared engine for add_set and returns the route envelope", async () => {
+    await insertSeedWorkout({
+      date: "2026-04-16T00:00:00.000Z",
+      exercises: [
+        {
+          exerciseSchemaId: "front_squat",
+          id: "route-exercise-front-squat",
+          sets: [{ id: "route-front-squat-set-1", planned: { reps: 5, rpe: 7, weightLbs: 185 } }],
+          status: "active",
+        },
+      ],
+      id: "route-workout-add-set",
+      title: "Route Add Set",
+      version: 1,
+    });
+
+    const result = await workoutRouteService.mutateWorkout({
+      action: "add_set",
+      designation: "working",
+      exerciseId: "route-exercise-front-squat",
+      expectedVersion: 1,
+      insertAfterSetId: "route-front-squat-set-1",
+      planned: {
+        reps: 8,
+        rpe: 7.5,
+        weightLbs: 165,
+      },
+      workoutId: "route-workout-add-set",
+    });
+
+    expect(result).toMatchObject({
+      action: "add_set",
+      eventType: "set_added",
+      invalidate: ["workouts:list", "workout:route-workout-add-set", "exercise:front_squat"],
+      ok: true,
+      version: 2,
+      workoutId: "route-workout-add-set",
+    });
+    expect(result.eventId).toBe("route-workout-add-set-v2-set_added");
+
+    const detail = await workoutRouteService.loadWorkoutDetail({
+      workoutId: "route-workout-add-set",
+    });
+
+    expect(detail.workout.version).toBe(2);
+    expect(detail.exercises[0]?.sets).toHaveLength(2);
+    expect(detail.exercises[0]?.sets.map((set) => set.designation)).toEqual(["working", "working"]);
+    expect(detail.exercises[0]?.sets[1]?.planned).toEqual({
+      reps: 8,
+      rpe: 7.5,
+      weightLbs: 165,
+    });
+  });
+
+  it("uses the shared engine for reorder_exercise without adding exercise invalidations", async () => {
+    await insertSeedWorkout({
+      date: "2026-04-16T00:00:00.000Z",
+      exercises: [
+        {
+          exerciseSchemaId: "bench_press_barbell",
+          id: "route-exercise-bench",
+          sets: [{ id: "route-bench-set-1", planned: { reps: 5, rpe: 8, weightLbs: 225 } }],
+          status: "active",
+        },
+        {
+          exerciseSchemaId: "machine_row",
+          id: "route-exercise-row",
+          sets: [{ id: "route-row-set-1", planned: { reps: 12, rpe: 8, weightLbs: 110 } }],
+          status: "active",
+        },
+      ],
+      id: "route-workout-reorder",
+      title: "Route Reorder",
+      version: 3,
+    });
+
+    const result = await workoutRouteService.mutateWorkout({
+      action: "reorder_exercise",
+      exerciseId: "route-exercise-row",
+      expectedVersion: 3,
+      targetIndex: 0,
+      workoutId: "route-workout-reorder",
+    });
+
+    expect(result).toMatchObject({
+      action: "reorder_exercise",
+      eventType: "exercise_reordered",
+      invalidate: ["workouts:list", "workout:route-workout-reorder"],
+      ok: true,
+      version: 4,
+      workoutId: "route-workout-reorder",
+    });
+    expect(result.eventId).toBe("route-workout-reorder-v4-exercise_reordered");
+
+    const detail = await workoutRouteService.loadWorkoutDetail({
+      workoutId: "route-workout-reorder",
+    });
+
+    expect(detail.workout.version).toBe(4);
+    expect(detail.exercises.map((exercise) => exercise.id)).toEqual([
+      "route-exercise-row",
+      "route-exercise-bench",
+    ]);
+    expect(detail.exercises.map((exercise) => exercise.orderIndex)).toEqual([0, 1]);
   });
 });
 
@@ -481,7 +593,7 @@ describe("createWorkoutAgentToolService.createWorkout", () => {
       "working",
       "working",
     ]);
-    expect(detail.exercises[0]?.sets.every((set) => set.status === "tbd")).toBe(true);
+    expect(detail.exercises[0]?.sets.every((set) => !isSetConfirmed(set))).toBe(true);
     expect(detail.exercises[0]?.sets.map((set) => set.planned)).toEqual([
       { reps: 5, rpe: 6, weightLbs: 135 },
       { reps: 4, rpe: 7, weightLbs: 185 },
@@ -561,7 +673,7 @@ describe("createWorkoutAgentToolService.createWorkout", () => {
     });
     expect(clonedDetail.exercises[0]?.id).not.toBe("source-exercise-bench");
     expect(clonedDetail.exercises[0]?.sets).toHaveLength(2);
-    expect(clonedDetail.exercises[0]?.sets.every((set) => set.status === "tbd")).toBe(true);
+    expect(clonedDetail.exercises[0]?.sets.every((set) => !isSetConfirmed(set))).toBe(true);
     expect(clonedDetail.exercises[0]?.sets.every((set) => set.actual.weightLbs == null)).toBe(true);
     expect(clonedDetail.exercises[0]?.sets[0]?.id).not.toBe("source-bench-set-1");
     expect(clonedDetail.exercises[0]?.sets.map((set) => set.planned)).toEqual([
@@ -574,7 +686,10 @@ describe("createWorkoutAgentToolService.createWorkout", () => {
       status: "completed",
       version: 5,
     });
-    expect(sourceDetail.exercises[0]?.sets.map((set) => set.status)).toEqual(["done", "skipped"]);
+    expect(sourceDetail.exercises[0]?.sets.map((set) => isSetConfirmed(set))).toEqual([
+      true,
+      false,
+    ]);
     expect(sourceDetail.exercises[0]?.sets[0]?.actual.weightLbs).toBe(225);
   });
 

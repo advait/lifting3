@@ -3,7 +3,7 @@ import { z } from "zod";
 import { EXERCISE_SCHEMA_IDS } from "../exercises/schema.ts";
 
 export const WORKOUT_INTERCHANGE_FORMAT = "lifting3.workout" as const;
-export const WORKOUT_INTERCHANGE_VERSION = 1 as const;
+export const WORKOUT_INTERCHANGE_VERSION = 2 as const;
 
 export const WORKOUT_STATUSES = ["planned", "active", "completed", "canceled"] as const;
 
@@ -11,9 +11,6 @@ export type WorkoutStatus = (typeof WORKOUT_STATUSES)[number];
 
 export const SET_KINDS = ["warmup", "working"] as const;
 export type SetKind = (typeof SET_KINDS)[number];
-
-export const SET_STATUSES = ["tbd", "done", "skipped"] as const;
-export type SetStatus = (typeof SET_STATUSES)[number];
 
 const isoDateTimeSchema = z.iso.datetime({ offset: true });
 const nullableTrimmedStringSchema = z.string().trim().min(1).nullable();
@@ -53,14 +50,14 @@ const halfStepRpeSchema = z
 export const workoutInterchangeSetSchema = z
   .object({
     id: z.string().trim().min(1),
-    status: z.enum(SET_STATUSES),
+    confirmed_at: isoDateTimeSchema.nullable().optional(),
     set_kind: z.enum(SET_KINDS),
     weight_lbs: z.number().nonnegative().nullable().optional(),
     reps: z.number().int().nonnegative().nullable().optional(),
     rpe: halfStepRpeSchema.nullable().optional(),
   })
   .superRefine((set, context) => {
-    if (set.status === "done") {
+    if (set.confirmed_at != null) {
       const hasLoggedValue = set.reps != null || set.weight_lbs != null || set.rpe != null;
 
       if (!hasLoggedValue) {
@@ -68,19 +65,6 @@ export const workoutInterchangeSetSchema = z
           code: z.ZodIssueCode.custom,
           message:
             "Completed sets must include at least one logged value such as reps, weight, or RPE.",
-          path: [],
-        });
-      }
-    }
-
-    if (set.status === "skipped") {
-      const hasUnexpectedLoggedValue =
-        set.reps != null || set.weight_lbs != null || set.rpe != null;
-
-      if (hasUnexpectedLoggedValue) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Skipped sets cannot include logged values.",
           path: [],
         });
       }

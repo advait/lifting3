@@ -8,7 +8,6 @@ import {
   removeExerciseInputSchema,
   removeSetInputSchema,
   reorderExerciseInputSchema,
-  skipSetInputSchema,
   startWorkoutInputSchema,
   updateSetDesignationInputSchema,
   updateSetPlannedInputSchema,
@@ -112,13 +111,6 @@ export function safeParseWorkoutMutationFormData(formData: FormData) {
           rpe: getOptionalNullableNumber(formData, "rpe"),
           weightLbs: getOptionalNullableNumber(formData, "weightLbs"),
         },
-        exerciseId: getFormValue(formData, "exerciseId"),
-        setId: getFormValue(formData, "setId"),
-      });
-    case "skip_set":
-      return skipSetInputSchema.safeParse({
-        action,
-        ...base,
         exerciseId: getFormValue(formData, "exerciseId"),
         setId: getFormValue(formData, "setId"),
       });

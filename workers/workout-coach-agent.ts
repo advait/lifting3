@@ -36,10 +36,22 @@ function formatSetValues(set: WorkoutSet) {
   return segments.length > 0 ? segments.join(", ") : "no logged load target";
 }
 
+function isSetConfirmed(set: WorkoutSet) {
+  return set.confirmedAt != null;
+}
+
+function isExerciseActionable(exercise: WorkoutExercise) {
+  return exercise.status === "planned" || exercise.status === "active";
+}
+
 function findNextOpenSet(loaderData: WorkoutDetailLoaderData) {
   for (const exercise of loaderData.exercises) {
+    if (!isExerciseActionable(exercise)) {
+      continue;
+    }
+
     for (const set of exercise.sets) {
-      if (set.status === "tbd") {
+      if (!isSetConfirmed(set)) {
         return { exercise, set };
       }
     }
@@ -49,16 +61,18 @@ function findNextOpenSet(loaderData: WorkoutDetailLoaderData) {
 }
 
 function summarizeExercise(exercise: WorkoutExercise) {
-  const completedSets = exercise.sets.filter((set) => set.status === "done").length;
-  const skippedSets = exercise.sets.filter((set) => set.status === "skipped").length;
-  const remainingSets = exercise.sets.filter((set) => set.status === "tbd").length;
-  const nextSet = exercise.sets.find((set) => set.status === "tbd") ?? exercise.sets[0];
+  const confirmedSets = exercise.sets.filter(isSetConfirmed).length;
+  const openSets = isExerciseActionable(exercise)
+    ? exercise.sets.filter((set) => !isSetConfirmed(set)).length
+    : 0;
+  const nextSet =
+    (isExerciseActionable(exercise) ? exercise.sets.find((set) => !isSetConfirmed(set)) : null) ??
+    exercise.sets[0];
 
   return [
-    `${exercise.displayName} [${exercise.id}]: ${exercise.sets.length} sets total`,
-    `${completedSets} done`,
-    `${remainingSets} remaining`,
-    skippedSets > 0 ? `${skippedSets} skipped` : null,
+    `${exercise.displayName} [${exercise.id}]: ${exercise.sets.length} sets total (${exercise.status})`,
+    `${confirmedSets} confirmed`,
+    openSets > 0 ? `${openSets} open` : null,
     nextSet ? `next target ${formatSetValues(nextSet)}` : null,
   ]
     .filter((segment) => segment !== null)
@@ -89,7 +103,7 @@ function buildWorkoutCoachFallbackReply(
     `AI Gateway inference is unavailable, so this reply is using the deterministic fallback for gateway "${DEFAULT_AI_GATEWAY_ID}". Server-side workout tools are unavailable in this mode.`,
     "",
     `Status: ${loaderData.workout.status}. Date: ${dateFormatter.format(new Date(loaderData.workout.date))}.`,
-    `Progress: ${loaderData.progress.done} done, ${loaderData.progress.tbd} remaining, ${loaderData.progress.skipped} skipped across ${loaderData.progress.total} sets.`,
+    `Progress: ${loaderData.progress.confirmed} confirmed, ${loaderData.progress.unconfirmed} unconfirmed across ${loaderData.progress.total} sets.`,
     nextSetLine,
     notes.length > 0 ? `Notes: ${notes}` : null,
     "",
@@ -108,10 +122,10 @@ function buildWorkoutCoachFallbackReply(
 function buildWorkoutPatchReference(loaderData: WorkoutDetailLoaderData) {
   return loaderData.exercises
     .map((exercise) => [
-      `- ${exercise.displayName} [${exercise.id}]`,
+      `- ${exercise.displayName} [${exercise.id}] exercise_status=${exercise.status}`,
       ...exercise.sets.map(
         (set, index) =>
-          `  - set ${index + 1} [${set.id}] status=${set.status} designation=${set.designation} planned=${formatSetValues(set)}`,
+          `  - set ${index + 1} [${set.id}] confirmed=${isSetConfirmed(set)} designation=${set.designation} planned=${formatSetValues(set)}`,
       ),
     ])
     .flat()
@@ -143,7 +157,7 @@ function buildWorkoutCoachSystemPrompt(loaderData: WorkoutDetailLoaderData) {
     `Version: ${loaderData.workout.version}`,
     `Status: ${loaderData.workout.status}`,
     `Date: ${dateFormatter.format(new Date(loaderData.workout.date))}`,
-    `Progress: ${loaderData.progress.done} done, ${loaderData.progress.tbd} remaining, ${loaderData.progress.skipped} skipped of ${loaderData.progress.total} total sets`,
+    `Progress: ${loaderData.progress.confirmed} confirmed, ${loaderData.progress.unconfirmed} unconfirmed of ${loaderData.progress.total} total sets`,
     nextOpenSet
       ? `Next open set: ${nextOpenSet.exercise.displayName} -> ${formatSetValues(nextOpenSet.set)}`
       : "Next open set: none",

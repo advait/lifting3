@@ -131,15 +131,135 @@ type QueryHistoryToolResult =
 
 type NonDeleteWorkoutMutationInput = Exclude<WorkoutMutationInput, { action: "delete_workout" }>;
 
-type MutationHandler<K extends WorkoutMutationInput["action"]> = (
-  record: StoredWorkoutRecord,
-  input: Extract<WorkoutMutationInput, { action: K }>,
-  updatedAt: string,
-) => WorkoutMutationResult;
+type RouteMutationByAction<K extends WorkoutMutationInput["action"]> = Extract<
+  WorkoutMutationInput,
+  { action: K }
+>;
+type ToolPatchByType<K extends PatchWorkoutToolOp["type"]> = Extract<
+  PatchWorkoutToolOp,
+  { type: K }
+>;
+type SetActualPatch = Partial<WorkoutSet["actual"]>;
+type SetPlannedPatch = Partial<WorkoutSet["planned"]>;
+type WorkoutNotesPatch = RouteMutationByAction<"update_workout_notes">["notes"];
+type ExerciseNotesPatch = RouteMutationByAction<"update_exercise_notes">["notes"];
+
+type MutationOperation =
+  | {
+      kind: "add_exercise";
+      exercise: ToolPatchByType<"add_exercise">["exercise"];
+      targetIndex?: ToolPatchByType<"add_exercise">["targetIndex"];
+    }
+  | {
+      kind: "add_note";
+      exerciseId?: ToolPatchByType<"add_note">["exerciseId"];
+      field: ToolPatchByType<"add_note">["field"];
+      scope: ToolPatchByType<"add_note">["scope"];
+      text: ToolPatchByType<"add_note">["text"];
+    }
+  | {
+      count: number;
+      designation: WorkoutSet["designation"];
+      exerciseId: string;
+      insertAfterSetId?: string | null;
+      kind: "add_set";
+      planned?: SetPlannedPatch;
+    }
+  | {
+      actual: SetActualPatch;
+      exerciseId: string;
+      kind: "confirm_set";
+      setId: string;
+    }
+  | {
+      completedAt?: RouteMutationByAction<"finish_workout">["completedAt"];
+      kind: "finish_workout";
+    }
+  | {
+      exerciseId: string;
+      kind: "remove_exercise";
+    }
+  | {
+      exerciseId: string;
+      kind: "remove_set";
+      setId: string;
+    }
+  | {
+      exerciseId: string;
+      kind: "replace_exercise";
+      replacement: ToolPatchByType<"replace_exercise">["replacement"];
+    }
+  | {
+      exerciseId: string;
+      kind: "reorder_exercise";
+      targetIndex: number;
+    }
+  | {
+      exerciseId: string;
+      kind: "skip_exercise";
+      note?: ToolPatchByType<"skip_exercise">["note"];
+    }
+  | {
+      exerciseId: string;
+      kind: "skip_remaining_sets";
+      note?: ToolPatchByType<"skip_remaining_sets">["note"];
+    }
+  | {
+      kind: "start_workout";
+      startedAt?: RouteMutationByAction<"start_workout">["startedAt"];
+    }
+  | {
+      designation: WorkoutSet["designation"];
+      exerciseId: string;
+      kind: "update_set_designation";
+      setId: string;
+    }
+  | {
+      actual: SetActualPatch;
+      exerciseId: string;
+      kind: "update_set_actuals";
+      setId: string;
+    }
+  | {
+      exerciseId: string;
+      kind: "update_set_planned";
+      planned: SetPlannedPatch;
+      setId: string;
+    }
+  | {
+      exerciseId: string;
+      kind: "update_exercise_notes";
+      notes: ExerciseNotesPatch;
+    }
+  | {
+      exerciseId: string;
+      kind: "update_exercise_targets";
+      setUpdates: ToolPatchByType<"update_exercise_targets">["setUpdates"];
+    }
+  | {
+      kind: "update_workout_notes";
+      notes: WorkoutNotesPatch;
+    };
+
+type MutationOperationEffect = {
+  invalidateExerciseSchemaIds: string[];
+  summary: string;
+};
+
+type RouteMutationPlan = {
+  eventType: WorkoutMutationResult["eventType"];
+  includeExerciseInvalidations: boolean;
+  operation: MutationOperation;
+};
+
+type ExecutedMutation = {
+  applied: MutationOperationEffect[];
+  record: StoredWorkoutRecord;
+};
 
 const D1_MAX_VARIABLES_PER_STATEMENT = 90;
 const WORKOUT_EXERCISE_INSERT_VARIABLE_COUNT = 7;
-const EXERCISE_SET_INSERT_VARIABLE_COUNT = 12;
+const EXERCISE_SET_INSERT_VARIABLE_COUNT = 11;
 
 class VersionGuardError extends Error {}
 
@@ -147,15 +267,22 @@ function cloneValue<T>(value: T): T {
   return structuredClone(value);
 }
 
+function normalizeIsoDateTime(value: string | null | undefined) {
+  if (value == null || value.includes("T")) {
+    return value ?? null;
+  }
+
+  return `${value.replace(" ", "T")}Z`;
+}
+
 function createSet(input: {
   actual?: Partial<WorkoutSet["actual"]>;
-  completedAt?: string | null;
+  confirmedAt?: string | null;
   designation: WorkoutSet["designation"];
   id: string;
   orderIndex: number;
   planned?: Partial<WorkoutSet["planned"]>;
   previous?: WorkoutSet["previous"];
-  status: WorkoutSet["status"];
 }) {
   return workoutSetSchema.parse({
     actual: {
@@ -163,7 +290,7 @@ function createSet(input: {
       rpe: input.actual?.rpe ?? null,
       weightLbs: input.actual?.weightLbs ?? null,
     },
-    completedAt: input.completedAt ?? null,
+    confirmedAt: input.confirmedAt ?? null,
     designation: input.designation,
     id: input.id,
     orderIndex: input.orderIndex,
@@ -173,7 +300,6 @@ function createSet(input: {
       weightLbs: input.planned?.weightLbs ?? null,
     },
     previous: input.previous ?? null,
-    status: input.status,
   });
 }
 
@@ -207,7 +333,6 @@ function clonePlannedSetTemplate(orderIndex: number, template: ExerciseSetTempla
       rpe: template.planned?.rpe ?? null,
       weightLbs: template.planned?.weightLbs ?? null,
     },
-    status: "tbd",
   });
 }
 
@@ -251,32 +376,31 @@ function appendNote(existingValue: string | null, nextValue: string) {
     : `${trimmedExistingValue}\n${trimmedNextValue}`;
 }
 
-function getExerciseCompletionStatus(sets: readonly WorkoutSet[]): WorkoutExerciseState["status"] {
-  const doneCount = sets.filter((set) => set.status === "done").length;
-  const remainingCount = sets.filter((set) => set.status === "tbd").length;
-  const skippedCount = sets.filter((set) => set.status === "skipped").length;
+function isSetConfirmed(set: WorkoutSet) {
+  return set.confirmedAt != null;
+}
 
-  if (remainingCount > 0 && doneCount > 0) {
+function getExerciseCompletionStatus(sets: readonly WorkoutSet[]): WorkoutExerciseState["status"] {
+  const confirmedCount = sets.filter(isSetConfirmed).length;
+  const unconfirmedCount = sets.length - confirmedCount;
+
+  if (unconfirmedCount > 0 && confirmedCount > 0) {
     return "active";
   }
 
-  if (remainingCount > 0) {
+  if (unconfirmedCount > 0) {
     return "planned";
   }
 
-  if (doneCount > 0) {
+  if (confirmedCount > 0) {
     return "completed";
-  }
-
-  if (skippedCount > 0) {
-    return "skipped";
   }
 
   return "planned";
 }
 
 function syncExerciseStatus(exercise: WorkoutExerciseState) {
-  if (exercise.status === "replaced") {
+  if (exercise.status === "replaced" || exercise.status === "skipped") {
     return;
   }
 
@@ -365,35 +489,24 @@ function decorateExercise(
 
 function getWorkoutSetCounts(exercises: readonly WorkoutExerciseState[]) {
   let total = 0;
-  let tbd = 0;
-  let done = 0;
-  let skipped = 0;
+  let confirmed = 0;
+  let unconfirmed = 0;
 
   for (const exercise of exercises) {
     for (const set of exercise.sets) {
       total += 1;
-
-      switch (set.status) {
-        case "tbd":
-          tbd += 1;
-          break;
-        case "done":
-          done += 1;
-          break;
-        case "skipped":
-          skipped += 1;
-          break;
-        default:
-          break;
+      if (isSetConfirmed(set)) {
+        confirmed += 1;
+      } else {
+        unconfirmed += 1;
       }
     }
   }
 
   return workoutSetCountsSchema.parse({
-    done,
-    skipped,
-    tbd,
+    confirmed,
     total,
+    unconfirmed,
   });
 }
 
@@ -434,7 +547,7 @@ function buildWorkoutListExerciseSummary(exercise: WorkoutExerciseState) {
   }
 
   return workoutListExerciseSummarySchema.parse({
-    completedSetCount: counts.done,
+    confirmedSetCount: counts.confirmed,
     displayName: exerciseSchema.displayName,
     orderIndex: exercise.orderIndex,
     topSet: getTopSetSummary(exercise.sets),
@@ -514,20 +627,37 @@ function findSet(exercise: WorkoutExerciseState, setId: string) {
   return set;
 }
 
-function createMutationResult(
-  input: WorkoutMutationInput,
-  record: StoredWorkoutRecord,
-  eventType: WorkoutMutationResult["eventType"],
-  additionalInvalidations: readonly WorkoutMutationResult["invalidate"][number][] = [],
+function buildRouteInvalidateKeys(
+  workoutId: string,
+  exerciseSchemaIds: readonly string[] = [],
+  includeExerciseInvalidations = false,
 ) {
   const invalidate = uniqueInvalidateKeys([
     "workouts:list",
-    createWorkoutInvalidateKey(record.workout.id),
-    ...additionalInvalidations,
+    createWorkoutInvalidateKey(workoutId),
+    ...(includeExerciseInvalidations
+      ? exerciseSchemaIds.map((exerciseSchemaId) => createExerciseInvalidateKey(exerciseSchemaId))
+      : []),
   ]);
 
+  return invalidate;
+}
+
+function createMutationResult(
+  action: WorkoutMutationInput["action"],
+  record: StoredWorkoutRecord,
+  eventType: WorkoutMutationResult["eventType"],
+  exerciseSchemaIds: readonly string[] = [],
+  includeExerciseInvalidations = false,
+) {
+  const invalidate = buildRouteInvalidateKeys(
+    record.workout.id,
+    exerciseSchemaIds,
+    includeExerciseInvalidations,
+  );
+
   return workoutMutationResultSchema.parse({
-    action: input.action,
+    action,
     eventId: `${record.workout.id}-v${record.workout.version}-${eventType}`,
     eventType,
     invalidate,
@@ -583,280 +713,586 @@ function getMutationTimestamp(input: WorkoutMutationInput) {
   return new Date().toISOString();
 }
 
-const startWorkout: MutationHandler<"start_workout"> = (record, input, updatedAt) => {
-  record.workout.status = "active";
-  record.workout.startedAt = input.startedAt ?? updatedAt;
-  record.workout.completedAt = null;
-  record.workout.updatedAt = updatedAt;
-  record.workout.version += 1;
+function getExerciseDisplayName(exerciseSchemaId: WorkoutExerciseState["exerciseSchemaId"]) {
+  return getExerciseSchemaById(exerciseSchemaId)?.displayName ?? exerciseSchemaId;
+}
 
-  return createMutationResult(input, record, "workout_started");
-};
-
-const updateSetPlanned: MutationHandler<"update_set_planned"> = (record, input, updatedAt) => {
-  if (record.workout.status !== "planned") {
-    throw new WorkoutMutationError(
-      "Planned set values can only be edited before the workout starts.",
-    );
+function normalizeRouteMutation(input: NonDeleteWorkoutMutationInput): RouteMutationPlan {
+  switch (input.action) {
+    case "start_workout":
+      return {
+        eventType: "workout_started",
+        includeExerciseInvalidations: false,
+        operation: {
+          kind: "start_workout",
+          startedAt: input.startedAt,
+        },
+      };
+    case "update_set_planned":
+      return {
+        eventType: "set_planned_updated",
+        includeExerciseInvalidations: true,
+        operation: {
+          exerciseId: input.exerciseId,
+          kind: "update_set_planned",
+          planned: input.planned,
+          setId: input.setId,
+        },
+      };
+    case "update_set_actuals":
+      return {
+        eventType: "set_actuals_updated",
+        includeExerciseInvalidations: true,
+        operation: {
+          actual: input.actual,
+          exerciseId: input.exerciseId,
+          kind: "update_set_actuals",
+          setId: input.setId,
+        },
+      };
+    case "update_set_designation":
+      return {
+        eventType: "set_designation_updated",
+        includeExerciseInvalidations: true,
+        operation: {
+          designation: input.designation,
+          exerciseId: input.exerciseId,
+          kind: "update_set_designation",
+          setId: input.setId,
+        },
+      };
+    case "confirm_set":
+      return {
+        eventType: "set_confirmed",
+        includeExerciseInvalidations: true,
+        operation: {
+          actual: input.actual,
+          exerciseId: input.exerciseId,
+          kind: "confirm_set",
+          setId: input.setId,
+        },
+      };
+    case "add_set":
+      return {
+        eventType: "set_added",
+        includeExerciseInvalidations: true,
+        operation: {
+          count: 1,
+          designation: input.designation,
+          exerciseId: input.exerciseId,
+          insertAfterSetId: input.insertAfterSetId,
+          kind: "add_set",
+          planned: input.planned,
+        },
+      };
+    case "remove_set":
+      return {
+        eventType: "set_removed",
+        includeExerciseInvalidations: true,
+        operation: {
+          exerciseId: input.exerciseId,
+          kind: "remove_set",
+          setId: input.setId,
+        },
+      };
+    case "remove_exercise":
+      return {
+        eventType: "exercise_removed",
+        includeExerciseInvalidations: true,
+        operation: {
+          exerciseId: input.exerciseId,
+          kind: "remove_exercise",
+        },
+      };
+    case "reorder_exercise":
+      return {
+        eventType: "exercise_reordered",
+        includeExerciseInvalidations: false,
+        operation: {
+          exerciseId: input.exerciseId,
+          kind: "reorder_exercise",
+          targetIndex: input.targetIndex,
+        },
+      };
+    case "update_workout_notes":
+      return {
+        eventType: "workout_note_updated",
+        includeExerciseInvalidations: false,
+        operation: {
+          kind: "update_workout_notes",
+          notes: input.notes,
+        },
+      };
+    case "update_exercise_notes":
+      return {
+        eventType: "exercise_note_updated",
+        includeExerciseInvalidations: true,
+        operation: {
+          exerciseId: input.exerciseId,
+          kind: "update_exercise_notes",
+          notes: input.notes,
+        },
+      };
+    case "finish_workout":
+      return {
+        eventType: "workout_completed",
+        includeExerciseInvalidations: false,
+        operation: {
+          completedAt: input.completedAt,
+          kind: "finish_workout",
+        },
+      };
   }
+}
 
-  const exercise = findExercise(record, input.exerciseId);
-  const set = findSet(exercise, input.setId);
-
-  set.planned = {
-    ...set.planned,
-    ...input.planned,
-  };
-  record.workout.updatedAt = updatedAt;
-  record.workout.version += 1;
-
-  return createMutationResult(input, record, "set_planned_updated", [
-    createExerciseInvalidateKey(exercise.exerciseSchemaId),
-  ]);
-};
-
-const updateSetActuals: MutationHandler<"update_set_actuals"> = (record, input, updatedAt) => {
-  const exercise = findExercise(record, input.exerciseId);
-  const set = findSet(exercise, input.setId);
-
-  if (set.status === "skipped") {
-    throw new WorkoutMutationError("Skipped sets cannot accept actual-field updates.");
+function normalizePatchOperation(op: PatchWorkoutToolOp): MutationOperation {
+  switch (op.type) {
+    case "add_exercise":
+      return {
+        exercise: op.exercise,
+        kind: "add_exercise",
+        targetIndex: op.targetIndex,
+      };
+    case "replace_exercise":
+      return {
+        exerciseId: op.exerciseId,
+        kind: "replace_exercise",
+        replacement: op.replacement,
+      };
+    case "skip_exercise":
+      return {
+        exerciseId: op.exerciseId,
+        kind: "skip_exercise",
+        note: op.note,
+      };
+    case "reorder_exercise":
+      return {
+        exerciseId: op.exerciseId,
+        kind: "reorder_exercise",
+        targetIndex: op.targetIndex,
+      };
+    case "update_exercise_targets":
+      return {
+        exerciseId: op.exerciseId,
+        kind: "update_exercise_targets",
+        setUpdates: op.setUpdates,
+      };
+    case "add_set":
+      return {
+        count: op.template.count,
+        designation: op.template.designation,
+        exerciseId: op.exerciseId,
+        insertAfterSetId: op.insertAfterSetId,
+        kind: "add_set",
+        planned: op.template.planned,
+      };
+    case "skip_remaining_sets":
+      return {
+        exerciseId: op.exerciseId,
+        kind: "skip_remaining_sets",
+        note: op.note,
+      };
+    case "add_note":
+      return {
+        exerciseId: op.exerciseId,
+        field: op.field,
+        kind: "add_note",
+        scope: op.scope,
+        text: op.text,
+      };
   }
+}
 
-  set.actual = {
-    ...set.actual,
-    ...input.actual,
-  };
-  record.workout.updatedAt = updatedAt;
-  record.workout.version += 1;
-
-  return createMutationResult(input, record, "set_actuals_updated", [
-    createExerciseInvalidateKey(exercise.exerciseSchemaId),
-  ]);
-};
-
-const updateSetDesignation: MutationHandler<"update_set_designation"> = (
-  record,
-  input,
-  updatedAt,
-) => {
-  const exercise = findExercise(record, input.exerciseId);
-  const set = findSet(exercise, input.setId);
-
-  set.designation = input.designation;
-  record.workout.updatedAt = updatedAt;
-  record.workout.version += 1;
-
-  return createMutationResult(input, record, "set_designation_updated", [
-    createExerciseInvalidateKey(exercise.exerciseSchemaId),
-  ]);
-};
-
-const confirmSet: MutationHandler<"confirm_set"> = (record, input, updatedAt) => {
-  const exercise = findExercise(record, input.exerciseId);
-  const set = findSet(exercise, input.setId);
-
-  set.actual = {
-    ...set.actual,
-    ...input.actual,
-  };
-  set.completedAt = updatedAt;
-  set.status = "done";
-  record.workout.updatedAt = updatedAt;
-  record.workout.version += 1;
-
-  return createMutationResult(input, record, "set_confirmed", [
-    createExerciseInvalidateKey(exercise.exerciseSchemaId),
-  ]);
-};
-
-const skipSet: MutationHandler<"skip_set"> = (record, input, updatedAt) => {
-  const exercise = findExercise(record, input.exerciseId);
-  const set = findSet(exercise, input.setId);
-
-  set.actual = {
-    reps: null,
-    rpe: null,
-    weightLbs: null,
-  };
-  set.completedAt = null;
-  set.status = "skipped";
-  record.workout.updatedAt = updatedAt;
-  record.workout.version += 1;
-
-  return createMutationResult(input, record, "set_corrected", [
-    createExerciseInvalidateKey(exercise.exerciseSchemaId),
-  ]);
-};
-
-const addSet: MutationHandler<"add_set"> = (record, input, updatedAt) => {
-  const exercise = findExercise(record, input.exerciseId);
-  const insertAfterIndex =
-    input.insertAfterSetId == null
-      ? exercise.sets.length - 1
-      : exercise.sets.findIndex((set) => set.id === input.insertAfterSetId);
-  const insertAt = insertAfterIndex < 0 ? exercise.sets.length : insertAfterIndex + 1;
-
-  exercise.sets.splice(
-    insertAt,
-    0,
-    createSet({
-      designation: input.designation,
-      id: crypto.randomUUID(),
-      orderIndex: insertAt,
-      planned: {
-        reps: input.planned?.reps ?? null,
-        rpe: input.planned?.rpe ?? null,
-        weightLbs: input.planned?.weightLbs ?? null,
-      },
-      status: "tbd",
-    }),
-  );
-  reindexSets(exercise.sets);
-  record.workout.updatedAt = updatedAt;
-  record.workout.version += 1;
-
-  return createMutationResult(input, record, "set_added", [
-    createExerciseInvalidateKey(exercise.exerciseSchemaId),
-  ]);
-};
-
-const removeSet: MutationHandler<"remove_set"> = (record, input, updatedAt) => {
-  const exercise = findExercise(record, input.exerciseId);
-  const setIndex = exercise.sets.findIndex((set) => set.id === input.setId);
-
-  if (setIndex < 0) {
-    throw new WorkoutMutationError(`Unknown set: ${input.setId}`);
-  }
-
-  if (exercise.sets[setIndex].status === "done") {
-    throw new WorkoutMutationError("Completed sets are not removable.");
-  }
-
-  exercise.sets.splice(setIndex, 1);
-  reindexSets(exercise.sets);
-  record.workout.updatedAt = updatedAt;
-  record.workout.version += 1;
-
-  return createMutationResult(input, record, "set_removed", [
-    createExerciseInvalidateKey(exercise.exerciseSchemaId),
-  ]);
-};
-
-const removeExercise: MutationHandler<"remove_exercise"> = (record, input, updatedAt) => {
-  const exerciseIndex = record.exercises.findIndex((exercise) => exercise.id === input.exerciseId);
-
-  if (exerciseIndex < 0) {
-    throw new WorkoutMutationError(`Unknown exercise: ${input.exerciseId}`);
-  }
-
-  const exercise = record.exercises[exerciseIndex];
-
-  if (exercise.sets.some((set) => set.status === "done")) {
-    throw new WorkoutMutationError("Exercises with completed sets are not removable.");
-  }
-
-  record.exercises.splice(exerciseIndex, 1);
-  reindexExercises(record.exercises);
-  record.workout.updatedAt = updatedAt;
-  record.workout.version += 1;
-
-  return createMutationResult(input, record, "exercise_removed", [
-    createExerciseInvalidateKey(exercise.exerciseSchemaId),
-  ]);
-};
-
-const reorderExercise: MutationHandler<"reorder_exercise"> = (record, input, updatedAt) => {
-  const exerciseIndex = record.exercises.findIndex((exercise) => exercise.id === input.exerciseId);
-
-  if (exerciseIndex < 0) {
-    throw new WorkoutMutationError(`Unknown exercise: ${input.exerciseId}`);
-  }
-
-  const boundedTargetIndex = Math.max(0, Math.min(input.targetIndex, record.exercises.length - 1));
-  const [exercise] = record.exercises.splice(exerciseIndex, 1);
-
-  record.exercises.splice(boundedTargetIndex, 0, exercise);
-  reindexExercises(record.exercises);
-  record.workout.updatedAt = updatedAt;
-  record.workout.version += 1;
-
-  return createMutationResult(input, record, "exercise_reordered");
-};
-
-const updateWorkoutNotes: MutationHandler<"update_workout_notes"> = (record, input, updatedAt) => {
-  if (input.notes.userNotes !== undefined) {
-    record.workout.userNotes = input.notes.userNotes;
-  }
-
-  if (input.notes.coachNotes !== undefined) {
-    record.workout.coachNotes = input.notes.coachNotes;
-  }
-
-  record.workout.updatedAt = updatedAt;
-  record.workout.version += 1;
-
-  return createMutationResult(input, record, "workout_note_updated");
-};
-
-const updateExerciseNotes: MutationHandler<"update_exercise_notes"> = (
-  record,
-  input,
-  updatedAt,
-) => {
-  const exercise = findExercise(record, input.exerciseId);
-
-  if (input.notes.userNotes !== undefined) {
-    exercise.userNotes = input.notes.userNotes;
-  }
-
-  if (input.notes.coachNotes !== undefined) {
-    exercise.coachNotes = input.notes.coachNotes;
-  }
-
-  record.workout.updatedAt = updatedAt;
-  record.workout.version += 1;
-
-  return createMutationResult(input, record, "exercise_note_updated", [
-    createExerciseInvalidateKey(exercise.exerciseSchemaId),
-  ]);
-};
-
-const finishWorkout: MutationHandler<"finish_workout"> = (record, input, updatedAt) => {
-  record.workout.completedAt = input.completedAt ?? updatedAt;
-  record.workout.status = "completed";
-  record.workout.updatedAt = updatedAt;
-  record.workout.version += 1;
-
-  return createMutationResult(input, record, "workout_completed");
-};
-
-const mutationHandlers = {
-  add_set: addSet,
-  confirm_set: confirmSet,
-  finish_workout: finishWorkout,
-  remove_exercise: removeExercise,
-  remove_set: removeSet,
-  reorder_exercise: reorderExercise,
-  skip_set: skipSet,
-  start_workout: startWorkout,
-  update_exercise_notes: updateExerciseNotes,
-  update_set_designation: updateSetDesignation,
-  update_set_planned: updateSetPlanned,
-  update_set_actuals: updateSetActuals,
-  update_workout_notes: updateWorkoutNotes,
-} satisfies {
-  [K in Exclude<WorkoutMutationInput["action"], "delete_workout">]: MutationHandler<K>;
-};
-
-function applyWorkoutMutation(
+function applyMutationOperation(
   record: StoredWorkoutRecord,
-  input: NonDeleteWorkoutMutationInput,
+  operation: MutationOperation,
   updatedAt: string,
-) {
-  const handler = mutationHandlers[input.action] as MutationHandler<typeof input.action>;
+): MutationOperationEffect {
+  switch (operation.kind) {
+    case "start_workout": {
+      record.workout.status = "active";
+      record.workout.startedAt = operation.startedAt ?? updatedAt;
+      record.workout.completedAt = null;
 
-  return handler(record, input, updatedAt);
+      return {
+        invalidateExerciseSchemaIds: [],
+        summary: "Started the workout.",
+      };
+    }
+    case "update_set_planned": {
+      if (record.workout.status !== "planned") {
+        throw new WorkoutMutationError(
+          "Planned set values can only be edited before the workout starts.",
+        );
+      }
+
+      const exercise = findExercise(record, operation.exerciseId);
+      const set = findSet(exercise, operation.setId);
+
+      set.planned = {
+        ...set.planned,
+        ...operation.planned,
+      };
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Updated planned values for ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
+      };
+    }
+    case "update_set_actuals": {
+      const exercise = findExercise(record, operation.exerciseId);
+      const set = findSet(exercise, operation.setId);
+
+      set.actual = {
+        ...set.actual,
+        ...operation.actual,
+      };
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Updated logged values for ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
+      };
+    }
+    case "update_set_designation": {
+      const exercise = findExercise(record, operation.exerciseId);
+      const set = findSet(exercise, operation.setId);
+
+      set.designation = operation.designation;
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Updated the set type in ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
+      };
+    }
+    case "confirm_set": {
+      const exercise = findExercise(record, operation.exerciseId);
+      const set = findSet(exercise, operation.setId);
+
+      set.actual = {
+        ...set.actual,
+        ...operation.actual,
+      };
+      set.confirmedAt = updatedAt;
+      syncExerciseStatus(exercise);
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Confirmed a set in ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
+      };
+    }
+    case "add_set": {
+      const exercise = findExercise(record, operation.exerciseId);
+      const insertAfterIndex =
+        operation.insertAfterSetId == null
+          ? exercise.sets.length - 1
+          : exercise.sets.findIndex((set) => set.id === operation.insertAfterSetId);
+      const insertAt = insertAfterIndex < 0 ? exercise.sets.length : insertAfterIndex + 1;
+
+      for (let index = 0; index < operation.count; index += 1) {
+        exercise.sets.splice(
+          insertAt + index,
+          0,
+          createSet({
+            designation: operation.designation,
+            id: crypto.randomUUID(),
+            orderIndex: insertAt + index,
+            planned: {
+              reps: operation.planned?.reps ?? null,
+              rpe: operation.planned?.rpe ?? null,
+              weightLbs: operation.planned?.weightLbs ?? null,
+            },
+          }),
+        );
+      }
+
+      reindexSets(exercise.sets);
+      syncExerciseStatus(exercise);
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Added ${operation.count} ${operation.designation} set${operation.count === 1 ? "" : "s"} to ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
+      };
+    }
+    case "remove_set": {
+      const exercise = findExercise(record, operation.exerciseId);
+      const setIndex = exercise.sets.findIndex((set) => set.id === operation.setId);
+
+      if (setIndex < 0) {
+        throw new WorkoutMutationError(`Unknown set: ${operation.setId}`);
+      }
+
+      if (isSetConfirmed(exercise.sets[setIndex])) {
+        throw new WorkoutMutationError("Completed sets are not removable.");
+      }
+
+      exercise.sets.splice(setIndex, 1);
+      reindexSets(exercise.sets);
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Removed a set from ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
+      };
+    }
+    case "remove_exercise": {
+      const exerciseIndex = record.exercises.findIndex(
+        (exercise) => exercise.id === operation.exerciseId,
+      );
+
+      if (exerciseIndex < 0) {
+        throw new WorkoutMutationError(`Unknown exercise: ${operation.exerciseId}`);
+      }
+
+      const exercise = record.exercises[exerciseIndex];
+
+      if (exercise.sets.some(isSetConfirmed)) {
+        throw new WorkoutMutationError("Exercises with completed sets are not removable.");
+      }
+
+      record.exercises.splice(exerciseIndex, 1);
+      reindexExercises(record.exercises);
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Removed ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
+      };
+    }
+    case "reorder_exercise": {
+      const exerciseIndex = record.exercises.findIndex(
+        (exercise) => exercise.id === operation.exerciseId,
+      );
+
+      if (exerciseIndex < 0) {
+        throw new WorkoutMutationError(`Unknown exercise: ${operation.exerciseId}`);
+      }
+
+      const boundedTargetIndex = Math.max(
+        0,
+        Math.min(operation.targetIndex, record.exercises.length - 1),
+      );
+      const [exercise] = record.exercises.splice(exerciseIndex, 1);
+
+      record.exercises.splice(boundedTargetIndex, 0, exercise);
+      reindexExercises(record.exercises);
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Moved ${getExerciseDisplayName(exercise.exerciseSchemaId)} to position ${boundedTargetIndex + 1}.`,
+      };
+    }
+    case "update_workout_notes": {
+      if (operation.notes.userNotes !== undefined) {
+        record.workout.userNotes = operation.notes.userNotes;
+      }
+
+      if (operation.notes.coachNotes !== undefined) {
+        record.workout.coachNotes = operation.notes.coachNotes;
+      }
+
+      return {
+        invalidateExerciseSchemaIds: [],
+        summary: "Updated workout notes.",
+      };
+    }
+    case "update_exercise_notes": {
+      const exercise = findExercise(record, operation.exerciseId);
+
+      if (operation.notes.userNotes !== undefined) {
+        exercise.userNotes = operation.notes.userNotes;
+      }
+
+      if (operation.notes.coachNotes !== undefined) {
+        exercise.coachNotes = operation.notes.coachNotes;
+      }
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Updated notes for ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
+      };
+    }
+    case "finish_workout": {
+      record.workout.completedAt = operation.completedAt ?? updatedAt;
+      record.workout.status = "completed";
+
+      return {
+        invalidateExerciseSchemaIds: [],
+        summary: "Finished the workout.",
+      };
+    }
+    case "add_exercise": {
+      const targetIndex = Math.min(
+        operation.targetIndex ?? record.exercises.length,
+        record.exercises.length,
+      );
+      const exercise = createExerciseFromPlan(targetIndex, operation.exercise);
+
+      record.exercises.splice(targetIndex, 0, exercise);
+      reindexExercises(record.exercises);
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Added ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
+      };
+    }
+    case "replace_exercise": {
+      const exerciseIndex = record.exercises.findIndex(
+        (exercise) => exercise.id === operation.exerciseId,
+      );
+
+      if (exerciseIndex < 0) {
+        throw new WorkoutMutationError(`Unknown exercise: ${operation.exerciseId}`);
+      }
+
+      const existingExercise = record.exercises[exerciseIndex];
+      const replacementExercise = createExerciseFromPlan(exerciseIndex, operation.replacement);
+      const existingDisplayName = getExerciseDisplayName(existingExercise.exerciseSchemaId);
+      const replacementDisplayName = getExerciseDisplayName(replacementExercise.exerciseSchemaId);
+      const confirmedSetCount = existingExercise.sets.filter(isSetConfirmed).length;
+
+      if (confirmedSetCount > 0) {
+        clearUnconfirmedSets(existingExercise, undefined);
+        existingExercise.status = "replaced";
+        record.exercises.splice(exerciseIndex + 1, 0, replacementExercise);
+      } else {
+        record.exercises.splice(exerciseIndex, 1, replacementExercise);
+      }
+
+      reindexExercises(record.exercises);
+
+      return {
+        invalidateExerciseSchemaIds: [
+          existingExercise.exerciseSchemaId,
+          replacementExercise.exerciseSchemaId,
+        ],
+        summary:
+          confirmedSetCount > 0
+            ? `Preserved logged work for ${existingDisplayName} and inserted ${replacementDisplayName} for the remaining work.`
+            : `Replaced ${existingDisplayName} with ${replacementDisplayName}.`,
+      };
+    }
+    case "skip_exercise": {
+      const exercise = findExercise(record, operation.exerciseId);
+      const clearedCount = clearUnconfirmedSets(exercise, operation.note);
+      const displayName = getExerciseDisplayName(exercise.exerciseSchemaId);
+      const hasConfirmedSet = exercise.sets.some(isSetConfirmed);
+
+      exercise.status = hasConfirmedSet ? "completed" : "skipped";
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary:
+          clearedCount > 0
+            ? `Cleared ${clearedCount} unresolved set${clearedCount === 1 ? "" : "s"} in ${displayName}.`
+            : `No unresolved sets were left in ${displayName}.`,
+      };
+    }
+    case "update_exercise_targets": {
+      const exercise = findExercise(record, operation.exerciseId);
+
+      for (const setUpdate of operation.setUpdates) {
+        const set = findSet(exercise, setUpdate.setId);
+
+        if (isSetConfirmed(set)) {
+          throw new WorkoutMutationError(
+            `Only unconfirmed sets can be retargeted. Set ${setUpdate.setId} is already confirmed.`,
+          );
+        }
+
+        if (setUpdate.designation !== undefined) {
+          set.designation = setUpdate.designation;
+        }
+
+        if (setUpdate.planned !== undefined) {
+          set.planned = {
+            ...set.planned,
+            ...setUpdate.planned,
+          };
+        }
+      }
+
+      syncExerciseStatus(exercise);
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Updated targets for ${operation.setUpdates.length} set${operation.setUpdates.length === 1 ? "" : "s"} in ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
+      };
+    }
+    case "skip_remaining_sets": {
+      const exercise = findExercise(record, operation.exerciseId);
+      const clearedCount = clearUnconfirmedSets(exercise, operation.note);
+      const hasConfirmedSet = exercise.sets.some(isSetConfirmed);
+
+      exercise.status = hasConfirmedSet ? "completed" : "skipped";
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Cleared ${clearedCount} unresolved set${clearedCount === 1 ? "" : "s"} in ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
+      };
+    }
+    case "add_note": {
+      if (operation.scope === "workout") {
+        if (operation.field === "coach") {
+          record.workout.coachNotes = appendNote(record.workout.coachNotes, operation.text);
+        } else {
+          record.workout.userNotes = appendNote(record.workout.userNotes, operation.text);
+        }
+
+        return {
+          invalidateExerciseSchemaIds: [],
+          summary: `Added a ${operation.field} note to the workout.`,
+        };
+      }
+
+      if (!operation.exerciseId) {
+        throw new WorkoutMutationError("exerciseId is required when adding an exercise note.");
+      }
+
+      const exercise = findExercise(record, operation.exerciseId);
+
+      if (operation.field === "coach") {
+        exercise.coachNotes = appendNote(exercise.coachNotes, operation.text);
+      } else {
+        exercise.userNotes = appendNote(exercise.userNotes, operation.text);
+      }
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Added a ${operation.field} note to ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
+      };
+    }
+  }
+}
+
+function finalizeMutationRecord(record: StoredWorkoutRecord, updatedAt: string) {
+  record.workout.updatedAt = updatedAt;
+  record.workout.version += 1;
+}
+
+function getInvalidateExerciseSchemaIds(applied: readonly MutationOperationEffect[]) {
+  return [...new Set(applied.flatMap((effect) => effect.invalidateExerciseSchemaIds))];
+}
+
+async function executeStoredWorkoutMutation(
+  db: AppDatabase,
+  input: {
+    expectedVersion: number;
+    operations: readonly MutationOperation[];
+    record?: StoredWorkoutRecord;
+    updatedAt: string;
+    workoutId: string;
+  },
+): Promise<ExecutedMutation> {
+  const record = input.record ?? (await loadStoredWorkoutRecord(db, input.workoutId));
+
+  assertExpectedVersion(record, input.expectedVersion);
+
+  const applied = input.operations.map((operation) =>
+    applyMutationOperation(record, operation, input.updatedAt),
+  );
+
+  finalizeMutationRecord(record, input.updatedAt);
+  await persistStoredWorkoutRecord(db, record, input.expectedVersion);
+
+  return { applied, record };
 }
 
 function buildWhereClause(conditions: Array<ReturnType<typeof eq>>) {
@@ -894,7 +1330,7 @@ function buildStoredWorkoutRecords(
           rpe: setRow.actualRpe,
           weightLbs: setRow.actualWeightLbs,
         },
-        completedAt: setRow.completedAt,
+        confirmedAt: normalizeIsoDateTime(setRow.confirmedAt),
         designation: setRow.designation,
         id: setRow.id,
         orderIndex: setRow.orderIndex,
@@ -903,7 +1339,6 @@ function buildStoredWorkoutRecords(
           rpe: setRow.plannedRpe,
           weightLbs: setRow.plannedWeightLbs,
         },
-        status: setRow.status,
       }),
     );
 
@@ -926,15 +1361,15 @@ function buildStoredWorkoutRecords(
     exercises: cloneValue(exercisesByWorkoutId.get(workoutRow.id) ?? []),
     workout: workoutDetailWorkoutSchema.parse({
       coachNotes: workoutRow.coachNotes,
-      completedAt: workoutRow.completedAt,
-      createdAt: workoutRow.createdAt,
-      date: workoutRow.date,
+      completedAt: normalizeIsoDateTime(workoutRow.completedAt),
+      createdAt: normalizeIsoDateTime(workoutRow.createdAt) ?? workoutRow.createdAt,
+      date: normalizeIsoDateTime(workoutRow.date) ?? workoutRow.date,
       id: workoutRow.id,
       source: workoutRow.source,
-      startedAt: workoutRow.startedAt,
+      startedAt: normalizeIsoDateTime(workoutRow.startedAt),
       status: workoutRow.status,
       title: workoutRow.title,
-      updatedAt: workoutRow.updatedAt,
+      updatedAt: normalizeIsoDateTime(workoutRow.updatedAt) ?? workoutRow.updatedAt,
       userNotes: workoutRow.userNotes,
       version: workoutRow.version,
     }),
@@ -1069,7 +1504,7 @@ function toExerciseSetInsertRows(record: StoredWorkoutRecord): NewExerciseSetRow
       actualReps: set.actual.reps,
       actualRpe: set.actual.rpe,
       actualWeightLbs: set.actual.weightLbs,
-      completedAt: set.completedAt,
+      confirmedAt: set.confirmedAt,
       designation: set.designation,
       exerciseId: exercise.id,
       id: set.id,
@@ -1077,7 +1512,6 @@ function toExerciseSetInsertRows(record: StoredWorkoutRecord): NewExerciseSetRow
       plannedReps: set.planned.reps,
       plannedRpe: set.planned.rpe,
       plannedWeightLbs: set.planned.weightLbs,
-      status: set.status,
     })),
   );
 }
@@ -1241,7 +1675,6 @@ function cloneExerciseForPlannedWorkout(
           rpe: set.planned.rpe,
           weightLbs: set.planned.weightLbs,
         },
-        status: "tbd",
       }),
     ),
     status: "planned",
@@ -1319,237 +1752,28 @@ async function insertStoredWorkoutRecord(db: AppDatabase, record: StoredWorkoutR
   await db.batch(batchStatements);
 }
 
-type AppliedPatchOperation = {
-  exerciseSchemaIds: string[];
-  summary: string;
-  type: PatchWorkoutToolOp["type"];
-};
-
-function skipPendingSets(exercise: WorkoutExerciseState, note: string | undefined) {
-  let skippedCount = 0;
+function clearUnconfirmedSets(exercise: WorkoutExerciseState, note: string | undefined) {
+  let clearedCount = 0;
 
   for (const set of exercise.sets) {
-    if (set.status !== "tbd") {
+    if (isSetConfirmed(set)) {
       continue;
     }
 
-    skippedCount += 1;
+    clearedCount += 1;
     set.actual = {
       reps: null,
       rpe: null,
       weightLbs: null,
     };
-    set.completedAt = null;
-    set.status = "skipped";
+    set.confirmedAt = null;
   }
 
   if (note) {
     exercise.coachNotes = appendNote(exercise.coachNotes, note);
   }
 
-  syncExerciseStatus(exercise);
-
-  return skippedCount;
-}
-
-function applyPatchOperation(
-  record: StoredWorkoutRecord,
-  op: PatchWorkoutToolOp,
-): AppliedPatchOperation {
-  switch (op.type) {
-    case "add_exercise": {
-      const targetIndex = Math.min(
-        op.targetIndex ?? record.exercises.length,
-        record.exercises.length,
-      );
-      const exercise = createExerciseFromPlan(targetIndex, op.exercise);
-
-      record.exercises.splice(targetIndex, 0, exercise);
-      reindexExercises(record.exercises);
-
-      return {
-        exerciseSchemaIds: [exercise.exerciseSchemaId],
-        summary: `Added ${getExerciseSchemaById(exercise.exerciseSchemaId)?.displayName ?? exercise.exerciseSchemaId}.`,
-        type: op.type,
-      };
-    }
-    case "replace_exercise": {
-      const exerciseIndex = record.exercises.findIndex((exercise) => exercise.id === op.exerciseId);
-
-      if (exerciseIndex < 0) {
-        throw new WorkoutMutationError(`Unknown exercise: ${op.exerciseId}`);
-      }
-
-      const existingExercise = record.exercises[exerciseIndex];
-      const replacementExercise = createExerciseFromPlan(exerciseIndex, op.replacement);
-      const existingDisplayName =
-        getExerciseSchemaById(existingExercise.exerciseSchemaId)?.displayName ??
-        existingExercise.exerciseSchemaId;
-      const replacementDisplayName =
-        getExerciseSchemaById(replacementExercise.exerciseSchemaId)?.displayName ??
-        replacementExercise.exerciseSchemaId;
-      const doneSetCount = existingExercise.sets.filter((set) => set.status === "done").length;
-
-      if (doneSetCount > 0) {
-        skipPendingSets(existingExercise, undefined);
-        existingExercise.status = "replaced";
-        record.exercises.splice(exerciseIndex + 1, 0, replacementExercise);
-      } else {
-        record.exercises.splice(exerciseIndex, 1, replacementExercise);
-      }
-
-      reindexExercises(record.exercises);
-
-      return {
-        exerciseSchemaIds: [
-          existingExercise.exerciseSchemaId,
-          replacementExercise.exerciseSchemaId,
-        ],
-        summary:
-          doneSetCount > 0
-            ? `Preserved logged work for ${existingDisplayName} and inserted ${replacementDisplayName} for the remaining work.`
-            : `Replaced ${existingDisplayName} with ${replacementDisplayName}.`,
-        type: op.type,
-      };
-    }
-    case "skip_exercise": {
-      const exercise = findExercise(record, op.exerciseId);
-      const skippedCount = skipPendingSets(exercise, op.note);
-      const displayName =
-        getExerciseSchemaById(exercise.exerciseSchemaId)?.displayName ?? exercise.exerciseSchemaId;
-
-      return {
-        exerciseSchemaIds: [exercise.exerciseSchemaId],
-        summary:
-          skippedCount > 0
-            ? `Skipped ${skippedCount} remaining set${skippedCount === 1 ? "" : "s"} in ${displayName}.`
-            : `No remaining sets were skipped in ${displayName}.`,
-        type: op.type,
-      };
-    }
-    case "reorder_exercise": {
-      const exerciseIndex = record.exercises.findIndex((exercise) => exercise.id === op.exerciseId);
-
-      if (exerciseIndex < 0) {
-        throw new WorkoutMutationError(`Unknown exercise: ${op.exerciseId}`);
-      }
-
-      const targetIndex = Math.max(0, Math.min(op.targetIndex, record.exercises.length - 1));
-      const [exercise] = record.exercises.splice(exerciseIndex, 1);
-
-      record.exercises.splice(targetIndex, 0, exercise);
-      reindexExercises(record.exercises);
-
-      return {
-        exerciseSchemaIds: [exercise.exerciseSchemaId],
-        summary: `Moved ${getExerciseSchemaById(exercise.exerciseSchemaId)?.displayName ?? exercise.exerciseSchemaId} to position ${targetIndex + 1}.`,
-        type: op.type,
-      };
-    }
-    case "update_exercise_targets": {
-      const exercise = findExercise(record, op.exerciseId);
-
-      for (const setUpdate of op.setUpdates) {
-        const set = findSet(exercise, setUpdate.setId);
-
-        if (set.status !== "tbd") {
-          throw new WorkoutMutationError(
-            `Only remaining sets can be retargeted. Set ${setUpdate.setId} is ${set.status}.`,
-          );
-        }
-
-        if (setUpdate.designation !== undefined) {
-          set.designation = setUpdate.designation;
-        }
-
-        if (setUpdate.planned !== undefined) {
-          set.planned = {
-            ...set.planned,
-            ...setUpdate.planned,
-          };
-        }
-      }
-
-      syncExerciseStatus(exercise);
-
-      return {
-        exerciseSchemaIds: [exercise.exerciseSchemaId],
-        summary: `Updated targets for ${op.setUpdates.length} set${op.setUpdates.length === 1 ? "" : "s"} in ${getExerciseSchemaById(exercise.exerciseSchemaId)?.displayName ?? exercise.exerciseSchemaId}.`,
-        type: op.type,
-      };
-    }
-    case "add_set": {
-      const exercise = findExercise(record, op.exerciseId);
-      const insertAfterIndex =
-        op.insertAfterSetId == null
-          ? exercise.sets.length - 1
-          : exercise.sets.findIndex((set) => set.id === op.insertAfterSetId);
-      const insertAt = insertAfterIndex < 0 ? exercise.sets.length : insertAfterIndex + 1;
-
-      for (let index = 0; index < op.template.count; index += 1) {
-        exercise.sets.splice(
-          insertAt + index,
-          0,
-          clonePlannedSetTemplate(insertAt + index, {
-            ...op.template,
-            count: 1,
-          }),
-        );
-      }
-
-      reindexSets(exercise.sets);
-      syncExerciseStatus(exercise);
-
-      return {
-        exerciseSchemaIds: [exercise.exerciseSchemaId],
-        summary: `Added ${op.template.count} ${op.template.designation} set${op.template.count === 1 ? "" : "s"} to ${getExerciseSchemaById(exercise.exerciseSchemaId)?.displayName ?? exercise.exerciseSchemaId}.`,
-        type: op.type,
-      };
-    }
-    case "skip_remaining_sets": {
-      const exercise = findExercise(record, op.exerciseId);
-      const skippedCount = skipPendingSets(exercise, op.note);
-
-      return {
-        exerciseSchemaIds: [exercise.exerciseSchemaId],
-        summary: `Skipped ${skippedCount} remaining set${skippedCount === 1 ? "" : "s"} in ${getExerciseSchemaById(exercise.exerciseSchemaId)?.displayName ?? exercise.exerciseSchemaId}.`,
-        type: op.type,
-      };
-    }
-    case "add_note": {
-      if (op.scope === "workout") {
-        if (op.field === "coach") {
-          record.workout.coachNotes = appendNote(record.workout.coachNotes, op.text);
-        } else {
-          record.workout.userNotes = appendNote(record.workout.userNotes, op.text);
-        }
-
-        return {
-          exerciseSchemaIds: [],
-          summary: `Added a ${op.field} note to the workout.`,
-          type: op.type,
-        };
-      }
-
-      if (!op.exerciseId) {
-        throw new WorkoutMutationError("exerciseId is required when adding an exercise note.");
-      }
-
-      const exercise = findExercise(record, op.exerciseId);
-
-      if (op.field === "coach") {
-        exercise.coachNotes = appendNote(exercise.coachNotes, op.text);
-      } else {
-        exercise.userNotes = appendNote(exercise.userNotes, op.text);
-      }
-
-      return {
-        exerciseSchemaIds: [exercise.exerciseSchemaId],
-        summary: `Added a ${op.field} note to ${getExerciseSchemaById(exercise.exerciseSchemaId)?.displayName ?? exercise.exerciseSchemaId}.`,
-        type: op.type,
-      };
-    }
-  }
+  return clearedCount;
 }
 
 type HistoryMatchedSet = {
@@ -1581,7 +1805,7 @@ function getEstimatedE1rm(set: WorkoutSet) {
 }
 
 function loadFilterMatchesSet(set: WorkoutSet, filters: QueryHistoryToolInput["filters"]) {
-  if (set.status !== "done") {
+  if (!isSetConfirmed(set)) {
     return false;
   }
 
@@ -1968,22 +2192,24 @@ export function createWorkoutAgentToolService(db: AppDatabase) {
 
     async patchWorkout(input: PatchWorkoutToolInput): Promise<PatchWorkoutToolResult> {
       try {
-        const record = await loadStoredWorkoutRecord(db, input.workoutId);
-
-        assertExpectedVersion(record, input.expectedVersion);
-
-        const applied = input.ops.map((operation) => applyPatchOperation(record, operation));
-
-        record.workout.updatedAt = new Date().toISOString();
-        record.workout.version += 1;
-
-        await persistStoredWorkoutRecord(db, record, input.expectedVersion);
+        const normalizedOperations = input.ops.map((operation) =>
+          normalizePatchOperation(operation),
+        );
+        const { applied, record } = await executeStoredWorkoutMutation(db, {
+          expectedVersion: input.expectedVersion,
+          operations: normalizedOperations,
+          updatedAt: new Date().toISOString(),
+          workoutId: input.workoutId,
+        });
 
         return {
-          applied: applied.map(({ summary, type }) => ({ summary, type })),
+          applied: applied.map((operation, index) => ({
+            summary: operation.summary,
+            type: input.ops[index].type,
+          })),
           invalidate: createToolInvalidateKeys(
             record.workout.id,
-            applied.flatMap((operation) => operation.exerciseSchemaIds),
+            getInvalidateExerciseSchemaIds(applied),
           ),
           ok: true,
           reason: input.reason,
@@ -2154,18 +2380,29 @@ export function createWorkoutRouteService(db: AppDatabase): WorkoutRouteService 
         record.workout.updatedAt = getMutationTimestamp(input);
         record.workout.version += 1;
 
-        const result = createMutationResult(input, record, "workout_deleted");
+        const result = createMutationResult(input.action, record, "workout_deleted");
 
         await deleteStoredWorkoutRecord(db, record.workout.id, input.expectedVersion);
 
         return result;
       }
 
-      const result = applyWorkoutMutation(record, input, getMutationTimestamp(input));
+      const plan = normalizeRouteMutation(input);
+      const { applied, record: updatedRecord } = await executeStoredWorkoutMutation(db, {
+        expectedVersion: input.expectedVersion,
+        operations: [plan.operation],
+        record,
+        updatedAt: getMutationTimestamp(input),
+        workoutId: input.workoutId,
+      });
 
-      await persistStoredWorkoutRecord(db, record, input.expectedVersion);
-
-      return result;
+      return createMutationResult(
+        input.action,
+        updatedRecord,
+        plan.eventType,
+        getInvalidateExerciseSchemaIds(applied),
+        plan.includeExerciseInvalidations,
+      );
     },
   };
 }

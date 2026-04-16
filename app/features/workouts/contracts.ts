@@ -6,7 +6,7 @@ import {
   EXERCISE_MOVEMENT_PATTERNS,
   EXERCISE_SCHEMA_IDS,
 } from "../exercises/schema.ts";
-import { SET_KINDS, SET_STATUSES, WORKOUT_STATUSES } from "./interchange.ts";
+import { SET_KINDS, WORKOUT_STATUSES } from "./interchange.ts";
 
 const WORKOUT_SOURCES = ["manual", "imported", "agent"] as const;
 const EXERCISE_STATUSES = ["planned", "active", "completed", "skipped", "replaced"] as const;
@@ -18,7 +18,6 @@ const isoDateSchema = z.iso.date();
 const isoDateTimeSchema = z.iso.datetime({ offset: true });
 const exerciseSchemaIdSchema = z.enum(EXERCISE_SCHEMA_IDS);
 const workoutStatusSchema = z.enum(WORKOUT_STATUSES);
-const setStatusSchema = z.enum(SET_STATUSES);
 const setKindSchema = z.enum(SET_KINDS);
 const exerciseStatusSchema = z.enum(EXERCISE_STATUSES);
 const workoutSourceSchema = z.enum(WORKOUT_SOURCES);
@@ -50,12 +49,11 @@ const setValuesSchema = z.strictObject({
 export const workoutSetCountsSchema = z
   .strictObject({
     total: nonNegativeIntegerSchema,
-    tbd: nonNegativeIntegerSchema,
-    done: nonNegativeIntegerSchema,
-    skipped: nonNegativeIntegerSchema,
+    confirmed: nonNegativeIntegerSchema,
+    unconfirmed: nonNegativeIntegerSchema,
   })
   .superRefine((counts, context) => {
-    if (counts.total !== counts.tbd + counts.done + counts.skipped) {
+    if (counts.total !== counts.confirmed + counts.unconfirmed) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: "Set counts must add up to total.",
@@ -70,28 +68,19 @@ export const workoutSetSchema = z
     id: nonEmptyStringSchema,
     orderIndex: nonNegativeIntegerSchema,
     designation: setKindSchema,
-    status: setStatusSchema,
     planned: setValuesSchema,
     actual: setValuesSchema,
     previous: setValuesSchema.nullable(),
-    completedAt: isoDateTimeSchema.nullable(),
+    confirmedAt: isoDateTimeSchema.nullable(),
   })
   .superRefine((set, context) => {
     const hasActualValue =
       set.actual.weightLbs != null || set.actual.reps != null || set.actual.rpe != null;
 
-    if (set.status === "done" && !hasActualValue) {
+    if (set.confirmedAt != null && !hasActualValue) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "A done set must include at least one actual value.",
-        path: ["actual"],
-      });
-    }
-
-    if (set.status === "skipped" && hasActualValue) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "A skipped set cannot carry actual values.",
+        message: "A confirmed set must include at least one actual value.",
         path: ["actual"],
       });
     }
@@ -154,7 +143,7 @@ export const workoutListExerciseSummarySchema = z
   .strictObject({
     displayName: nonEmptyStringSchema,
     orderIndex: nonNegativeIntegerSchema,
-    completedSetCount: nonNegativeIntegerSchema,
+    confirmedSetCount: nonNegativeIntegerSchema,
     totalSetCount: nonNegativeIntegerSchema,
     topSet: z.strictObject({
       rpe: halfStepRpeSchema.nullable(),
@@ -162,11 +151,11 @@ export const workoutListExerciseSummarySchema = z
     }),
   })
   .superRefine((summary, context) => {
-    if (summary.completedSetCount > summary.totalSetCount) {
+    if (summary.confirmedSetCount > summary.totalSetCount) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "completedSetCount cannot exceed totalSetCount.",
-        path: ["completedSetCount"],
+        message: "confirmedSetCount cannot exceed totalSetCount.",
+        path: ["confirmedSetCount"],
       });
     }
   });

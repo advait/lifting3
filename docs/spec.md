@@ -318,26 +318,24 @@ Fields:
 - `actual_weight_lbs` nullable
 - `actual_reps` nullable
 - `actual_rpe` nullable
-- `status`: `tbd | done | skipped`
-- `completed_at` nullable
+- `confirmed_at` nullable
 
 Set semantics:
 
-- `tbd`: not yet confirmed; may still carry partial actual fields entered ahead of confirmation
-- `done`: confirmed completed
-- `skipped`: intentionally skipped
+- `confirmed_at = null`: set is not yet confirmed; it may still carry partial actual fields entered ahead of confirmation
+- `confirmed_at != null`: set is confirmed completed
 
 Critical product rules:
 
 - Setting `actual_rpe` is the default confirmation action for a live set.
-- The user may enter actual weight/reps while the set remains `tbd`.
-- A workout may be completed even if some remaining sets are still `tbd`.
+- The user may enter actual weight/reps while `confirmed_at` remains null.
+- A workout may be completed even if some sets still have `confirmed_at = null`.
 
 Implications:
 
 - Weight and reps may be prefilled from plan or entered before confirmation.
 - The act of assigning RPE is usually the fastest way to commit "this set happened."
-- Completed workouts may preserve leftover planned work as `tbd` when the session ends early.
+- Completed workouts may preserve leftover planned work as unconfirmed when the session ends early.
 
 RPE values should support half-step increments.
 
@@ -588,8 +586,8 @@ The interchange payload should include at minimum:
 Locked enum decisions for MVP:
 
 - workout `status`: `planned | active | completed | canceled`
-- set `status`: `tbd | done | skipped`
-- a `completed` workout may still contain `tbd` sets
+- set confirmation: `confirmed_at | null`
+- a `completed` workout may still contain unconfirmed sets
 
 The interchange format should be stable enough to support:
 
@@ -624,7 +622,7 @@ Requirements:
 - every imported file must pass Zod validation before persistence
 - imported workouts preserve order, notes, and canonical exercise schema IDs
 - imported workouts preserve the supported workout `status` from the interchange file
-- imported `completed` workouts may retain `tbd` sets
+- imported `completed` workouts may retain unconfirmed sets
 
 MVP should not implement direct import from legacy TOML files in application code.
 
@@ -790,12 +788,11 @@ Fields shown inline:
 
 Set row states:
 
-- `tbd`: muted background, no completion marker, but may still show partially entered actual values
-- `done`: strong completed treatment with timestamp/check
-- `skipped`: crossed or muted with explicit label
+- `unconfirmed`: muted background, no completion marker, but may still show partially entered actual values
+- `confirmed`: strong completed treatment with timestamp/check
 
 The set list must make it impossible to confuse planned work with confirmed work.
-A `tbd` row with partial actual values may use stronger input emphasis, but it must not share the `done` visual treatment.
+An unconfirmed row with partial actual values may use stronger input emphasis, but it must not share the confirmed visual treatment.
 
 ## 12.3 Confirmation Model
 
@@ -804,9 +801,9 @@ The default flow for a set:
 1. User taps into the set.
 2. Weight and reps are reviewed or adjusted.
 3. User sets RPE.
-4. Setting RPE confirms the set and transitions it to `done`.
+4. Setting RPE confirms the set and stamps `confirmed_at`.
 
-If the workout ends before all planned work is confirmed, the remaining sets may stay `tbd` when the workout is completed.
+If the workout ends before all planned work is confirmed, the remaining sets may stay unconfirmed when the workout is completed.
 
 This is the key product behavior.
 
@@ -999,7 +996,6 @@ These are deterministic mutations from UI controls:
 - `start_workout`
 - `update_set_actuals`
 - `confirm_set`
-- `skip_set`
 - `add_set`
 - `remove_set`
 - `reorder_exercise`
@@ -1161,7 +1157,7 @@ PR detection occurs when a set is confirmed.
 
 ## 17.1 Confirmation Trigger
 
-The system evaluates PRs when `actual_rpe` is set and the set transitions to `done`.
+The system evaluates PRs when `actual_rpe` is set and the set is confirmed.
 
 ## 17.2 PR Types
 
@@ -1267,8 +1263,7 @@ exercise_sets
   actual_weight_lbs
   actual_reps
   actual_rpe
-  status
-  completed_at
+  confirmed_at
 ```
 
 ## 20. API / Backend Boundaries

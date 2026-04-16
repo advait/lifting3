@@ -2,11 +2,7 @@ import { relations } from "drizzle-orm";
 import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import { EXERCISE_SCHEMA_IDS } from "../../../features/exercises/schema.ts";
-import {
-  SET_KINDS,
-  SET_STATUSES,
-  WORKOUT_STATUSES,
-} from "../../../features/workouts/interchange.ts";
+import { SET_KINDS, WORKOUT_STATUSES } from "../../../features/workouts/interchange.ts";
 
 const WORKOUT_SOURCES = ["manual", "imported", "agent"] as const;
 const EXERCISE_STATUSES = ["planned", "active", "completed", "skipped", "replaced"] as const;
@@ -77,19 +73,18 @@ export const exerciseSets = sqliteTable(
       .references(() => workoutExercises.id, { onDelete: "cascade" }),
     orderIndex: integer("order_index").notNull(),
     designation: text("designation", { enum: SET_KINDS }).notNull(),
-    status: text("status", { enum: SET_STATUSES }).notNull(),
     plannedWeightLbs: real("planned_weight_lbs"),
     plannedReps: integer("planned_reps"),
     plannedRpe: real("planned_rpe"),
     actualWeightLbs: real("actual_weight_lbs"),
     actualReps: integer("actual_reps"),
     actualRpe: real("actual_rpe"),
-    completedAt: text("completed_at"),
+    confirmedAt: text("confirmed_at"),
   },
   (table) => [
     uniqueIndex("exercise_sets_exercise_order_unique").on(table.exerciseId, table.orderIndex),
     index("exercise_sets_exercise_idx").on(table.exerciseId),
-    index("exercise_sets_status_idx").on(table.status),
+    index("exercise_sets_confirmed_at_idx").on(table.confirmedAt),
   ],
 );
 
