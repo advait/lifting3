@@ -1,11 +1,7 @@
-node_modules/
-dist/
-build/
-.cache/
-.turbo/
 .DS_Store
 .env
-.env.*
-!.env.example
-coverage/
-.wrangler/
+/node_modules/
+
+# React Router
+/.react-router/
+/build/

@@ -31,6 +31,7 @@ The core product bet is:
 ## 3. Non-Goals
 
 - Multi-user support.
+- App-level authentication, login UI, or user account management in MVP.
 - Social features, likes, follows, public profiles, or sharing.
 - Generic wellness tracking outside the workout domain.
 - Auto-programming for teams or coaches managing many athletes.
@@ -91,6 +92,19 @@ This matters because the design can assume:
 - no permissioning matrix
 - no shared plans
 - direct, opinionated UX optimized for one workflow instead of generic configurability
+
+## 5.1 Auth Model
+
+`lifting3` will sit behind Cloudflare Access.
+
+Implications:
+
+- no in-app sign-in flow
+- no password, OAuth, or magic-link implementation
+- no multi-user account model in MVP
+- the app can assume the request has already passed perimeter access control
+
+Any identity surfaced inside the app should be treated as optional request context, not a product-level auth system.
 
 ## 6. Information Architecture
 
@@ -466,40 +480,93 @@ These support fast reads for:
 - estimated 1RM
 - frequency / last performed
 
-## 10. Import From lifting2
+## 10. Workout Interchange, Import, and Export
 
-`lifting3` should support an initial one-time import from local `lifting2/entries/workouts` TOML files.
+`lifting3` should define a versioned workout JSON interchange format backed by a shared Zod schema.
 
-Imported data:
+This interchange format is the only supported import/export boundary in MVP.
 
-- workout title and timestamps
-- workout notes
-- exercises
-- sets
+## 10.1 JSON Interchange Format
+
+Requirements:
+
+- one JSON file per workout
+- validated by a shared Zod schema in code
+- versioned so the format can evolve safely
+- includes canonical `exercise_schema_id` values rather than unresolved freeform exercise names
+
+The interchange payload should include at minimum:
+
+- workout metadata
+- top-level `user_notes`
+- top-level `coach_notes`
+- ordered exercises
+- exercise-level notes
+- ordered sets
 - source metadata
 
-Import mapping:
+The interchange format should be stable enough to support:
 
-- `notes` from `lifting2` workout becomes `user_notes`
-- imported exercises preserve order
-- exercise notes become `user_notes`
-- imported workouts start as `completed`
-- imported exercise names map to `exercise_schema_id` through a code-defined alias table
+- local export from `lifting3`
+- local import into `lifting3`
+- out-of-band migration pipelines from legacy systems such as `lifting2`
 
-Import safety:
+## 10.2 Export
 
-- personal historical workout data is local user data and must not be committed to the public repo
-- the repo may include fixtures later, but they must be synthetic or sanitized
+`lifting3` should support local export of workouts into the interchange JSON format.
+
+Requirements:
+
+- export is a local command, not a UI flow
+- export emits a directory of per-workout JSON files
+- every exported file validates against the shared Zod schema
+- exported workouts preserve exercise order, set order, notes, and source metadata
+
+Initial export scope:
+
+- completed workouts
+- draft or active workouts may be added later if needed
+
+## 10.3 Import
+
+`lifting3` should support local import of workouts from the interchange JSON format.
+
+Requirements:
+
+- import is a local command, not an in-app screen
+- import consumes a directory of workout JSON files
+- every imported file must pass Zod validation before persistence
+- imported workouts preserve order, notes, and canonical exercise schema IDs
+- imported workouts start as `completed` unless the interchange format explicitly supports another status
+
+MVP should not implement direct import from legacy TOML files in application code.
+
+## 10.4 lifting2 Migration Path
+
+The `lifting2` migration path should be:
+
+1. generate intermediate workout JSON files out of band
+2. ensure those JSON files satisfy the shared Zod schema
+3. import those files with the local `lifting3` import command
+
+This keeps migration logic separate from the app runtime and prevents `lifting3` from carrying one-off legacy parsing code.
+
+Expected legacy mapping in the out-of-band step:
+
+- `lifting2` workout `notes` -> `user_notes`
+- `lifting2` exercise notes -> exercise `user_notes`
+- legacy exercise names -> canonical `exercise_schema_id`
+- source metadata preserved where useful
 
 Imported workouts will not initially have rich session history. If desired, later versions can backfill a synthetic session summary, but MVP does not need that.
 
-## 10.1 Public Repo Hygiene
+## 10.5 Public Repo Hygiene
 
 The repository must remain safe to publish.
 
 Rules:
 
-- do not commit real workout history from `lifting2`
+- do not commit real workout history from `lifting2` or exported `lifting3` JSONs
 - do not commit real personal notes or coaching notes
 - do not commit secrets, tokens, or local account data
 - any fixtures or screenshots committed to the repo must be synthetic or sanitized
@@ -653,6 +720,7 @@ Because RPE is the confirmation gesture:
 - the UI can emphasize RPE entry as the final commit
 - a set with no RPE remains visibly incomplete
 - half-step RPE values such as `7.5`, `8.5`, and `9.5` must be first-class, not hidden in a secondary flow
+- `6.5` should not be part of the default quick-entry set
 
 ## 12.4 Fast Logging UX
 
@@ -666,6 +734,16 @@ The app should support:
 - rapid RPE input
 
 RPE quick entry should use visible chips/buttons rather than forcing a keyboard path.
+
+The default visible RPE chip set should be:
+
+- `7`
+- `7.5`
+- `8`
+- `8.5`
+- `9`
+- `9.5`
+- `10`
 
 Preferred behavior:
 
@@ -1067,11 +1145,15 @@ Not final, but the boundaries should look like this:
 
 RR7 loaders/actions can sit on top of these boundaries or call server functions directly depending on deployment shape.
 
+MVP should not expose HTTP import/export endpoints. Import and export are local command workflows only.
+
 ## 21. MVP Scope
 
 MVP must include:
 
-- import historical workouts from `lifting2`
+- export workouts to versioned JSON files validated by a shared Zod schema
+- import workouts from those validated JSON files via a local command
+- support `lifting2` migration through the intermediate JSON format
 - browse workouts
 - open workout detail
 - edit workout, exercise, and set data
@@ -1095,10 +1177,9 @@ MVP may defer:
 
 ## 22. Open Questions
 
-- Should draft workouts support reusable templates in MVP, or only agent-generated drafts?
 - Should historical correction flows require a reason, or keep the reason optional?
-- Should set confirmation support a one-tap default RPE shortcut for common values such as `7`, `8`, and `9`?
 - Should the active workout screen auto-focus the next `tbd` set after confirming the current one?
+- Should export include only workout state, or also session/message history in a separate format later?
 
 ## 23. Companion Documents
 
