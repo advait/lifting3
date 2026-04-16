@@ -1,89 +1,95 @@
 # lifting3
 
-`lifting3` is a single-user workout planning and logging app with an embedded AI coach.
+**An AI-native workout app for planning sessions, logging sets fast, and keeping training history useful.**
 
-It is built around a simple product rule: the workout data is authoritative, not the chat transcript. The coach can create or modify workouts, but those changes only count after they pass through the same guarded mutation pipeline as direct UI edits.
+Ask for tomorrow's leg day, get a real structured workout, then move straight into a focused logging flow with previous-performance context, quick RPE entry, and workout-specific coaching.
 
-Today the app is a mobile-first training system that already covers the core loop:
+`lifting3` is not a chatbot wrapped around fitness prompts. It is a workout product first: planning, session execution, history, and coaching are all tied to the same training system.
 
-- recent workout browsing on the home screen
-- filterable workout history with detailed workout pages
-- start, log, confirm, and finish workout sessions
-- exercise catalog browsing with historical summaries
-- an in-app coach sheet that can create workouts, patch workouts, query history, and persist profile context
-
-It is intentionally single-user and assumes perimeter auth via Cloudflare Access rather than an in-app sign-in flow.
-
-## What Is Working
-
-- `Home` shows recent workouts and acts as the daily landing page.
-- `Workouts` lists planned, active, and completed sessions and links into the full workout detail view.
-- `Workout detail` supports planned and active session management, including notes, set edits, carry-forward context, RPE entry, set confirmation, add/remove set actions, and workout completion.
-- `Exercises` shows the exercise catalog with filters plus per-exercise history signals such as logged-session counts and top load.
-- `Coach` is available from a floating sheet and can operate globally or against the current workout.
-- `Analytics` and `Settings` routes exist, but both are still marked coming soon.
-
-## Screens
+## Preview
 
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="screenshots/nav-drawer.png" alt="Navigation drawer with recent workouts and primary app sections" width="280" />
+      <img src="screenshots/home-coach-create-workout.png" alt="Home screen with recent workouts and the coach creating a new leg day workout" width="300" />
     </td>
     <td width="50%" align="center">
-      <img src="screenshots/home-coach-create-workout.png" alt="Home screen with recent workouts and the coach creating a new planned workout" width="280" />
+      <img src="screenshots/active-set-logging.png" alt="Active workout logging screen with previous performance, weight, reps, and quick RPE controls" width="300" />
     </td>
   </tr>
   <tr>
-    <td valign="top">
-      <strong>Navigation + recent sessions</strong><br />
-      The slide-out navigation keeps the main areas visible and makes it easy to jump back into recent workouts.
-    </td>
     <td valign="top">
       <strong>Coach-driven planning</strong><br />
-      The coach can create a planned workout from chat without bypassing the structured workout model.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <img src="screenshots/workout-plan-detail.png" alt="Planned workout detail screen with exercise cards, set targets, and a start workout action" width="280" />
-    </td>
-    <td width="50%" align="center">
-      <img src="screenshots/active-set-logging.png" alt="Active workout detail with previous performance, current load and reps, and quick RPE controls" width="280" />
-    </td>
-  </tr>
-  <tr>
-    <td valign="top">
-      <strong>Planned workout detail</strong><br />
-      Planned sessions keep notes, constraints, exercise order, and set targets in a form that is ready to start and edit.
+      The app can turn a natural-language request into a planned workout instead of dumping back generic advice.
     </td>
     <td valign="top">
       <strong>Fast live logging</strong><br />
-      Active workouts expose previous performance, actual load and reps, and quick RPE confirmation controls for the main logging loop.
+      Active sessions keep the important controls on-screen: previous set context, current load and reps, and one-tap RPE selection.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="screenshots/workout-plan-detail.png" alt="Planned workout detail screen with exercise order, notes, rest timers, and start workout action" width="300" />
+    </td>
+    <td width="50%" align="center">
+      <img src="screenshots/nav-drawer.png" alt="Navigation drawer showing recent workouts and primary sections of the app" width="300" />
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <strong>Structured workout detail</strong><br />
+      Planned sessions already look like something you can train from: notes, constraints, exercise order, set targets, and a clean path into the live workout.
+    </td>
+    <td valign="top">
+      <strong>Built like a product</strong><br />
+      Navigation, recent sessions, and route structure are already shaped like a real app, not a one-screen prototype.
     </td>
   </tr>
 </table>
 
-## Architecture
+## Why This Project Is Interesting
 
-- React 19 + React Router 7 for the UI and data-loading model
-- Cloudflare Workers for the app runtime
-- Cloudflare D1 + Drizzle for authoritative workout data
-- Cloudflare Agents for durable coach conversations
-- Tailwind CSS v4 + shadcn/ui for the interface
-- Vite+ for formatting, linting, and type-aware checks
+- The coach can create and modify workouts, but the result is always a proper workout model you can browse, edit, and log against.
+- The workout screen is optimized for the main loop: start the session, record the set, assign RPE, move on.
+- History is first-class. Workouts and exercises are browsable on their own instead of being buried inside chat transcripts.
+- The architecture keeps the product honest: chat is useful, but it does not replace structured state.
 
-The important split is:
+## What It Does Today
 
-- structured workout state lives in D1
-- coach conversations live in Cloudflare Agents
-- both manual edits and coach-authored edits use the same D1-backed domain services
+- `Home` surfaces recent workouts and acts as the daily landing page.
+- `Workouts` lists planned, active, and completed sessions and links into full workout detail pages.
+- `Workout detail` supports notes, set edits, set confirmation, add/remove set actions, carry-forward values, and workout completion.
+- `Exercises` provides a filterable exercise catalog with history-aware summary cards.
+- `Coach` is available from a floating sheet and can create workouts, patch workouts, query history, and save durable profile context.
+- `Analytics` and `Settings` are present in the app shell but still intentionally marked coming soon.
+
+## Product Shape
+
+The current build is strongest in four areas:
+
+- **Plan a workout** with the embedded coach or from structured data.
+- **Run the workout** with a UI built around quick set logging.
+- **Browse history** through workouts and exercises, not just messages.
+- **Keep coaching attached** to the workout flow instead of splitting it into a separate tool.
+
+This repo is intentionally single-user for now and assumes perimeter access through Cloudflare Access rather than an in-app auth flow.
+
+## Stack
+
+- React 19
+- React Router 7
+- Cloudflare Workers
+- Cloudflare D1 + Drizzle
+- Cloudflare Agents
+- Tailwind CSS v4
+- shadcn/ui
+- Vite+
 
 ## Local Development
 
 1. Copy `.env.sample` to `.env`.
 2. Set `OPENAI_API_KEY` if you want the coach flow available through Cloudflare AI Gateway's OpenAI provider.
-3. Install dependencies with `pnpm install`.
+3. Run `pnpm install`.
 4. Apply local migrations with `pnpm db:migrate:local`.
 5. Seed sample workouts with `pnpm db:seed:local`.
 6. Start the app with `pnpm dev`.
@@ -109,8 +115,8 @@ pnpm validate:workout-interchange -- <path>
 pnpm verify:lifting2-exercises
 ```
 
-## Docs
+## Reference Docs
 
 - [docs/spec.md](docs/spec.md) - product and architecture spec
-- [docs/hevy-app.md](docs/hevy-app.md) - reference teardown of the Hevy workout UX
+- [docs/hevy-app.md](docs/hevy-app.md) - interaction and UX reference notes
 - [docs/cloudflare-agents.md](docs/cloudflare-agents.md) - Cloudflare architecture guidance for D1, Drizzle, and Agents
