@@ -87,8 +87,8 @@ export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
           <div>
             <CardTitle>Workouts</CardTitle>
             <CardDescription>
-              D1-backed RR7 loaders now drive the list and detail routes through the shared
-              workout contracts.
+              D1-backed RR7 loaders now drive the list and detail routes through the shared workout
+              contracts.
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">

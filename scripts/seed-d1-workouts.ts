@@ -1017,49 +1017,58 @@ function createInsertStatement(
 }
 
 function buildSeedSql(records: readonly SeedWorkoutRecord[]) {
-  const workoutRows = records.map(({ workout }) => [
-    workout.id,
-    workout.title,
-    workout.date,
-    workout.status,
-    workout.source,
-    workout.version,
-    workout.startedAt,
-    workout.completedAt,
-    workout.createdAt,
-    workout.updatedAt,
-    workout.userNotes,
-    workout.coachNotes,
-  ] satisfies ReadonlyArray<number | string | null>);
+  const workoutRows = records.map(
+    ({ workout }) =>
+      [
+        workout.id,
+        workout.title,
+        workout.date,
+        workout.status,
+        workout.source,
+        workout.version,
+        workout.startedAt,
+        workout.completedAt,
+        workout.createdAt,
+        workout.updatedAt,
+        workout.userNotes,
+        workout.coachNotes,
+      ] satisfies ReadonlyArray<number | string | null>,
+  );
 
   const exerciseRows = records.flatMap(({ exercises, workout }) =>
-    exercises.map((exercise) => [
-      exercise.id,
-      workout.id,
-      exercise.orderIndex,
-      exercise.exerciseSchemaId,
-      exercise.status,
-      exercise.userNotes,
-      exercise.coachNotes,
-    ] satisfies ReadonlyArray<number | string | null>),
+    exercises.map(
+      (exercise) =>
+        [
+          exercise.id,
+          workout.id,
+          exercise.orderIndex,
+          exercise.exerciseSchemaId,
+          exercise.status,
+          exercise.userNotes,
+          exercise.coachNotes,
+        ] satisfies ReadonlyArray<number | string | null>,
+    ),
   );
 
   const setRows = records.flatMap(({ exercises }) =>
     exercises.flatMap((exercise) =>
-      exercise.sets.map((set) => [
-        set.id,
-        exercise.id,
-        set.orderIndex,
-        set.designation,
-        set.status,
-        set.planned.weightLbs,
-        set.planned.reps,
-        set.planned.rpe,
-        set.actual.weightLbs,
-        set.actual.reps,
-        set.actual.rpe,
-        set.completedAt,
-      ] satisfies ReadonlyArray<number | string | null>),
+      exercise.sets.map(
+        (set) =>
+          [
+            set.id,
+            exercise.id,
+            set.orderIndex,
+            set.designation,
+            set.status,
+            set.planned.weightLbs,
+            set.planned.reps,
+            set.planned.rpe,
+            set.actual.weightLbs,
+            set.actual.reps,
+            set.actual.rpe,
+            set.completedAt,
+          ] satisfies ReadonlyArray<number | string | null>,
+      ),
     ),
   );
 

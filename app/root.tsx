@@ -27,12 +27,13 @@ import {
 import type { Route } from "./+types/root";
 import { Button } from "./components/ui/button";
 import { Separator } from "./components/ui/separator";
+import { CoachSheet } from "./features/coach/coach-sheet";
 import {
   defineAppEventRouteHandle,
   type AppEventRouteHandle,
   useAppEventRevalidation,
 } from "./features/app-events/client";
-import type { WorkoutListItem } from "./features/workouts/contracts";
+import type { WorkoutAgentTarget, WorkoutListItem } from "./features/workouts/contracts";
 import { workoutListSearchSchema } from "./features/workouts/contracts";
 import { createWorkoutRouteService } from "./features/workouts/d1-service.server";
 import { getAppDatabase } from "./lib/.server/router-context";
@@ -63,11 +64,6 @@ const NAV_ITEMS: ReadonlyArray<NavigationItem> = [
     to: "/workouts",
   },
   {
-    icon: BotIcon,
-    label: "Coach",
-    to: "/coach",
-  },
-  {
     icon: ChartColumnBigIcon,
     label: "Analytics",
     to: "/analytics",
@@ -83,6 +79,10 @@ const sidebarWorkoutDateFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
   timeZone: "UTC",
 });
+const DEFAULT_COACH_TARGET = {
+  instanceName: "default",
+  kind: "general",
+} as const satisfies WorkoutAgentTarget;
 
 export const handle = defineAppEventRouteHandle({
   invalidateKeys: () => ["workouts:list"],
@@ -283,14 +283,31 @@ function getTopBarAction(matches: readonly UIMatch<unknown, AppEventRouteHandle>
   return null;
 }
 
+function getCoachTarget(matches: readonly UIMatch<unknown, AppEventRouteHandle>[]) {
+  for (const match of [...matches].reverse()) {
+    const coachTarget = match.handle?.coachTarget?.({
+      loaderData: match.loaderData,
+      params: match.params,
+    });
+
+    if (coachTarget) {
+      return coachTarget;
+    }
+  }
+
+  return DEFAULT_COACH_TARGET;
+}
+
 export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const matches = useMatches() as UIMatch<unknown, AppEventRouteHandle>[];
+  const [coachOpen, setCoachOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const rootSidebarLoaderData = getRootSidebarLoaderData(matches);
   const activeItem =
     NAV_ITEMS.find((item) => isNavItemActive(location.pathname, item)) ?? NAV_ITEMS[0];
+  const coachTarget = getCoachTarget(matches);
   const pageTitle = getPageTitle(matches, activeItem.label);
   const topBarAction = getTopBarAction(matches);
 
@@ -299,13 +316,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, [location.pathname]);
 
   useEffect(() => {
-    if (!sidebarOpen) {
+    if (!coachOpen && !sidebarOpen) {
       return;
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSidebarOpen(false);
+        setCoachOpen(false);
       }
     };
 
@@ -314,7 +332,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [sidebarOpen]);
+  }, [coachOpen, sidebarOpen]);
 
   return (
     <html className="dark" lang="en">
@@ -414,8 +432,36 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </div>
             </header>
 
-            <main className="flex-1 pt-6">{children}</main>
+            <main className="flex-1 pb-28 pt-6 sm:pb-32">{children}</main>
           </div>
+
+          <Button
+            aria-expanded={coachOpen}
+            aria-label="Open coach"
+            className={cn(
+              "fixed z-[35] size-14 rounded-full border border-orange-300/70 bg-orange-500 text-slate-950 shadow-[0_18px_40px_rgba(249,115,22,0.35)] transition-all hover:bg-orange-400 focus-visible:border-orange-200 focus-visible:ring-orange-300/40 sm:size-16",
+              coachOpen ? "scale-95 opacity-80" : "scale-100 opacity-100",
+            )}
+            onClick={() => {
+              setCoachOpen((open) => !open);
+            }}
+            size="icon-lg"
+            style={{
+              bottom: "calc(env(safe-area-inset-bottom, 0px) + 1rem)",
+              right: "calc(env(safe-area-inset-right, 0px) + 1rem)",
+            }}
+            type="button"
+          >
+            <BotIcon className="size-5 sm:size-6" />
+          </Button>
+
+          <CoachSheet
+            isOpen={coachOpen}
+            onClose={() => {
+              setCoachOpen(false);
+            }}
+            target={coachTarget}
+          />
         </div>
         <ScrollRestoration />
         <Scripts />

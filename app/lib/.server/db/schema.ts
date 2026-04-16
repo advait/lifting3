@@ -1,12 +1,5 @@
 import { relations } from "drizzle-orm";
-import {
-  index,
-  integer,
-  real,
-  sqliteTable,
-  text,
-  uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import { EXERCISE_SCHEMA_IDS } from "../../../features/exercises/schema.ts";
 import {
@@ -16,13 +9,7 @@ import {
 } from "../../../features/workouts/interchange.ts";
 
 const WORKOUT_SOURCES = ["manual", "imported", "agent"] as const;
-const EXERCISE_STATUSES = [
-  "planned",
-  "active",
-  "completed",
-  "skipped",
-  "replaced",
-] as const;
+const EXERCISE_STATUSES = ["planned", "active", "completed", "skipped", "replaced"] as const;
 
 /**
  * Authoritative workout header rows. Everything here is persisted state rather
@@ -72,10 +59,7 @@ export const workoutExercises = sqliteTable(
     coachNotes: text("coach_notes"),
   },
   (table) => [
-    uniqueIndex("workout_exercises_workout_order_unique").on(
-      table.workoutId,
-      table.orderIndex,
-    ),
+    uniqueIndex("workout_exercises_workout_order_unique").on(table.workoutId, table.orderIndex),
     index("workout_exercises_schema_idx").on(table.exerciseSchemaId),
   ],
 );
@@ -103,10 +87,7 @@ export const exerciseSets = sqliteTable(
     completedAt: text("completed_at"),
   },
   (table) => [
-    uniqueIndex("exercise_sets_exercise_order_unique").on(
-      table.exerciseId,
-      table.orderIndex,
-    ),
+    uniqueIndex("exercise_sets_exercise_order_unique").on(table.exerciseId, table.orderIndex),
     index("exercise_sets_exercise_idx").on(table.exerciseId),
     index("exercise_sets_status_idx").on(table.status),
   ],
@@ -116,16 +97,13 @@ export const workoutsRelations = relations(workouts, ({ many }) => ({
   exercises: many(workoutExercises),
 }));
 
-export const workoutExercisesRelations = relations(
-  workoutExercises,
-  ({ many, one }) => ({
-    sets: many(exerciseSets),
-    workout: one(workouts, {
-      fields: [workoutExercises.workoutId],
-      references: [workouts.id],
-    }),
+export const workoutExercisesRelations = relations(workoutExercises, ({ many, one }) => ({
+  sets: many(exerciseSets),
+  workout: one(workouts, {
+    fields: [workoutExercises.workoutId],
+    references: [workouts.id],
   }),
-);
+}));
 
 export const exerciseSetsRelations = relations(exerciseSets, ({ one }) => ({
   exercise: one(workoutExercises, {

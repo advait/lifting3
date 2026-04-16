@@ -95,24 +95,17 @@
       "indexes": {
         "exercise_sets_exercise_order_unique": {
           "name": "exercise_sets_exercise_order_unique",
-          "columns": [
-            "exercise_id",
-            "order_index"
-          ],
+          "columns": ["exercise_id", "order_index"],
           "isUnique": true
         },
         "exercise_sets_exercise_idx": {
           "name": "exercise_sets_exercise_idx",
-          "columns": [
-            "exercise_id"
-          ],
+          "columns": ["exercise_id"],
           "isUnique": false
         },
         "exercise_sets_status_idx": {
           "name": "exercise_sets_status_idx",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         }
       },
@@ -121,12 +114,8 @@
           "name": "exercise_sets_exercise_id_workout_exercises_id_fk",
           "tableFrom": "exercise_sets",
           "tableTo": "workout_exercises",
-          "columnsFrom": [
-            "exercise_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["exercise_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -191,17 +180,12 @@
       "indexes": {
         "workout_exercises_workout_order_unique": {
           "name": "workout_exercises_workout_order_unique",
-          "columns": [
-            "workout_id",
-            "order_index"
-          ],
+          "columns": ["workout_id", "order_index"],
           "isUnique": true
         },
         "workout_exercises_schema_idx": {
           "name": "workout_exercises_schema_idx",
-          "columns": [
-            "exercise_schema_id"
-          ],
+          "columns": ["exercise_schema_id"],
           "isUnique": false
         }
       },
@@ -210,12 +194,8 @@
           "name": "workout_exercises_workout_id_workouts_id_fk",
           "tableFrom": "workout_exercises",
           "tableTo": "workouts",
-          "columnsFrom": [
-            "workout_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["workout_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -316,30 +296,22 @@
       "indexes": {
         "workouts_date_idx": {
           "name": "workouts_date_idx",
-          "columns": [
-            "date"
-          ],
+          "columns": ["date"],
           "isUnique": false
         },
         "workouts_status_idx": {
           "name": "workouts_status_idx",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         },
         "workouts_source_idx": {
           "name": "workouts_source_idx",
-          "columns": [
-            "source"
-          ],
+          "columns": ["source"],
           "isUnique": false
         },
         "workouts_updated_at_idx": {
           "name": "workouts_updated_at_idx",
-          "columns": [
-            "updated_at"
-          ],
+          "columns": ["updated_at"],
           "isUnique": false
         }
       },

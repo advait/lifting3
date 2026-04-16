@@ -6,7 +6,6 @@ export default [
     index("routes/workouts-index.tsx"),
     route(":workoutId", "routes/workout-detail.tsx"),
   ]),
-  route("coach", "routes/coach.tsx"),
   route("analytics", "routes/analytics.tsx"),
   route("settings", "routes/settings.tsx"),
 ] satisfies RouteConfig;

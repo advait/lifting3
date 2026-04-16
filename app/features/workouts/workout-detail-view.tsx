@@ -382,7 +382,9 @@ function WorkoutOverviewCard({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="grid grid-cols-3 gap-2">
-                <div className={cn(workoutMetaPillClassName, getWorkoutStatusClass(workout.status))}>
+                <div
+                  className={cn(workoutMetaPillClassName, getWorkoutStatusClass(workout.status))}
+                >
                   <span className="truncate">{getWorkoutStatusLabel(workout.status)}</span>
                 </div>
 
@@ -922,6 +924,7 @@ function SetPickerModal({
 function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps) {
   const canAddSet = hasAction(availableActions, "add_set");
   const canConfirmSet = hasAction(availableActions, "confirm_set");
+  const canEditExerciseNotes = hasAction(availableActions, "update_exercise_notes");
   const canRemoveExercise = hasAction(availableActions, "remove_exercise");
   const canRemoveExerciseNow =
     canRemoveExercise && !exercise.sets.some((set) => set.status === "done");
@@ -936,6 +939,10 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
   const lastSet = exercise.sets.at(-1);
   const carryForwardValues = getCarryForwardSetValues(lastSet);
   const removeExerciseFormId = `remove-exercise-${exercise.id}`;
+  const notesFetcher = useFetcher();
+  const [didSubmitNotes, setDidSubmitNotes] = useState(false);
+  const [draftExerciseNotes, setDraftExerciseNotes] = useState(exercise.userNotes ?? "");
+  const [isNotesDialogOpen, setIsNotesDialogOpen] = useState(false);
   const [selectedSetForPicker, setSelectedSetForPicker] = useState<{
     label: string;
     set: WorkoutSet;
@@ -943,219 +950,305 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
   const [selectedSetIdForRpe, setSelectedSetIdForRpe] = useState<string | null>(null);
   let workingSetNumber = 0;
 
+  useEffect(() => {
+    if (!isNotesDialogOpen) {
+      return;
+    }
+
+    setDraftExerciseNotes(exercise.userNotes ?? "");
+  }, [exercise.userNotes, isNotesDialogOpen]);
+
+  useEffect(() => {
+    if (notesFetcher.state !== "idle" || !didSubmitNotes) {
+      return;
+    }
+
+    const parsedMutationResult = workoutMutationResultSchema.safeParse(notesFetcher.data);
+
+    if (
+      !parsedMutationResult.success ||
+      parsedMutationResult.data.action !== "update_exercise_notes"
+    ) {
+      setDidSubmitNotes(false);
+      return;
+    }
+
+    setDidSubmitNotes(false);
+    setIsNotesDialogOpen(false);
+  }, [didSubmitNotes, notesFetcher.data, notesFetcher.state]);
+
   return (
-    <section className="grid gap-3 py-5 first:pt-0">
-      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
-        <div className="flex size-9 items-center justify-center rounded-full bg-background/70 text-muted-foreground">
-          <DumbbellIcon aria-hidden />
+    <Dialog onOpenChange={setIsNotesDialogOpen} open={isNotesDialogOpen}>
+      <section className="grid gap-3 py-5 first:pt-0">
+        <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
+          <div className="flex size-9 items-center justify-center rounded-full bg-background/70 text-muted-foreground">
+            <DumbbellIcon aria-hidden />
+          </div>
+          <h2 className="font-semibold text-base tracking-tight">{exercise.displayName}</h2>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                aria-label={`Open exercise actions for ${exercise.displayName}`}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <MoreHorizontalIcon />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-44">
+              <Form id={removeExerciseFormId} method="post">
+                <MutationFields
+                  action="remove_exercise"
+                  exerciseId={exercise.id}
+                  workoutId={workout.id}
+                  workoutVersion={workout.version}
+                />
+              </Form>
+              <DropdownMenuGroup>
+                {canEditExerciseNotes ? (
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setIsNotesDialogOpen(true);
+                    }}
+                  >
+                    Edit notes
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem
+                  className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                  disabled={!canRemoveExerciseNow}
+                  onSelect={() => {
+                    const form = document.getElementById(removeExerciseFormId);
+
+                    if (form instanceof HTMLFormElement) {
+                      form.requestSubmit();
+                    }
+                  }}
+                >
+                  Remove exercise
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        <h2 className="font-semibold text-base tracking-tight">{exercise.displayName}</h2>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              aria-label={`Open exercise actions for ${exercise.displayName}`}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <MoreHorizontalIcon />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-44">
-            <Form id={removeExerciseFormId} method="post">
-              <MutationFields
-                action="remove_exercise"
-                exerciseId={exercise.id}
-                workoutId={workout.id}
-                workoutVersion={workout.version}
-              />
-            </Form>
-            <DropdownMenuItem
-              className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-              disabled={!canRemoveExerciseNow}
-              onSelect={() => {
-                const form = document.getElementById(removeExerciseFormId);
 
-                if (form instanceof HTMLFormElement) {
-                  form.requestSubmit();
-                }
-              }}
-            >
-              Remove exercise
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+        {getExerciseNotes(exercise.coachNotes) ? (
+          <p className="text-muted-foreground text-sm italic leading-relaxed">
+            {getExerciseNotes(exercise.coachNotes)}
+          </p>
+        ) : null}
 
-      {getExerciseNotes(exercise.coachNotes) ? (
-        <p className="text-muted-foreground text-sm italic leading-relaxed">
-          {getExerciseNotes(exercise.coachNotes)}
-        </p>
-      ) : null}
+        {getExerciseNotes(exercise.userNotes) ? (
+          <p className="font-medium text-sm leading-relaxed">
+            {getExerciseNotes(exercise.userNotes)}
+          </p>
+        ) : null}
 
-      {getExerciseNotes(exercise.userNotes) ? (
-        <p className="font-medium text-sm leading-relaxed">
-          {getExerciseNotes(exercise.userNotes)}
-        </p>
-      ) : null}
+        <div className="flex items-center gap-2 text-sm">
+          <Clock3Icon aria-hidden className="size-3.5 text-muted-foreground" />
+          <span className="text-muted-foreground">Rest Timer:</span>
+          <span className="font-medium">{REST_TIMER_PLACEHOLDER}</span>
+        </div>
 
-      <div className="flex items-center gap-2 text-sm">
-        <Clock3Icon aria-hidden className="size-3.5 text-muted-foreground" />
-        <span className="text-muted-foreground">Rest Timer:</span>
-        <span className="font-medium">{REST_TIMER_PLACEHOLDER}</span>
-      </div>
+        <div className="-mx-4 w-[calc(100%+2rem)] border-border/70 border-y sm:mx-0 sm:w-full">
+          <table className="w-full table-fixed text-sm">
+            <thead className="border-border/70 border-b text-muted-foreground text-[11px] uppercase tracking-[0.12em]">
+              <tr>
+                <th className="w-12 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                  Set
+                </th>
+                <th className="px-2 py-2 text-center font-medium first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
+                  Previous
+                </th>
+                <th className="w-16 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                  LBS
+                </th>
+                <th className="w-14 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                  Reps
+                </th>
+                <th className="w-20 px-2 py-2 text-center font-medium pr-4 sm:w-18 sm:px-2 sm:pr-2">
+                  RPE
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {exercise.sets.map((set) => {
+                const setLabel =
+                  set.designation === "warmup"
+                    ? getSetLabel(set, workingSetNumber)
+                    : getSetLabel(set, ++workingSetNumber);
 
-      <div className="-mx-4 w-[calc(100%+2rem)] border-border/70 border-y sm:mx-0 sm:w-full">
-        <table className="w-full table-fixed text-sm">
-          <thead className="border-border/70 border-b text-muted-foreground text-[11px] uppercase tracking-[0.12em]">
-            <tr>
-              <th className="w-12 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                Set
-              </th>
-              <th className="px-2 py-2 text-center font-medium first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
-                Previous
-              </th>
-              <th className="w-16 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                LBS
-              </th>
-              <th className="w-14 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                Reps
-              </th>
-              <th className="w-20 px-2 py-2 text-center font-medium pr-4 sm:w-18 sm:px-2 sm:pr-2">
-                RPE
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {exercise.sets.map((set) => {
-              const setLabel =
-                set.designation === "warmup"
-                  ? getSetLabel(set, workingSetNumber)
-                  : getSetLabel(set, ++workingSetNumber);
+                return (
+                  <Fragment key={set.id}>
+                    <tr className="odd:bg-background/45 even:bg-transparent">
+                      <td className="px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                        <Button
+                          className="h-auto min-w-8 rounded-full px-2 py-1 font-medium"
+                          disabled={!canOpenSetPicker}
+                          onClick={() => {
+                            setSelectedSetIdForRpe(null);
+                            setSelectedSetForPicker({
+                              label: setLabel,
+                              set,
+                            });
+                          }}
+                          size="sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          {setLabel}
+                        </Button>
+                      </td>
+                      <td className="px-2 py-2 text-center text-muted-foreground leading-relaxed first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
+                        {formatSetPerformance(set.previous)}
+                      </td>
+                      <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                        <EditableSetNumberCell
+                          editAction={setWeightEditAction}
+                          exerciseId={exercise.id}
+                          fieldName="weightLbs"
+                          inputMode="decimal"
+                          set={set}
+                          step="0.5"
+                          workout={workout}
+                        />
+                      </td>
+                      <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                        <EditableSetNumberCell
+                          editAction={setWeightEditAction}
+                          exerciseId={exercise.id}
+                          fieldName="reps"
+                          inputMode="numeric"
+                          set={set}
+                          step="1"
+                          workout={workout}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-center pr-4 sm:px-2 sm:pr-2">
+                        <SetRpeButton
+                          canChoose={canConfirmSet}
+                          isOpen={selectedSetIdForRpe === set.id}
+                          onToggle={() => {
+                            if (!canConfirmSet) {
+                              return;
+                            }
 
-              return (
-                <Fragment key={set.id}>
-                  <tr className="odd:bg-background/45 even:bg-transparent">
-                    <td className="px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                      <Button
-                        className="h-auto min-w-8 rounded-full px-2 py-1 font-medium"
-                        disabled={!canOpenSetPicker}
-                        onClick={() => {
+                            setSelectedSetForPicker(null);
+                            setSelectedSetIdForRpe((currentValue) =>
+                              currentValue === set.id ? null : set.id,
+                            );
+                          }}
+                          set={set}
+                        />
+                      </td>
+                    </tr>
+                    {selectedSetIdForRpe === set.id ? (
+                      <SetRpeChooserRow
+                        exerciseId={exercise.id}
+                        onClose={() => {
                           setSelectedSetIdForRpe(null);
-                          setSelectedSetForPicker({
-                            label: setLabel,
-                            set,
-                          });
-                        }}
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                      >
-                        {setLabel}
-                      </Button>
-                    </td>
-                    <td className="px-2 py-2 text-center text-muted-foreground leading-relaxed first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
-                      {formatSetPerformance(set.previous)}
-                    </td>
-                    <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                      <EditableSetNumberCell
-                        editAction={setWeightEditAction}
-                        exerciseId={exercise.id}
-                        fieldName="weightLbs"
-                        inputMode="decimal"
-                        set={set}
-                        step="0.5"
-                        workout={workout}
-                      />
-                    </td>
-                    <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                      <EditableSetNumberCell
-                        editAction={setWeightEditAction}
-                        exerciseId={exercise.id}
-                        fieldName="reps"
-                        inputMode="numeric"
-                        set={set}
-                        step="1"
-                        workout={workout}
-                      />
-                    </td>
-                    <td className="px-2 py-2 text-center pr-4 sm:px-2 sm:pr-2">
-                      <SetRpeButton
-                        canChoose={canConfirmSet}
-                        isOpen={selectedSetIdForRpe === set.id}
-                        onToggle={() => {
-                          if (!canConfirmSet) {
-                            return;
-                          }
-
-                          setSelectedSetForPicker(null);
-                          setSelectedSetIdForRpe((currentValue) =>
-                            currentValue === set.id ? null : set.id,
-                          );
                         }}
                         set={set}
+                        workout={workout}
                       />
-                    </td>
-                  </tr>
-                  {selectedSetIdForRpe === set.id ? (
-                    <SetRpeChooserRow
-                      exerciseId={exercise.id}
-                      onClose={() => {
-                        setSelectedSetIdForRpe(null);
-                      }}
-                      set={set}
-                      workout={workout}
-                    />
-                  ) : null}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
 
-      {canAddSet ? (
-        <Form method="post">
+        {canAddSet ? (
+          <Form method="post">
+            <MutationFields
+              action="add_set"
+              exerciseId={exercise.id}
+              workoutId={workout.id}
+              workoutVersion={workout.version}
+            />
+            <input name="insertAfterSetId" type="hidden" value={lastSet?.id ?? ""} />
+            {carryForwardValues?.weightLbs != null ? (
+              <input name="weightLbs" type="hidden" value={carryForwardValues.weightLbs} />
+            ) : null}
+            {carryForwardValues?.reps != null ? (
+              <input name="reps" type="hidden" value={carryForwardValues.reps} />
+            ) : null}
+            <Button className="w-full" size="sm" type="submit" variant="outline">
+              <PlusIcon />
+              Add Set
+            </Button>
+          </Form>
+        ) : (
+          <div>
+            <Button className="w-full" disabled size="sm" type="button" variant="outline">
+              <PlusIcon />
+              Add Set
+            </Button>
+          </div>
+        )}
+
+        {selectedSetForPicker ? (
+          <SetPickerModal
+            availableActions={availableActions}
+            exerciseId={exercise.id}
+            onClose={() => {
+              setSelectedSetForPicker(null);
+            }}
+            set={selectedSetForPicker.set}
+            setLabel={selectedSetForPicker.label}
+            workout={workout}
+          />
+        ) : null}
+      </section>
+
+      <DialogContent>
+        <notesFetcher.Form
+          className="grid gap-4"
+          method="post"
+          onSubmit={() => {
+            setDidSubmitNotes(true);
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Edit exercise notes</DialogTitle>
+            <DialogDescription>
+              Update your notes for{" "}
+              <span className="font-medium text-foreground">{exercise.displayName}</span>.
+            </DialogDescription>
+          </DialogHeader>
           <MutationFields
-            action="add_set"
+            action="update_exercise_notes"
             exerciseId={exercise.id}
             workoutId={workout.id}
             workoutVersion={workout.version}
           />
-          <input name="insertAfterSetId" type="hidden" value={lastSet?.id ?? ""} />
-          {carryForwardValues?.weightLbs != null ? (
-            <input name="weightLbs" type="hidden" value={carryForwardValues.weightLbs} />
-          ) : null}
-          {carryForwardValues?.reps != null ? (
-            <input name="reps" type="hidden" value={carryForwardValues.reps} />
-          ) : null}
-          <Button className="w-full" size="sm" type="submit" variant="outline">
-            <PlusIcon />
-            Add Set
-          </Button>
-        </Form>
-      ) : (
-        <div>
-          <Button className="w-full" disabled size="sm" type="button" variant="outline">
-            <PlusIcon />
-            Add Set
-          </Button>
-        </div>
-      )}
-
-      {selectedSetForPicker ? (
-        <SetPickerModal
-          availableActions={availableActions}
-          exerciseId={exercise.id}
-          onClose={() => {
-            setSelectedSetForPicker(null);
-          }}
-          set={selectedSetForPicker.set}
-          setLabel={selectedSetForPicker.label}
-          workout={workout}
-        />
-      ) : null}
-    </section>
+          <Textarea
+            name="userNotes"
+            onChange={(event) => {
+              setDraftExerciseNotes(event.target.value);
+            }}
+            placeholder="Add context for this exercise..."
+            value={draftExerciseNotes}
+          />
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                setIsNotesDialogOpen(false);
+              }}
+              type="button"
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button disabled={notesFetcher.state !== "idle"} type="submit">
+              Save notes
+            </Button>
+          </DialogFooter>
+        </notesFetcher.Form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

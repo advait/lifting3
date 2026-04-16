@@ -23,8 +23,15 @@ export class WorkoutNotFoundError extends Error {
 }
 
 export class WorkoutConflictError extends Error {
+  readonly currentVersion: number;
+  readonly expectedVersion: number;
+  readonly workoutId: string;
+
   constructor(workoutId: string, expectedVersion: number, currentVersion: number) {
     super(`Version mismatch for ${workoutId}: expected ${expectedVersion}, got ${currentVersion}`);
+    this.currentVersion = currentVersion;
+    this.expectedVersion = expectedVersion;
+    this.workoutId = workoutId;
   }
 }
 

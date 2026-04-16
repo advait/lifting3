@@ -2,15 +2,41 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "lifting3",
   "compatibility_date": "2026-04-16",
+  "compatibility_flags": ["nodejs_compat"],
   "main": "./workers/app.ts",
+  "ai": {
+    "binding": "AI",
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "GeneralCoachAgent",
+        "class_name": "GeneralCoachAgent",
+      },
+      {
+        "name": "WorkoutCoachAgent",
+        "class_name": "WorkoutCoachAgent",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["WorkoutCoachAgent"],
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["GeneralCoachAgent"],
+    },
+  ],
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "lifting3",
       "database_id": "fc6b0e66-4f5e-4838-9e89-b0a96e1c51be",
       "preview_database_id": "fc6b0e66-4f5e-4838-9e89-b0a96e1c51be",
-      "migrations_dir": "./drizzle"
-    }
+      "migrations_dir": "./drizzle",
+    },
   ],
   "observability": {
     "enabled": true,
