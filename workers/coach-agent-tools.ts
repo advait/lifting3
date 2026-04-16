@@ -9,6 +9,7 @@ import {
   queryHistoryToolInputSchema,
 } from "~/features/workouts/agent-tools";
 import { createWorkoutAgentToolService } from "~/features/workouts/d1-service.server";
+import { getPatchWorkoutToolDescription } from "./coach-agent-helpers";
 
 function buildWorkoutScopeError(currentWorkoutId: string, requestedWorkoutId: string) {
   return {
@@ -34,8 +35,7 @@ export function createPatchWorkoutTool(db: AppDatabase, currentWorkoutId?: strin
   const workoutToolService = createWorkoutAgentToolService(db);
 
   return tool({
-    description:
-      "Apply one guarded workout patch using the current expected version. Use this for adds, swaps, reorders, remaining-set skips, and notes.",
+    description: getPatchWorkoutToolDescription(),
     execute: async (input) => {
       if (currentWorkoutId && input.workoutId !== currentWorkoutId) {
         return buildWorkoutScopeError(currentWorkoutId, input.workoutId);
@@ -52,7 +52,7 @@ export function createCreateWorkoutTool(db: AppDatabase) {
 
   return tool({
     description:
-      "Create a new planned workout. Use this from the general coach when the user asks for a new session or a day adapted from a prior workout.",
+      "Create a new planned workout. Use this from the general coach when the user asks for a new session or a day adapted from a prior workout. Use historical workouts to pre-fill weights, reps, and sets based on estimated strength.",
     execute: async (input) => workoutToolService.createWorkout(input),
     inputSchema: createWorkoutToolInputSchema,
   });

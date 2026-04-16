@@ -6,6 +6,7 @@ import { workoutListSearchSchema } from "~/features/workouts/contracts";
 import { createAppDatabase } from "~/lib/.server/db";
 import {
   buildExerciseCatalogPrompt,
+  buildPatchWorkoutContractPrompt,
   buildUserProfilePrompt,
   createCoachLanguageModel,
   createErrorAwareChatResponse,
@@ -40,6 +41,7 @@ function buildGeneralCoachSystemPrompt(
     "Use tools when the user asks to create a workout, patch workout data, or inspect structured history.",
     "Do not claim that you completed a mutation unless the tool returned ok: true.",
     "If patch_workout returns ok: false with VERSION_MISMATCH, explain the conflict and ask the user to retry after refresh.",
+    buildPatchWorkoutContractPrompt(),
     "When you need a workout id or version for a historical edit, get it from the recent-workout context below or query_history first.",
     "If the user is on a workout detail page, the workout-scoped coach may have more context for that single workout.",
     "",

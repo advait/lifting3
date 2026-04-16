@@ -11,6 +11,7 @@ import { WorkoutNotFoundError } from "~/features/workouts/service";
 import { createAppDatabase } from "~/lib/.server/db";
 import {
   buildExerciseCatalogPrompt,
+  buildPatchWorkoutContractPrompt,
   buildUserProfilePrompt,
   createCoachLanguageModel,
   createErrorAwareChatResponse,
@@ -121,6 +122,7 @@ function buildWorkoutCoachSystemPrompt(
     "Use patch_workout for workout edits and query_history for structured comparisons.",
     "Do not claim that workout data changed unless patch_workout returned ok: true.",
     "If patch_workout returns ok: false with VERSION_MISMATCH, explain that the workout changed and the user should retry after refresh.",
+    buildPatchWorkoutContractPrompt(),
     "",
     buildUserProfilePrompt(userProfile),
     "",
