@@ -1,3 +1,4 @@
+import type { BatchItem } from "drizzle-orm/batch";
 import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 
 import type { AppDatabase } from "../../lib/.server/db/index.ts";
@@ -37,22 +38,24 @@ import {
   workoutSetSchema,
 } from "./contracts.ts";
 import type { WorkoutRouteService } from "./service.ts";
-import {
-  WorkoutConflictError,
-  WorkoutMutationError,
-  WorkoutNotFoundError,
-} from "./service.ts";
+import { WorkoutConflictError, WorkoutMutationError, WorkoutNotFoundError } from "./service.ts";
 
 interface StoredWorkoutRecord {
   exercises: WorkoutExerciseState[];
   workout: WorkoutDetailWorkout;
 }
 
+type NonDeleteWorkoutMutationInput = Exclude<WorkoutMutationInput, { action: "delete_workout" }>;
+
 type MutationHandler<K extends WorkoutMutationInput["action"]> = (
   record: StoredWorkoutRecord,
   input: Extract<WorkoutMutationInput, { action: K }>,
   updatedAt: string,
 ) => WorkoutMutationResult;
+
+const D1_MAX_VARIABLES_PER_STATEMENT = 90;
+const WORKOUT_EXERCISE_INSERT_VARIABLE_COUNT = 7;
+const EXERCISE_SET_INSERT_VARIABLE_COUNT = 12;
 
 class VersionGuardError extends Error {}
 
@@ -416,6 +419,29 @@ const removeSet: MutationHandler<"remove_set"> = (record, input, updatedAt) => {
   ]);
 };
 
+const removeExercise: MutationHandler<"remove_exercise"> = (record, input, updatedAt) => {
+  const exerciseIndex = record.exercises.findIndex((exercise) => exercise.id === input.exerciseId);
+
+  if (exerciseIndex < 0) {
+    throw new WorkoutMutationError(`Unknown exercise: ${input.exerciseId}`);
+  }
+
+  const exercise = record.exercises[exerciseIndex];
+
+  if (exercise.sets.some((set) => set.status === "done")) {
+    throw new WorkoutMutationError("Exercises with completed sets are not removable.");
+  }
+
+  record.exercises.splice(exerciseIndex, 1);
+  reindexExercises(record.exercises);
+  record.workout.updatedAt = updatedAt;
+  record.workout.version += 1;
+
+  return createMutationResult(input, record, "exercise_removed", [
+    createExerciseInvalidateKey(exercise.exerciseSchemaId),
+  ]);
+};
+
 const reorderExercise: MutationHandler<"reorder_exercise"> = (record, input, updatedAt) => {
   const exerciseIndex = record.exercises.findIndex((exercise) => exercise.id === input.exerciseId);
 
@@ -485,6 +511,7 @@ const mutationHandlers = {
   add_set: addSet,
   confirm_set: confirmSet,
   finish_workout: finishWorkout,
+  remove_exercise: removeExercise,
   remove_set: removeSet,
   reorder_exercise: reorderExercise,
   skip_set: skipSet,
@@ -493,12 +520,12 @@ const mutationHandlers = {
   update_set_actuals: updateSetActuals,
   update_workout_notes: updateWorkoutNotes,
 } satisfies {
-  [K in WorkoutMutationInput["action"]]: MutationHandler<K>;
+  [K in Exclude<WorkoutMutationInput["action"], "delete_workout">]: MutationHandler<K>;
 };
 
 function applyWorkoutMutation(
   record: StoredWorkoutRecord,
-  input: WorkoutMutationInput,
+  input: NonDeleteWorkoutMutationInput,
   updatedAt: string,
 ) {
   const handler = mutationHandlers[input.action] as MutationHandler<typeof input.action>;
@@ -616,11 +643,7 @@ async function loadStoredWorkoutRecords(
 }
 
 async function loadStoredWorkoutRecord(db: AppDatabase, workoutId: string) {
-  const [workoutRow] = await db
-    .select()
-    .from(workouts)
-    .where(eq(workouts.id, workoutId))
-    .limit(1);
+  const [workoutRow] = await db.select().from(workouts).where(eq(workouts.id, workoutId)).limit(1);
 
   if (!workoutRow) {
     throw new WorkoutNotFoundError(workoutId);
@@ -643,11 +666,7 @@ async function loadCurrentWorkoutVersion(db: AppDatabase, workoutId: string) {
 
 function assertExpectedVersion(record: StoredWorkoutRecord, expectedVersion: number) {
   if (record.workout.version !== expectedVersion) {
-    throw new WorkoutConflictError(
-      record.workout.id,
-      expectedVersion,
-      record.workout.version,
-    );
+    throw new WorkoutConflictError(record.workout.id, expectedVersion, record.workout.version);
   }
 }
 
@@ -682,6 +701,16 @@ function toExerciseSetInsertRows(record: StoredWorkoutRecord): NewExerciseSetRow
   );
 }
 
+function chunkRows<T>(rows: readonly T[], chunkSize: number): T[][] {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < rows.length; index += chunkSize) {
+    chunks.push(rows.slice(index, index + chunkSize));
+  }
+
+  return chunks;
+}
+
 async function persistStoredWorkoutRecord(
   db: AppDatabase,
   record: StoredWorkoutRecord,
@@ -689,10 +718,18 @@ async function persistStoredWorkoutRecord(
 ) {
   const exerciseRows = toWorkoutExerciseInsertRows(record);
   const setRows = toExerciseSetInsertRows(record);
+  const maxExerciseRowsPerInsert = Math.max(
+    1,
+    Math.floor(D1_MAX_VARIABLES_PER_STATEMENT / WORKOUT_EXERCISE_INSERT_VARIABLE_COUNT),
+  );
+  const maxSetRowsPerInsert = Math.max(
+    1,
+    Math.floor(D1_MAX_VARIABLES_PER_STATEMENT / EXERCISE_SET_INSERT_VARIABLE_COUNT),
+  );
 
   try {
-    await db.transaction(async (tx) => {
-      const updateResult = await tx
+    const batchStatements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
+      db
         .update(workouts)
         .set({
           coachNotes: record.workout.coachNotes,
@@ -707,23 +744,20 @@ async function persistStoredWorkoutRecord(
           userNotes: record.workout.userNotes,
           version: record.workout.version,
         })
-        .where(and(eq(workouts.id, record.workout.id), eq(workouts.version, expectedVersion)))
-        .run();
+        .where(and(eq(workouts.id, record.workout.id), eq(workouts.version, expectedVersion))),
+      db.delete(workoutExercises).where(eq(workoutExercises.workoutId, record.workout.id)),
+      ...chunkRows(exerciseRows, maxExerciseRowsPerInsert).map((rows) =>
+        db.insert(workoutExercises).values(rows),
+      ),
+      ...chunkRows(setRows, maxSetRowsPerInsert).map((rows) =>
+        db.insert(exerciseSets).values(rows),
+      ),
+    ];
+    const [updateResult] = await db.batch(batchStatements);
 
-      if (updateResult.meta.changes !== 1) {
-        throw new VersionGuardError();
-      }
-
-      await tx.delete(workoutExercises).where(eq(workoutExercises.workoutId, record.workout.id)).run();
-
-      if (exerciseRows.length > 0) {
-        await tx.insert(workoutExercises).values(exerciseRows).run();
-      }
-
-      if (setRows.length > 0) {
-        await tx.insert(exerciseSets).values(setRows).run();
-      }
-    });
+    if (updateResult.meta.changes !== 1) {
+      throw new VersionGuardError();
+    }
   } catch (error) {
     if (error instanceof VersionGuardError) {
       const currentVersion = await loadCurrentWorkoutVersion(db, record.workout.id);
@@ -733,6 +767,33 @@ async function persistStoredWorkoutRecord(
         expectedVersion,
         currentVersion ?? expectedVersion,
       );
+    }
+
+    throw error;
+  }
+}
+
+async function deleteStoredWorkoutRecord(
+  db: AppDatabase,
+  workoutId: string,
+  expectedVersion: number,
+) {
+  try {
+    const deleteStatements: [BatchItem<"sqlite">] = [
+      db
+        .delete(workouts)
+        .where(and(eq(workouts.id, workoutId), eq(workouts.version, expectedVersion))),
+    ];
+    const [deleteResult] = await db.batch(deleteStatements);
+
+    if (deleteResult.meta.changes !== 1) {
+      throw new VersionGuardError();
+    }
+  } catch (error) {
+    if (error instanceof VersionGuardError) {
+      const currentVersion = await loadCurrentWorkoutVersion(db, workoutId);
+
+      throw new WorkoutConflictError(workoutId, expectedVersion, currentVersion ?? expectedVersion);
     }
 
     throw error;
@@ -791,6 +852,17 @@ export function createWorkoutRouteService(db: AppDatabase): WorkoutRouteService 
       const record = await loadStoredWorkoutRecord(db, input.workoutId);
 
       assertExpectedVersion(record, input.expectedVersion);
+
+      if (input.action === "delete_workout") {
+        record.workout.updatedAt = getMutationTimestamp(input);
+        record.workout.version += 1;
+
+        const result = createMutationResult(input, record, "workout_deleted");
+
+        await deleteStoredWorkoutRecord(db, record.workout.id, input.expectedVersion);
+
+        return result;
+      }
 
       const result = applyWorkoutMutation(record, input, getMutationTimestamp(input));
 

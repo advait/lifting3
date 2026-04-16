@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef } from "react";
 import { type UIMatch, useMatches, useRevalidator } from "react-router";
+import type { WorkoutAgentTarget } from "../workouts/contracts.ts";
 
 import {
   type AppEventEnvelope,
@@ -48,6 +49,7 @@ type AppTopBarFormAction = {
 export type AppTopBarAction = AppTopBarLinkAction | AppTopBarFormAction;
 
 export interface AppEventRouteHandle {
+  coachTarget?: (args: AppEventRouteHandleArgs) => WorkoutAgentTarget | null;
   invalidateKeys?: (args: AppEventRouteHandleArgs) => readonly AppInvalidateKey[];
   pageTitle?: (args: AppEventRouteHandleArgs) => string | null;
   topBarAction?: (args: AppEventRouteHandleArgs) => AppTopBarAction | null;
@@ -177,19 +179,39 @@ export function usePublishAppEvent(value: unknown) {
 export function useAppEventRevalidation() {
   const matches = useMatches() as UIMatch<unknown, AppEventRouteHandle>[];
   const revalidator = useRevalidator();
+  const pendingEnvelopeRef = useRef<AppEventEnvelope | null>(null);
   const revalidateOnEnvelope = useEffectEvent((envelope: AppEventEnvelope) => {
     const mountedKeys = getMountedInvalidateKeys(matches);
 
-    if (
-      mountedKeys.length === 0 ||
-      !isIntersectingInvalidateSet(mountedKeys, envelope) ||
-      revalidator.state !== "idle"
-    ) {
+    if (mountedKeys.length === 0 || !isIntersectingInvalidateSet(mountedKeys, envelope)) {
       return;
     }
 
+    if (revalidator.state !== "idle") {
+      pendingEnvelopeRef.current = envelope;
+      return;
+    }
+
+    pendingEnvelopeRef.current = null;
     void revalidator.revalidate();
   });
+
+  useEffect(() => {
+    if (revalidator.state !== "idle" || !pendingEnvelopeRef.current) {
+      return;
+    }
+
+    const pendingEnvelope = pendingEnvelopeRef.current;
+    const mountedKeys = getMountedInvalidateKeys(matches);
+
+    if (mountedKeys.length === 0 || !isIntersectingInvalidateSet(mountedKeys, pendingEnvelope)) {
+      pendingEnvelopeRef.current = null;
+      return;
+    }
+
+    pendingEnvelopeRef.current = null;
+    void revalidator.revalidate();
+  }, [matches, revalidator.state]);
 
   useEffect(() => {
     const browserWindow = getBrowserWindow();

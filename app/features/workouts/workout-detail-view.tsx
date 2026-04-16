@@ -1,12 +1,18 @@
-import { CheckIcon, Clock3Icon, DumbbellIcon, MoreHorizontalIcon } from "lucide-react";
+import { CheckIcon, Clock3Icon, DumbbellIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Form } from "react-router";
+import { Form, useNavigate } from "react-router";
 
-import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { usePublishAppEvent } from "~/features/app-events/client";
 import { cn } from "~/lib/utils";
 
+import { workoutMutationResultSchema } from "./actions";
 import type {
   WorkoutDetailLoaderData,
   WorkoutDetailWorkout,
@@ -15,13 +21,26 @@ import type {
 } from "./contracts";
 
 const REST_TIMER_PLACEHOLDER = "02:00";
+const workoutDateFormatter = new Intl.DateTimeFormat("en-US", {
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+});
+const workoutFullDateFormatter = new Intl.DateTimeFormat("en-US", {
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+  year: "numeric",
+});
 const WORKOUT_ROUTE_ACTIONS = [
+  "delete_workout",
   "start_workout",
   "update_set_actuals",
   "confirm_set",
   "skip_set",
   "add_set",
   "remove_set",
+  "remove_exercise",
   "reorder_exercise",
   "update_workout_notes",
   "update_exercise_notes",
@@ -50,6 +69,7 @@ interface ExerciseCardProps {
 }
 
 interface WorkoutOverviewCardProps {
+  availableActions: readonly WorkoutRouteAction[];
   workout: WorkoutDetailWorkout;
 }
 
@@ -68,6 +88,7 @@ function getAvailableActions(
         "start_workout",
         "add_set",
         "remove_set",
+        "remove_exercise",
         "reorder_exercise",
         "update_workout_notes",
         "update_exercise_notes",
@@ -79,6 +100,7 @@ function getAvailableActions(
         "skip_set",
         "add_set",
         "remove_set",
+        "remove_exercise",
         "reorder_exercise",
         "update_workout_notes",
         "update_exercise_notes",
@@ -115,7 +137,11 @@ function MutationFields({
 }
 
 function formatWorkoutDate(value: string) {
-  return new Date(value).toLocaleDateString();
+  return workoutFullDateFormatter.format(new Date(value));
+}
+
+function formatWorkoutDateChip(value: string) {
+  return workoutDateFormatter.format(new Date(value));
 }
 
 function formatDuration(durationMs: number) {
@@ -151,6 +177,17 @@ function formatSetPerformance(set: WorkoutSet | null | undefined) {
   const mainPart = `${formatOptionalValue(weight)} x ${formatOptionalValue(reps)}`;
 
   return rpe == null ? mainPart : `${mainPart} @ RPE ${rpe}`;
+}
+
+function getCarryForwardSetValues(set: WorkoutSet | null | undefined) {
+  if (!set) {
+    return null;
+  }
+
+  return {
+    reps: set.actual.reps ?? set.planned.reps,
+    weightLbs: set.actual.weightLbs ?? set.planned.weightLbs,
+  };
 }
 
 function getExerciseNotes(value: string | null) {
@@ -189,6 +226,13 @@ function getWorkoutStatusLabel(status: WorkoutDetailWorkout["status"]) {
   }
 }
 
+function getWorkoutDurationLabel(durationMs: number | null) {
+  return durationMs == null ? "Not started" : formatDuration(durationMs);
+}
+
+const workoutMetaPillClassName =
+  "inline-flex h-7 min-w-0 items-center justify-center rounded-full border px-2.5 text-[11px] font-medium leading-none tracking-[0.08em] uppercase whitespace-nowrap";
+
 function getWorkoutDurationMs(workout: WorkoutDetailWorkout, nowMs: number) {
   if (!workout.startedAt) {
     return null;
@@ -214,9 +258,12 @@ function getWorkoutDurationMs(workout: WorkoutDetailWorkout, nowMs: number) {
   return Math.max(0, endedAtMs - startedAtMs);
 }
 
-function WorkoutOverviewCard({ workout }: WorkoutOverviewCardProps) {
+function WorkoutOverviewCard({ availableActions, workout }: WorkoutOverviewCardProps) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const durationMs = getWorkoutDurationMs(workout, nowMs);
+  const canStartWorkout = hasAction(availableActions, "start_workout");
+  const canFinishWorkout = hasAction(availableActions, "finish_workout");
+  const deleteWorkoutFormId = `delete-workout-${workout.id}`;
 
   useEffect(() => {
     if (workout.status !== "active" || !workout.startedAt) {
@@ -236,26 +283,53 @@ function WorkoutOverviewCard({ workout }: WorkoutOverviewCardProps) {
 
   return (
     <section className="grid gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <Badge
-          className={cn(
-            "rounded-full px-2.5 py-1 font-medium text-[11px] tracking-[0.08em]",
-            getWorkoutStatusClass(workout.status),
-          )}
-          variant="outline"
-        >
-          {getWorkoutStatusLabel(workout.status)}
-        </Badge>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="grid grid-cols-3 gap-2">
+            <div className={cn(workoutMetaPillClassName, getWorkoutStatusClass(workout.status))}>
+              <span className="truncate">{getWorkoutStatusLabel(workout.status)}</span>
+            </div>
 
-        <div className="inline-flex items-center gap-2 text-sm">
-          <Clock3Icon aria-hidden className="size-3.5 text-muted-foreground" />
-          <span className="font-medium tabular-nums">
-            {durationMs == null ? "Not started" : formatDuration(durationMs)}
-          </span>
+            <div className={cn(workoutMetaPillClassName, "border-border/70 text-muted-foreground")}>
+              <span className="truncate">{getWorkoutDurationLabel(durationMs)}</span>
+            </div>
+
+            <div className={cn(workoutMetaPillClassName, "border-border/70 text-muted-foreground")}>
+              <span className="truncate">{formatWorkoutDateChip(workout.date)}</span>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <p className="text-muted-foreground text-sm">{formatWorkoutDate(workout.date)}</p>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button aria-label="Open workout actions" size="icon" type="button" variant="ghost">
+              <MoreHorizontalIcon />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-44">
+            <DropdownMenuItem disabled>Edit workout</DropdownMenuItem>
+            <Form id={deleteWorkoutFormId} method="post">
+              <MutationFields
+                action="delete_workout"
+                workoutId={workout.id}
+                workoutVersion={workout.version}
+              />
+            </Form>
+            <DropdownMenuItem
+              className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+              onSelect={() => {
+                const form = document.getElementById(deleteWorkoutFormId);
+
+                if (form instanceof HTMLFormElement) {
+                  form.requestSubmit();
+                }
+              }}
+            >
+              Delete workout
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
       {getExerciseNotes(workout.coachNotes) || getExerciseNotes(workout.userNotes) ? (
         <div className="grid gap-2 pt-1">
@@ -266,9 +340,37 @@ function WorkoutOverviewCard({ workout }: WorkoutOverviewCardProps) {
           ) : null}
 
           {getExerciseNotes(workout.userNotes) ? (
-            <p className="font-medium text-sm leading-relaxed">{getExerciseNotes(workout.userNotes)}</p>
+            <p className="font-medium text-sm leading-relaxed">
+              {getExerciseNotes(workout.userNotes)}
+            </p>
           ) : null}
         </div>
+      ) : null}
+
+      {canStartWorkout ? (
+        <Form method="post">
+          <MutationFields
+            action="start_workout"
+            workoutId={workout.id}
+            workoutVersion={workout.version}
+          />
+          <Button className="w-full" type="submit">
+            Start workout
+          </Button>
+        </Form>
+      ) : null}
+
+      {canFinishWorkout ? (
+        <Form method="post">
+          <MutationFields
+            action="finish_workout"
+            workoutId={workout.id}
+            workoutVersion={workout.version}
+          />
+          <Button className="w-full" type="submit" variant="secondary">
+            Finish workout
+          </Button>
+        </Form>
       ) : null}
     </section>
   );
@@ -281,7 +383,7 @@ function SetRpeButton({ set }: { set: WorkoutSet }) {
     <Button
       aria-label={isComplete ? `RPE ${set.actual.rpe}` : "Set incomplete"}
       className={cn(
-        "min-w-14 rounded-full",
+        "min-w-12 rounded-full",
         isComplete ? "bg-emerald-600 text-white hover:bg-emerald-500" : "text-muted-foreground",
       )}
       size="xs"
@@ -295,6 +397,12 @@ function SetRpeButton({ set }: { set: WorkoutSet }) {
 
 function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps) {
   const canAddSet = hasAction(availableActions, "add_set");
+  const canRemoveExercise = hasAction(availableActions, "remove_exercise");
+  const canRemoveExerciseNow =
+    canRemoveExercise && !exercise.sets.some((set) => set.status === "done");
+  const lastSet = exercise.sets.at(-1);
+  const carryForwardValues = getCarryForwardSetValues(lastSet);
+  const removeExerciseFormId = `remove-exercise-${exercise.id}`;
   let workingSetNumber = 0;
 
   return (
@@ -304,14 +412,41 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
           <DumbbellIcon aria-hidden />
         </div>
         <h2 className="font-semibold text-base tracking-tight">{exercise.displayName}</h2>
-        <Button
-          aria-label={`Open exercise actions for ${exercise.displayName}`}
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <MoreHorizontalIcon />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              aria-label={`Open exercise actions for ${exercise.displayName}`}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <MoreHorizontalIcon />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-44">
+            <Form id={removeExerciseFormId} method="post">
+              <MutationFields
+                action="remove_exercise"
+                exerciseId={exercise.id}
+                workoutId={workout.id}
+                workoutVersion={workout.version}
+              />
+            </Form>
+            <DropdownMenuItem
+              className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+              disabled={!canRemoveExerciseNow}
+              onSelect={() => {
+                const form = document.getElementById(removeExerciseFormId);
+
+                if (form instanceof HTMLFormElement) {
+                  form.requestSubmit();
+                }
+              }}
+            >
+              Remove exercise
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {getExerciseNotes(exercise.coachNotes) ? (
@@ -321,7 +456,9 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
       ) : null}
 
       {getExerciseNotes(exercise.userNotes) ? (
-        <p className="font-medium text-sm leading-relaxed">{getExerciseNotes(exercise.userNotes)}</p>
+        <p className="font-medium text-sm leading-relaxed">
+          {getExerciseNotes(exercise.userNotes)}
+        </p>
       ) : null}
 
       <div className="flex items-center gap-2 text-sm">
@@ -346,7 +483,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
               <th className="w-14 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
                 Reps
               </th>
-              <th className="w-18 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+              <th className="w-20 px-2 py-2 text-center font-medium pr-4 sm:w-18 sm:px-2 sm:pr-2">
                 RPE
               </th>
             </tr>
@@ -372,7 +509,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
                   <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
                     {formatOptionalValue(set.actual.reps ?? set.planned.reps)}
                   </td>
-                  <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                  <td className="px-2 py-2 text-center pr-4 sm:px-2 sm:pr-2">
                     <SetRpeButton set={set} />
                   </td>
                 </tr>
@@ -390,14 +527,22 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
             workoutId={workout.id}
             workoutVersion={workout.version}
           />
-          <input name="insertAfterSetId" type="hidden" value={exercise.sets.at(-1)?.id ?? ""} />
+          <input name="insertAfterSetId" type="hidden" value={lastSet?.id ?? ""} />
+          {carryForwardValues?.weightLbs != null ? (
+            <input name="weightLbs" type="hidden" value={carryForwardValues.weightLbs} />
+          ) : null}
+          {carryForwardValues?.reps != null ? (
+            <input name="reps" type="hidden" value={carryForwardValues.reps} />
+          ) : null}
           <Button className="w-full" size="sm" type="submit" variant="outline">
+            <PlusIcon />
             Add Set
           </Button>
         </Form>
       ) : (
         <div>
           <Button className="w-full" disabled size="sm" type="button" variant="outline">
+            <PlusIcon />
             Add Set
           </Button>
         </div>
@@ -455,14 +600,27 @@ function SessionSummarySection({ exercisesCount, progress, workout }: SessionSum
 }
 
 export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewProps) {
+  const navigate = useNavigate();
   usePublishAppEvent(actionData);
 
   const availableActions = getAvailableActions(loaderData.workout.status);
+  const canEditWorkout =
+    loaderData.workout.status === "planned" || loaderData.workout.status === "active";
+
+  useEffect(() => {
+    const parsedActionData = workoutMutationResultSchema.safeParse(actionData);
+
+    if (!parsedActionData.success || parsedActionData.data.action !== "delete_workout") {
+      return;
+    }
+
+    void navigate("/workouts", { replace: true });
+  }, [actionData, navigate]);
 
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(240px,0.7fr)] lg:gap-8">
       <div className="grid gap-0">
-        <WorkoutOverviewCard workout={loaderData.workout} />
+        <WorkoutOverviewCard availableActions={availableActions} workout={loaderData.workout} />
         <div
           aria-hidden="true"
           className="my-6 -mx-4 w-[calc(100%+2rem)] border-border/70 border-t sm:mx-0 sm:my-8 sm:w-full"
@@ -477,6 +635,19 @@ export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewP
               workout={loaderData.workout}
             />
           ))}
+        </div>
+
+        <div className="pt-4">
+          <Button
+            className="w-full"
+            disabled={!canEditWorkout}
+            size="sm"
+            type="button"
+            variant="secondary"
+          >
+            <PlusIcon />
+            Add Exercise
+          </Button>
         </div>
       </div>
 

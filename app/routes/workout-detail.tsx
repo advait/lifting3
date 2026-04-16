@@ -19,6 +19,20 @@ import { getAppDatabase } from "~/lib/.server/router-context";
 import type { Route } from "./+types/workout-detail";
 
 export const handle = defineAppEventRouteHandle({
+  coachTarget: ({ loaderData, params }) => {
+    const parsedLoaderData = workoutDetailLoaderDataSchema.safeParse(loaderData);
+
+    if (parsedLoaderData.success) {
+      return parsedLoaderData.data.agentTarget;
+    }
+
+    return params.workoutId
+      ? {
+          instanceName: params.workoutId,
+          kind: "workout",
+        }
+      : null;
+  },
   invalidateKeys: ({ loaderData, params }) => {
     if (!params.workoutId) {
       return [];
@@ -38,45 +52,6 @@ export const handle = defineAppEventRouteHandle({
 
     return parsedLoaderData.success ? parsedLoaderData.data.workout.title : "Workout";
   },
-  topBarAction: ({ loaderData, params }) => {
-    const parsedLoaderData = workoutDetailLoaderDataSchema.safeParse(loaderData);
-
-    if (!parsedLoaderData.success || !params.workoutId) {
-      return null;
-    }
-
-    const { workout } = parsedLoaderData.data;
-
-    if (workout.status === "active") {
-      return {
-        action: `/workouts/${params.workoutId}`,
-        fields: {
-          action: "finish_workout",
-          expectedVersion: String(workout.version),
-          workoutId: workout.id,
-        },
-        kind: "form",
-        label: "Finish",
-        variant: "secondary",
-      };
-    }
-
-    if (workout.status === "planned") {
-      return {
-        action: `/workouts/${params.workoutId}`,
-        fields: {
-          action: "start_workout",
-          expectedVersion: String(workout.version),
-          workoutId: workout.id,
-        },
-        kind: "form",
-        label: "Start workout",
-        variant: "secondary",
-      };
-    }
-
-    return null;
-  },
 });
 
 export const meta: Route.MetaFunction = ({ loaderData }) => [
@@ -93,9 +68,13 @@ export function shouldRevalidate({
   actionResult,
   defaultShouldRevalidate,
 }: ShouldRevalidateFunctionArgs) {
-  return workoutMutationResultSchema.safeParse(actionResult).success
-    ? false
-    : defaultShouldRevalidate;
+  const parsedMutationResult = workoutMutationResultSchema.safeParse(actionResult);
+
+  if (!parsedMutationResult.success) {
+    return defaultShouldRevalidate;
+  }
+
+  return parsedMutationResult.data.action === "delete_workout" ? false : defaultShouldRevalidate;
 }
 
 export async function loader({ context, params }: Route.LoaderArgs) {

@@ -3,7 +3,9 @@ import type { z } from "zod";
 import {
   addSetInputSchema,
   confirmSetInputSchema,
+  deleteWorkoutInputSchema,
   finishWorkoutInputSchema,
+  removeExerciseInputSchema,
   removeSetInputSchema,
   reorderExerciseInputSchema,
   skipSetInputSchema,
@@ -58,6 +60,11 @@ export function safeParseWorkoutMutationFormData(formData: FormData) {
   };
 
   switch (action) {
+    case "delete_workout":
+      return deleteWorkoutInputSchema.safeParse({
+        action,
+        ...base,
+      });
     case "start_workout":
       return startWorkoutInputSchema.safeParse({
         action,
@@ -112,6 +119,12 @@ export function safeParseWorkoutMutationFormData(formData: FormData) {
         ...base,
         exerciseId: getFormValue(formData, "exerciseId"),
         setId: getFormValue(formData, "setId"),
+      });
+    case "remove_exercise":
+      return removeExerciseInputSchema.safeParse({
+        action,
+        ...base,
+        exerciseId: getFormValue(formData, "exerciseId"),
       });
     case "reorder_exercise":
       return reorderExerciseInputSchema.safeParse({

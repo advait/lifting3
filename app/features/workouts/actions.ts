@@ -4,12 +4,14 @@ import { appInvalidateKeySchema, workoutEventTypeSchema } from "../app-events/sc
 import { SET_KINDS } from "./interchange.ts";
 
 export const WORKOUT_ROUTE_ACTIONS = [
+  "delete_workout",
   "start_workout",
   "update_set_actuals",
   "confirm_set",
   "skip_set",
   "add_set",
   "remove_set",
+  "remove_exercise",
   "reorder_exercise",
   "update_workout_notes",
   "update_exercise_notes",
@@ -73,6 +75,11 @@ const workoutActionBaseShape = {
 } as const;
 
 /** Defines the full write-side mutation vocabulary for workout routes, agents, and jobs. */
+export const deleteWorkoutInputSchema = z.strictObject({
+  action: z.literal("delete_workout"),
+  ...workoutActionBaseShape,
+});
+
 export const startWorkoutInputSchema = z.strictObject({
   action: z.literal("start_workout"),
   ...workoutActionBaseShape,
@@ -129,6 +136,12 @@ export const reorderExerciseInputSchema = z.strictObject({
   targetIndex: nonNegativeIntegerSchema,
 });
 
+export const removeExerciseInputSchema = z.strictObject({
+  action: z.literal("remove_exercise"),
+  ...workoutActionBaseShape,
+  exerciseId: nonEmptyStringSchema,
+});
+
 export const updateWorkoutNotesInputSchema = z.strictObject({
   action: z.literal("update_workout_notes"),
   ...workoutActionBaseShape,
@@ -150,12 +163,14 @@ export const finishWorkoutInputSchema = z.strictObject({
 
 /** Unifies all write-side workout mutations behind one discriminated contract. */
 export const workoutMutationInputSchema = z.discriminatedUnion("action", [
+  deleteWorkoutInputSchema,
   startWorkoutInputSchema,
   updateSetActualsInputSchema,
   confirmSetInputSchema,
   skipSetInputSchema,
   addSetInputSchema,
   removeSetInputSchema,
+  removeExerciseInputSchema,
   reorderExerciseInputSchema,
   updateWorkoutNotesInputSchema,
   updateExerciseNotesInputSchema,
@@ -174,11 +189,13 @@ export const workoutMutationResultSchema = z.strictObject({
 });
 
 export type StartWorkoutInput = z.infer<typeof startWorkoutInputSchema>;
+export type DeleteWorkoutInput = z.infer<typeof deleteWorkoutInputSchema>;
 export type UpdateSetActualsInput = z.infer<typeof updateSetActualsInputSchema>;
 export type ConfirmSetInput = z.infer<typeof confirmSetInputSchema>;
 export type SkipSetInput = z.infer<typeof skipSetInputSchema>;
 export type AddSetInput = z.infer<typeof addSetInputSchema>;
 export type RemoveSetInput = z.infer<typeof removeSetInputSchema>;
+export type RemoveExerciseInput = z.infer<typeof removeExerciseInputSchema>;
 export type ReorderExerciseInput = z.infer<typeof reorderExerciseInputSchema>;
 export type UpdateWorkoutNotesInput = z.infer<typeof updateWorkoutNotesInputSchema>;
 export type UpdateExerciseNotesInput = z.infer<typeof updateExerciseNotesInputSchema>;
