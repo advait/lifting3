@@ -1,9 +1,16 @@
+import {
+  CheckIcon,
+  Clock3Icon,
+  DumbbellIcon,
+  MoreHorizontalIcon,
+} from "lucide-react";
 import { Form, Link } from "react-router";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { usePublishAppEvent } from "~/features/app-events/client";
+import { cn } from "~/lib/utils";
 
 import type {
   WorkoutDetailLoaderData,
@@ -12,11 +19,9 @@ import type {
   WorkoutSet,
 } from "./contracts";
 
-const INPUT_CLASSNAME =
-  "h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 const TEXTAREA_CLASSNAME =
   "min-h-24 rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
-const QUICK_RPE_VALUES = [7, 7.5, 8, 8.5, 9, 9.5, 10] as const;
+const REST_TIMER_PLACEHOLDER = "02:00";
 const WORKOUT_ROUTE_ACTIONS = [
   "start_workout",
   "update_set_actuals",
@@ -48,21 +53,7 @@ interface MutationFieldsProps {
 interface ExerciseCardProps {
   availableActions: readonly WorkoutRouteAction[];
   exercise: WorkoutExercise;
-  exerciseCount: number;
-  exerciseIndex: number;
   workout: WorkoutDetailWorkout;
-}
-
-interface SetCardProps {
-  availableActions: readonly WorkoutRouteAction[];
-  exerciseId: string;
-  set: WorkoutSet;
-  workoutId: string;
-  workoutVersion: number;
-}
-
-function hiddenValue(value: number | string | null | undefined) {
-  return value == null ? "" : String(value);
 }
 
 function getAvailableActions(
@@ -102,36 +93,6 @@ function hasAction(availableActions: readonly WorkoutRouteAction[], action: Work
   return availableActions.includes(action);
 }
 
-function getAgentTargetPath(loaderData: WorkoutDetailLoaderData) {
-  const agentSlug = loaderData.agentTarget.kind === "workout" ? "workout-coach" : "general-coach";
-
-  return `/agents/${agentSlug}/${loaderData.agentTarget.instanceName}`;
-}
-
-function getSetStatusBadgeVariant(status: WorkoutSet["status"]) {
-  if (status === "done") {
-    return "default";
-  }
-
-  if (status === "skipped") {
-    return "destructive";
-  }
-
-  return "secondary";
-}
-
-function hasActualValues(set: WorkoutSet) {
-  return set.actual.weightLbs != null || set.actual.reps != null || set.actual.rpe != null;
-}
-
-function getActualRpeSuffix(set: WorkoutSet) {
-  if (set.actual.rpe == null) {
-    return "";
-  }
-
-  return ` @ RPE ${set.actual.rpe}`;
-}
-
 function MutationFields({
   action,
   exerciseId,
@@ -150,245 +111,134 @@ function MutationFields({
   );
 }
 
-function SetCard({ availableActions, exerciseId, set, workoutId, workoutVersion }: SetCardProps) {
-  const resolvedWeight = set.actual.weightLbs ?? set.planned.weightLbs;
-  const resolvedReps = set.actual.reps ?? set.planned.reps;
-  const canUpdateActuals =
-    set.status === "tbd" && hasAction(availableActions, "update_set_actuals");
-  const canConfirmSet = hasAction(availableActions, "confirm_set");
-  const canSkipSet = hasAction(availableActions, "skip_set");
-  const canRemoveSet = hasAction(availableActions, "remove_set");
+function formatWorkoutDate(value: string) {
+  return new Date(value).toLocaleDateString();
+}
+
+function formatOptionalValue(value: number | null) {
+  return value == null ? "\u2014" : String(value);
+}
+
+function formatSetPerformance(set: WorkoutSet | null | undefined) {
+  if (!set) {
+    return "\u2014";
+  }
+
+  const weight = set.actual.weightLbs ?? set.planned.weightLbs;
+  const reps = set.actual.reps ?? set.planned.reps;
+  const rpe = set.actual.rpe ?? set.planned.rpe;
+
+  if (weight == null && reps == null && rpe == null) {
+    return "\u2014";
+  }
+
+  const mainPart = `${formatOptionalValue(weight)} x ${formatOptionalValue(reps)}`;
+
+  return rpe == null ? mainPart : `${mainPart} @ RPE ${rpe}`;
+}
+
+function getExerciseNotes(value: string | null) {
+  return value?.trim() ?? null;
+}
+
+function getSetLabel(set: WorkoutSet, workingSetNumber: number) {
+  return set.designation === "warmup" ? "W" : String(workingSetNumber);
+}
+
+function SetRpeButton({ set }: { set: WorkoutSet }) {
+  const isComplete = set.status === "done" && set.actual.rpe != null;
 
   return (
-    <div className="rounded-2xl border border-border/80 bg-background/80 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-sm">Set {set.orderIndex + 1}</span>
-            <Badge variant="outline">{set.designation}</Badge>
-            <Badge variant={getSetStatusBadgeVariant(set.status)}>{set.status}</Badge>
-          </div>
-          <p className="text-muted-foreground text-sm">
-            Planned: {hiddenValue(set.planned.weightLbs)} lbs × {hiddenValue(set.planned.reps)} reps
-          </p>
-          {hasActualValues(set) ? (
-            <p className="text-muted-foreground text-sm">
-              Actual: {hiddenValue(set.actual.weightLbs)} lbs × {hiddenValue(set.actual.reps)} reps
-              {getActualRpeSuffix(set)}
-            </p>
-          ) : null}
-        </div>
-
-        {canUpdateActuals ? (
-          <div className="grid gap-2 md:min-w-80">
-            <Form className="grid gap-2 md:grid-cols-[repeat(2,minmax(0,1fr))_auto]" method="post">
-              <MutationFields
-                action="update_set_actuals"
-                exerciseId={exerciseId}
-                setId={set.id}
-                workoutId={workoutId}
-                workoutVersion={workoutVersion}
-              />
-              <input
-                className={INPUT_CLASSNAME}
-                defaultValue={hiddenValue(set.actual.weightLbs)}
-                name="weightLbs"
-                placeholder="Weight"
-                step="0.5"
-                type="number"
-              />
-              <input
-                className={INPUT_CLASSNAME}
-                defaultValue={hiddenValue(set.actual.reps)}
-                name="reps"
-                placeholder="Reps"
-                step="1"
-                type="number"
-              />
-              <Button size="sm" type="submit" variant="outline">
-                Save actuals
-              </Button>
-            </Form>
-
-            <div className="flex flex-wrap gap-2">
-              {canConfirmSet
-                ? QUICK_RPE_VALUES.map((rpe) => (
-                    <Form key={rpe} method="post">
-                      <MutationFields
-                        action="confirm_set"
-                        exerciseId={exerciseId}
-                        setId={set.id}
-                        workoutId={workoutId}
-                        workoutVersion={workoutVersion}
-                      />
-                      <input name="reps" type="hidden" value={hiddenValue(resolvedReps)} />
-                      <input name="rpe" type="hidden" value={rpe} />
-                      <input name="weightLbs" type="hidden" value={hiddenValue(resolvedWeight)} />
-                      <Button size="xs" type="submit">
-                        RPE {rpe}
-                      </Button>
-                    </Form>
-                  ))
-                : null}
-              {canSkipSet ? (
-                <Form method="post">
-                  <MutationFields
-                    action="skip_set"
-                    exerciseId={exerciseId}
-                    setId={set.id}
-                    workoutId={workoutId}
-                    workoutVersion={workoutVersion}
-                  />
-                  <Button size="xs" type="submit" variant="outline">
-                    Skip
-                  </Button>
-                </Form>
-              ) : null}
-              {canRemoveSet ? (
-                <Form method="post">
-                  <MutationFields
-                    action="remove_set"
-                    exerciseId={exerciseId}
-                    setId={set.id}
-                    workoutId={workoutId}
-                    workoutVersion={workoutVersion}
-                  />
-                  <Button size="xs" type="submit" variant="destructive">
-                    Remove
-                  </Button>
-                </Form>
-              ) : null}
-            </div>
-          </div>
-        ) : (
-          <div className="text-right text-muted-foreground text-sm">
-            {set.completedAt ? (
-              <p>Confirmed {new Date(set.completedAt).toLocaleTimeString()}</p>
-            ) : (
-              <p>Awaiting action</p>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+    <Button
+      aria-label={isComplete ? `RPE ${set.actual.rpe}` : "Set incomplete"}
+      className={cn(
+        "min-w-14 rounded-full",
+        isComplete ? "bg-emerald-600 text-white hover:bg-emerald-500" : "text-muted-foreground",
+      )}
+      size="xs"
+      type="button"
+      variant={isComplete ? "default" : "outline"}
+    >
+      {isComplete ? set.actual.rpe : <CheckIcon />}
+    </Button>
   );
 }
 
-function ExerciseCard({
-  availableActions,
-  exercise,
-  exerciseCount,
-  exerciseIndex,
-  workout,
-}: ExerciseCardProps) {
-  const canReorder = hasAction(availableActions, "reorder_exercise");
+function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps) {
   const canAddSet = hasAction(availableActions, "add_set");
-  const canUpdateExerciseNotes = hasAction(availableActions, "update_exercise_notes");
+  let workingSetNumber = 0;
 
   return (
     <Card className="border-border/70 bg-card/90">
-      <CardHeader className="gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <CardTitle>{exercise.displayName}</CardTitle>
-            <Badge variant="outline">{exercise.status}</Badge>
-            <Badge variant="secondary">{exercise.classification}</Badge>
-          </div>
-          <CardDescription>
-            {exercise.logging.loadTracking.replaceAll("_", " ")} · {exercise.sets.length} sets
-          </CardDescription>
+      <CardHeader className="grid-cols-[auto_1fr_auto] items-center gap-3">
+        <div className="flex size-10 items-center justify-center rounded-2xl border border-border/80 bg-background/70 text-muted-foreground">
+          <DumbbellIcon aria-hidden />
         </div>
-        {canReorder ? (
-          <div className="flex gap-2">
-            <Form method="post">
-              <MutationFields
-                action="reorder_exercise"
-                exerciseId={exercise.id}
-                workoutId={workout.id}
-                workoutVersion={workout.version}
-              />
-              <input name="targetIndex" type="hidden" value={Math.max(0, exerciseIndex - 1)} />
-              <Button disabled={exerciseIndex === 0} size="sm" type="submit" variant="outline">
-                Move up
-              </Button>
-            </Form>
-            <Form method="post">
-              <MutationFields
-                action="reorder_exercise"
-                exerciseId={exercise.id}
-                workoutId={workout.id}
-                workoutVersion={workout.version}
-              />
-              <input
-                name="targetIndex"
-                type="hidden"
-                value={Math.min(exerciseCount - 1, exerciseIndex + 1)}
-              />
-              <Button
-                disabled={exerciseIndex === exerciseCount - 1}
-                size="sm"
-                type="submit"
-                variant="outline"
-              >
-                Move down
-              </Button>
-            </Form>
-          </div>
-        ) : null}
+        <CardTitle>{exercise.displayName}</CardTitle>
+        <Button
+          aria-label={`Open exercise actions for ${exercise.displayName}`}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <MoreHorizontalIcon />
+        </Button>
       </CardHeader>
       <CardContent className="grid gap-4">
-        {canUpdateExerciseNotes ? (
-          <Form className="grid gap-3" method="post">
-            <MutationFields
-              action="update_exercise_notes"
-              exerciseId={exercise.id}
-              workoutId={workout.id}
-              workoutVersion={workout.version}
-            />
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="grid gap-1">
-                <span className="font-medium text-sm">User notes</span>
-                <textarea
-                  className={TEXTAREA_CLASSNAME}
-                  defaultValue={exercise.userNotes ?? ""}
-                  name="userNotes"
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="font-medium text-sm">Coach notes</span>
-                <textarea
-                  className={TEXTAREA_CLASSNAME}
-                  defaultValue={exercise.coachNotes ?? ""}
-                  name="coachNotes"
-                />
-              </label>
-            </div>
-            <div>
-              <Button size="sm" type="submit" variant="outline">
-                Save exercise notes
-              </Button>
-            </div>
-          </Form>
+        {getExerciseNotes(exercise.coachNotes) ? (
+          <p className="text-muted-foreground text-sm italic leading-relaxed">
+            {getExerciseNotes(exercise.coachNotes)}
+          </p>
         ) : null}
 
-        <div className="grid gap-3">
-          {exercise.sets.map((set) => (
-            <SetCard
-              availableActions={availableActions}
-              exerciseId={exercise.id}
-              key={set.id}
-              set={set}
-              workoutId={workout.id}
-              workoutVersion={workout.version}
-            />
-          ))}
+        {getExerciseNotes(exercise.userNotes) ? (
+          <p className="font-medium text-sm leading-relaxed">{getExerciseNotes(exercise.userNotes)}</p>
+        ) : null}
+
+        <div className="flex items-center gap-2 rounded-2xl border border-border/80 bg-background/60 px-3 py-3 text-sm">
+          <Clock3Icon aria-hidden className="text-muted-foreground" />
+          <span className="text-muted-foreground">Rest Timer:</span>
+          <span className="font-medium">{REST_TIMER_PLACEHOLDER}</span>
+        </div>
+
+        <div className="rounded-2xl border border-border/80 bg-background/50">
+          <table className="w-full table-fixed text-sm">
+            <thead className="border-border/80 border-b text-muted-foreground text-xs uppercase tracking-[0.12em]">
+              <tr>
+                <th className="w-14 px-3 py-3 text-center font-medium sm:px-4">Set</th>
+                <th className="px-3 py-3 text-center font-medium sm:px-4">Previous</th>
+                <th className="w-16 px-3 py-3 text-center font-medium sm:px-4">Reps</th>
+                <th className="w-20 px-3 py-3 text-center font-medium sm:px-4">RPE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {exercise.sets.map((set, setIndex) => {
+                const setLabel =
+                  set.designation === "warmup"
+                    ? getSetLabel(set, workingSetNumber)
+                    : getSetLabel(set, ++workingSetNumber);
+
+                return (
+                  <tr className="border-border/70 border-b last:border-b-0" key={set.id}>
+                    <td className="px-3 py-3 text-center font-medium sm:px-4">{setLabel}</td>
+                    <td className="px-3 py-3 text-center text-muted-foreground leading-relaxed sm:px-4">
+                      {formatSetPerformance(exercise.sets[setIndex - 1])}
+                    </td>
+                    <td className="px-3 py-3 text-center sm:px-4">
+                      {formatOptionalValue(set.actual.reps ?? set.planned.reps)}
+                    </td>
+                    <td className="px-3 py-3 text-center sm:px-4">
+                      <SetRpeButton set={set} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
 
         {canAddSet ? (
-          <Form
-            className="flex flex-wrap items-end gap-2 rounded-2xl border border-border/80 border-dashed bg-background/50 p-4"
-            method="post"
-          >
+          <Form method="post">
             <MutationFields
               action="add_set"
               exerciseId={exercise.id}
@@ -396,31 +246,17 @@ function ExerciseCard({
               workoutVersion={workout.version}
             />
             <input name="insertAfterSetId" type="hidden" value={exercise.sets.at(-1)?.id ?? ""} />
-            <label className="grid gap-1">
-              <span className="text-muted-foreground text-xs">Planned weight</span>
-              <input
-                className={INPUT_CLASSNAME}
-                name="weightLbs"
-                placeholder="Weight"
-                step="0.5"
-                type="number"
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className="text-muted-foreground text-xs">Planned reps</span>
-              <input
-                className={INPUT_CLASSNAME}
-                name="reps"
-                placeholder="Reps"
-                step="1"
-                type="number"
-              />
-            </label>
-            <Button size="sm" type="submit" variant="outline">
-              Add set
+            <Button className="w-full" size="sm" type="submit" variant="outline">
+              Add Set
             </Button>
           </Form>
-        ) : null}
+        ) : (
+          <div>
+            <Button className="w-full" disabled size="sm" type="button" variant="outline">
+              Add Set
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -430,7 +266,6 @@ export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewP
   usePublishAppEvent(actionData);
 
   const availableActions = getAvailableActions(loaderData.workout.status);
-  const agentTargetPath = getAgentTargetPath(loaderData);
 
   return (
     <section className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.8fr)]">
@@ -443,14 +278,12 @@ export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewP
                   <Link to="/workouts">Back to workouts</Link>
                 </Button>
                 <Badge variant="outline">{loaderData.workout.status}</Badge>
-                <Badge variant="secondary">{loaderData.workout.source}</Badge>
-                <Badge variant="outline">v{loaderData.workout.version}</Badge>
               </div>
               <div>
                 <CardTitle>{loaderData.workout.title}</CardTitle>
                 <CardDescription>
-                  {new Date(loaderData.workout.date).toLocaleDateString()} ·{" "}
-                  {loaderData.progress.done} / {loaderData.progress.total} sets confirmed
+                  {formatWorkoutDate(loaderData.workout.date)} · {loaderData.progress.done} /{" "}
+                  {loaderData.progress.total} sets confirmed
                 </CardDescription>
               </div>
             </div>
@@ -467,28 +300,13 @@ export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewP
                   </Button>
                 </Form>
               ) : null}
-              {hasAction(availableActions, "finish_workout") ? (
-                <Form method="post">
-                  <MutationFields
-                    action="finish_workout"
-                    workoutId={loaderData.workout.id}
-                    workoutVersion={loaderData.workout.version}
-                  />
-                  <Button size="sm" type="submit" variant="secondary">
-                    Finish workout
-                  </Button>
-                </Form>
-              ) : null}
             </div>
           </CardHeader>
         </Card>
 
-        <Card className="border-border/70 bg-card/90">
+        <Card className="border-border/70 bg-card/90" id="workout-notes">
           <CardHeader>
             <CardTitle>Workout Notes</CardTitle>
-            <CardDescription>
-              This posts through the same mutation contract as future D1-backed routes.
-            </CardDescription>
           </CardHeader>
           <CardContent>
             <Form className="grid gap-3" method="post">
@@ -523,12 +341,10 @@ export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewP
         </Card>
 
         <div className="grid gap-4">
-          {loaderData.exercises.map((exercise, exerciseIndex) => (
+          {loaderData.exercises.map((exercise) => (
             <ExerciseCard
               availableActions={availableActions}
               exercise={exercise}
-              exerciseCount={loaderData.exercises.length}
-              exerciseIndex={exerciseIndex}
               key={exercise.id}
               workout={loaderData.workout}
             />
@@ -539,36 +355,50 @@ export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewP
       <div className="grid gap-4">
         <Card className="border-border/70 bg-card/90">
           <CardHeader>
-            <CardTitle>Live Invalidation</CardTitle>
-            <CardDescription>
-              This screen publishes mutation results as app events, and the root hook revalidates
-              mounted routes when their handle keys intersect.
-            </CardDescription>
+            <CardTitle>Session Summary</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-muted-foreground text-sm">
-            <p>Agent target: {agentTargetPath}</p>
-            <p>Available actions: {availableActions.join(", ")}</p>
-            <p>
-              Progress breakdown: {loaderData.progress.tbd} tbd / {loaderData.progress.done} done /{" "}
-              {loaderData.progress.skipped} skipped
-            </p>
-          </CardContent>
-        </Card>
+          <CardContent className="grid gap-3 text-sm">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-2xl border border-border/80 bg-background/70 px-3 py-3">
+                <p className="text-muted-foreground text-xs">TBD</p>
+                <p className="mt-1 font-medium">{loaderData.progress.tbd}</p>
+              </div>
+              <div className="rounded-2xl border border-border/80 bg-background/70 px-3 py-3">
+                <p className="text-muted-foreground text-xs">Done</p>
+                <p className="mt-1 font-medium">{loaderData.progress.done}</p>
+              </div>
+              <div className="rounded-2xl border border-border/80 bg-background/70 px-3 py-3">
+                <p className="text-muted-foreground text-xs">Skipped</p>
+                <p className="mt-1 font-medium">{loaderData.progress.skipped}</p>
+              </div>
+            </div>
 
-        <Card className="border-border/70 bg-card/90">
-          <CardHeader>
-            <CardTitle>Why This Slice Exists</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-muted-foreground text-sm">
-            <p>
-              The route loader/action shapes now match the shared contracts, which lets fixture UI
-              and future D1 plumbing evolve against the same boundary.
-            </p>
-            <p>
-              The detail route does not directly patch client state from the action result. It
-              republishes an app event and lets RR7 loader revalidation refresh the authoritative
-              data.
-            </p>
+            <dl className="grid gap-2 text-muted-foreground">
+              <div className="flex items-center justify-between gap-3">
+                <dt>Date</dt>
+                <dd className="text-foreground">{formatWorkoutDate(loaderData.workout.date)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt>Exercises</dt>
+                <dd className="text-foreground">{loaderData.exercises.length}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt>Started</dt>
+                <dd className="text-foreground">
+                  {loaderData.workout.startedAt
+                    ? new Date(loaderData.workout.startedAt).toLocaleTimeString()
+                    : "Not started"}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt>Completed</dt>
+                <dd className="text-foreground">
+                  {loaderData.workout.completedAt
+                    ? new Date(loaderData.workout.completedAt).toLocaleTimeString()
+                    : "Not finished"}
+                </dd>
+              </div>
+            </dl>
           </CardContent>
         </Card>
       </div>

@@ -49,7 +49,7 @@ const halfStepRpeSchema = z
     message: "RPE must be in 0.5 increments.",
   });
 
-/** Defines the portable per-set shape used for import, export, and fixture exchange. */
+/** Defines the portable per-set shape used for import, export, and internal exchange. */
 export const workoutInterchangeSetSchema = z
   .object({
     id: z.string().trim().min(1),

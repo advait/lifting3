@@ -1,6 +1,12 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["vite.config.ts", "scripts/**/*.ts", "app/features/**/*.ts"],
+  "include": [
+    "vite.config.ts",
+    "scripts/**/*.ts",
+    "app/features/**/*.ts",
+    "app/lib/.server/**/*.ts",
+    "types/cloudflare-node.d.ts"
+  ],
   "compilerOptions": {
     "allowImportingTsExtensions": true,
     "composite": true,

@@ -4,7 +4,8 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { defineAppEventRouteHandle } from "~/features/app-events/client";
 import { workoutListSearchSchema } from "~/features/workouts/contracts";
-import { getWorkoutRouteService } from "~/features/workouts/fixture-service.server";
+import { createWorkoutRouteService } from "~/features/workouts/d1-service.server";
+import { getAppDatabase } from "~/lib/.server/router-context";
 
 import type { Route } from "./+types/workouts-index";
 
@@ -58,7 +59,7 @@ function createFilterHref(
   return search ? `/workouts?${search}` : "/workouts";
 }
 
-export function loader({ request }: Route.LoaderArgs) {
+export function loader({ context, request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const parsedSearch = workoutListSearchSchema.safeParse({
     dateFrom: url.searchParams.get("dateFrom") ?? undefined,
@@ -73,7 +74,7 @@ export function loader({ request }: Route.LoaderArgs) {
     throw data({ message: "Invalid workouts filter query." }, { status: 400 });
   }
 
-  return getWorkoutRouteService().loadWorkoutList(parsedSearch.data);
+  return createWorkoutRouteService(getAppDatabase(context)).loadWorkoutList(parsedSearch.data);
 }
 
 export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
@@ -86,7 +87,7 @@ export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
           <div>
             <CardTitle>Workouts</CardTitle>
             <CardDescription>
-              Fixture-backed RR7 loaders now drive the list and detail routes through the shared
+              D1-backed RR7 loaders now drive the list and detail routes through the shared
               workout contracts.
             </CardDescription>
           </div>
@@ -164,9 +165,7 @@ export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
                 </Button>
               </>
             ) : (
-              <p className="text-muted-foreground">
-                No active workout fixture is loaded right now.
-              </p>
+              <p className="text-muted-foreground">No active workout is loaded right now.</p>
             )}
           </CardContent>
         </Card>
@@ -181,10 +180,7 @@ export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
           </CardHeader>
           <CardContent className="space-y-3 text-muted-foreground text-sm">
             <p>Per-workout JSON files validated by the shared Zod schema.</p>
-            <p>
-              The fixture slice keeps this boundary visible without introducing HTTP import/export
-              endpoints.
-            </p>
+            <p>The current app keeps this boundary visible without HTTP import/export endpoints.</p>
           </CardContent>
         </Card>
       </div>

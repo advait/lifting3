@@ -6,21 +6,26 @@ import {
   createWorkoutInvalidateKey,
 } from "~/features/app-events/schema";
 import {
+  workoutMutationResultSchema,
+} from "~/features/workouts/actions";
+import {
   workoutDetailLoaderDataSchema,
   workoutDetailParamsSchema,
-  workoutMutationResultSchema,
 } from "~/features/workouts/contracts";
 import {
-  FixtureWorkoutConflictError,
-  FixtureWorkoutMutationError,
-  FixtureWorkoutNotFoundError,
-  getWorkoutRouteService,
-} from "~/features/workouts/fixture-service.server";
+  createWorkoutRouteService,
+} from "~/features/workouts/d1-service.server";
 import {
   formatWorkoutMutationParseError,
   safeParseWorkoutMutationFormData,
 } from "~/features/workouts/mutation-form.server";
+import {
+  WorkoutConflictError,
+  WorkoutMutationError,
+  WorkoutNotFoundError,
+} from "~/features/workouts/service";
 import { WorkoutDetailView } from "~/features/workouts/workout-detail-view";
+import { getAppDatabase } from "~/lib/.server/router-context";
 
 import type { Route } from "./+types/workout-detail";
 
@@ -39,6 +44,41 @@ export const handle = defineAppEventRouteHandle({
 
     return [createWorkoutInvalidateKey(params.workoutId), ...exerciseInvalidateKeys];
   },
+  pageTitle: ({ loaderData }) => {
+    const parsedLoaderData = workoutDetailLoaderDataSchema.safeParse(loaderData);
+
+    return parsedLoaderData.success ? parsedLoaderData.data.workout.title : "Workout";
+  },
+  topBarAction: ({ loaderData, params }) => {
+    const parsedLoaderData = workoutDetailLoaderDataSchema.safeParse(loaderData);
+
+    if (!parsedLoaderData.success || !params.workoutId) {
+      return null;
+    }
+
+    const { workout } = parsedLoaderData.data;
+
+    if (workout.status === "active") {
+      return {
+        action: `/workouts/${params.workoutId}`,
+        fields: {
+          action: "finish_workout",
+          expectedVersion: String(workout.version),
+          workoutId: workout.id,
+        },
+        kind: "form",
+        label: "Finish",
+        variant: "secondary",
+      };
+    }
+
+    return {
+      kind: "link",
+      label: "Edit",
+      to: `/workouts/${params.workoutId}#workout-notes`,
+      variant: "outline",
+    };
+  },
 });
 
 export const meta: Route.MetaFunction = ({ loaderData }) => [
@@ -47,7 +87,7 @@ export const meta: Route.MetaFunction = ({ loaderData }) => [
   },
   {
     name: "description",
-    content: "Workout detail fixture with RR7 loaders, forms, and app-event revalidation.",
+    content: "Workout detail with RR7 loaders, forms, and app-event revalidation.",
   },
 ];
 
@@ -60,7 +100,7 @@ export function shouldRevalidate({
     : defaultShouldRevalidate;
 }
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ context, params }: Route.LoaderArgs) {
   const parsedParams = workoutDetailParamsSchema.safeParse(params);
 
   if (!parsedParams.success) {
@@ -68,9 +108,11 @@ export async function loader({ params }: Route.LoaderArgs) {
   }
 
   try {
-    return await getWorkoutRouteService().loadWorkoutDetail(parsedParams.data);
+    const service = createWorkoutRouteService(getAppDatabase(context));
+
+    return await service.loadWorkoutDetail(parsedParams.data);
   } catch (error) {
-    if (error instanceof FixtureWorkoutNotFoundError) {
+    if (error instanceof WorkoutNotFoundError) {
       throw data({ message: error.message }, { status: 404 });
     }
 
@@ -78,7 +120,7 @@ export async function loader({ params }: Route.LoaderArgs) {
   }
 }
 
-export async function action({ request }: Route.ActionArgs) {
+export async function action({ context, request }: Route.ActionArgs) {
   const formData = await request.formData();
   const parsedMutation = safeParseWorkoutMutationFormData(formData);
 
@@ -87,17 +129,19 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   try {
-    return await getWorkoutRouteService().mutateWorkout(parsedMutation.data);
+    const service = createWorkoutRouteService(getAppDatabase(context));
+
+    return await service.mutateWorkout(parsedMutation.data);
   } catch (error) {
-    if (error instanceof FixtureWorkoutNotFoundError) {
+    if (error instanceof WorkoutNotFoundError) {
       throw data({ message: error.message }, { status: 404 });
     }
 
-    if (error instanceof FixtureWorkoutConflictError) {
+    if (error instanceof WorkoutConflictError) {
       throw data({ message: error.message }, { status: 409 });
     }
 
-    if (error instanceof FixtureWorkoutMutationError) {
+    if (error instanceof WorkoutMutationError) {
       throw data({ message: error.message }, { status: 400 });
     }
 

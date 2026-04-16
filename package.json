@@ -21,7 +21,7 @@
     "verify:lifting2-exercises": "node --experimental-strip-types ./scripts/verify-lifting2-exercise-compat.ts"
   },
   "dependencies": {
-    "@fontsource-variable/geist": "^5.2.8",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",

@@ -22,8 +22,35 @@ interface AppEventRouteHandleArgs {
   params: Record<string, string | undefined>;
 }
 
+type AppTopBarActionVariant =
+  | "default"
+  | "destructive"
+  | "ghost"
+  | "link"
+  | "outline"
+  | "secondary";
+
+type AppTopBarLinkAction = {
+  kind: "link";
+  label: string;
+  to: string;
+  variant?: AppTopBarActionVariant;
+};
+
+type AppTopBarFormAction = {
+  action?: string;
+  fields: Record<string, string>;
+  kind: "form";
+  label: string;
+  variant?: AppTopBarActionVariant;
+};
+
+export type AppTopBarAction = AppTopBarLinkAction | AppTopBarFormAction;
+
 export interface AppEventRouteHandle {
   invalidateKeys?: (args: AppEventRouteHandleArgs) => readonly AppInvalidateKey[];
+  pageTitle?: (args: AppEventRouteHandleArgs) => string | null;
+  topBarAction?: (args: AppEventRouteHandleArgs) => AppTopBarAction | null;
 }
 
 /**
@@ -88,7 +115,7 @@ function isIntersectingInvalidateSet(
 
 /**
  * Publishes a parsed app event into the browser transport used by the current
- * fixture slice. A future server-backed websocket can emit the same envelope.
+ * current app. A future server-backed websocket can emit the same envelope.
  */
 export function publishAppEvent(envelope: unknown) {
   const browserWindow = getBrowserWindow();

@@ -3,16 +3,29 @@ import type {
   WorkoutDetailParams,
   WorkoutListLoaderData,
   WorkoutListSearch,
-  WorkoutMutationInput,
-  WorkoutMutationResult,
 } from "./contracts.ts";
+import type { WorkoutMutationInput, WorkoutMutationResult } from "./actions.ts";
 
 /**
- * Defines the route-facing workout service boundary so fixture-backed loaders
- * and future D1-backed loaders can satisfy the same RR7 contracts.
+ * Defines the route-facing workout service boundary so route modules can stay
+ * stable while the backing store evolves.
  */
 export interface WorkoutRouteService {
   loadWorkoutDetail(params: WorkoutDetailParams): Promise<WorkoutDetailLoaderData>;
   loadWorkoutList(search: WorkoutListSearch): Promise<WorkoutListLoaderData>;
   mutateWorkout(input: WorkoutMutationInput): Promise<WorkoutMutationResult>;
 }
+
+export class WorkoutNotFoundError extends Error {
+  constructor(workoutId: string) {
+    super(`Unknown workout: ${workoutId}`);
+  }
+}
+
+export class WorkoutConflictError extends Error {
+  constructor(workoutId: string, expectedVersion: number, currentVersion: number) {
+    super(`Version mismatch for ${workoutId}: expected ${expectedVersion}, got ${currentVersion}`);
+  }
+}
+
+export class WorkoutMutationError extends Error {}

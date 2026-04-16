@@ -12,7 +12,7 @@ import {
   updateSetActualsInputSchema,
   updateWorkoutNotesInputSchema,
   workoutMutationInputSchema,
-} from "./contracts.ts";
+} from "./actions.ts";
 
 function getFormValue(formData: FormData, key: string) {
   const value = formData.get(key);
