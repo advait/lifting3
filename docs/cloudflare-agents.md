@@ -9,7 +9,7 @@ The core decision is:
 - use D1 as the authoritative store for structured workout data
 - use Drizzle for D1 schema, migrations, and queries
 - use Cloudflare `AIChatAgent` for canonical conversation threads
-- use one global user-selected AI Gateway model ID for inference, defaulting to `openai/gpt-5.4`
+- use one global AI Gateway model ID from a singleton `settings` row, defaulting to `openai/gpt-5.4`
 - use a singleton `AppEvents/default` Durable Object for best-effort live fanout
 - keep agent tools narrow and server-side
 
@@ -68,16 +68,16 @@ It does not match the older design of one top-level `CoachAgent` that owns many 
 
 That older design is still possible, but it pushes you toward the experimental Session API and extra custom architecture. For MVP, it is the harder path.
 
-## 3. D1 vs agent/event storage
+## 3. D1 vs agent/live storage
 
 ### Put this in D1
 
 Use D1 as the authoritative structured store for:
 
+- `settings`
 - `workouts`
 - `workout_exercises`
 - `exercise_sets`
-- `workout_events`
 - notes
 - import/export metadata
 - exercise facts and analytics projections
@@ -198,7 +198,6 @@ That layer should:
 
 - use Drizzle against D1
 - enforce `expected_version`
-- append workout events
 - rebuild/update projections
 - reject stale writes with `VERSION_MISMATCH`
 - publish a best-effort invalidation envelope to `AppEvents/default` after commit
@@ -263,11 +262,7 @@ export class WorkoutCoachAgent extends AIChatAgent<Env> {
             reason: z.string(),
             ops: z.array(z.unknown()),
           }),
-          execute: async (input) =>
-            patchWorkoutWithGuards(this.env.DB, {
-              ...input,
-              sourceMessageId: this.messages.at(-1)?.id,
-            }),
+          execute: async (input) => patchWorkoutWithGuards(this.env.DB, input),
         }),
       },
     });
@@ -279,11 +274,11 @@ export class WorkoutCoachAgent extends AIChatAgent<Env> {
 
 ### Model selection and inference
 
-Use one global user setting for the active model.
+Use one global setting value for the active model.
 
 Rules:
 
-- store the exact Cloudflare AI Gateway model ID in user settings
+- store the exact Cloudflare AI Gateway model ID in the singleton `settings` row
 - default it to `openai/gpt-5.4`
 - use Cloudflare AI Gateway taxonomy directly
 - do not define app-level model aliases
@@ -331,7 +326,6 @@ Required rules:
 - updates run in a D1 transaction where applicable
 - stale writes return `VERSION_MISMATCH`
 - all mutations target stable IDs
-- meaningful events record `source_message_id` when available
 
 ### Important consistency seam
 
@@ -344,7 +338,7 @@ There is no automatic single transaction spanning:
 Design implications:
 
 - mutation handlers must be idempotent
-- D1 state plus persisted `workout_events` should be the source of truth for what committed
+- D1 state should be the source of truth for what committed
 - live broadcast is best-effort and non-authoritative
 - the UI should prefer committed workout state over optimistic chat assumptions
 - WebSocket listeners should treat notifications as invalidation hints and trigger RR7 loader revalidation or fetcher reloads from D1-backed reads
@@ -508,7 +502,7 @@ For `lifting3`, the Cloudflare-native architecture should be:
 2. Drizzle for D1 schema, migrations, and queries.
 3. `GeneralCoachAgent/default` for the general coach thread.
 4. `WorkoutCoachAgent/{workoutId}` for the canonical workout thread.
-5. one global user model setting storing an AI Gateway model ID, defaulting to `openai/gpt-5.4`
+5. one singleton `settings` row storing an AI Gateway model ID, defaulting to `openai/gpt-5.4`
 6. Cloudflare AI Gateway as the inference routing layer for that model ID
 7. `AppEvents/default` as a singleton WebSocket fanout hub for best-effort invalidation.
 8. Direct chat via `routeAgentRequest()` and `useAgentChat()`.

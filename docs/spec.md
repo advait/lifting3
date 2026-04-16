@@ -383,45 +383,23 @@ Logical message fields the application may reference:
 Semantics:
 
 - messages are persisted by Cloudflare Agents rather than mirrored into D1 in MVP
-- `source_message_id` on workout events may reference an agent-persisted message
 
-## 7.6 Workout Event
+## 7.6 Settings
 
-Append-only domain event log.
+Singleton app configuration row persisted in D1.
 
-Examples:
+Logical fields:
 
-- `workout_created`
-- `workout_started`
-- `exercise_added`
-- `exercise_reordered`
-- `exercise_replaced`
-- `exercise_skipped`
-- `set_added`
-- `set_removed`
-- `set_actuals_updated`
-- `set_confirmed`
-- `set_corrected`
-- `workout_note_updated`
-- `exercise_note_updated`
-- `workout_completed`
-
-Each event includes:
-
-- `id`
-- `workout_id`
-- `version`
-- `type`
-- `payload`
-- `actor_type`: `user | agent | system`
-- `actor_id`
-- `source_message_id` nullable
-- `created_at`
+- `singleton_key`
+- `default_model_id`
+- `updated_at`
 
 Semantics:
 
-- `workout_events` is persisted domain history in D1
-- live notifications may forward event metadata through `AppEvents/default`, but those broadcasts are non-authoritative and replay is not required in MVP
+- MVP uses exactly one row, keyed by a stable singleton value such as `default`
+- the row stores app-wide settings such as the active Cloudflare AI Gateway model ID
+- the default model value is `openai/gpt-5.4`
+- additional singleton settings may be added over time without changing the one-row model
 
 ## 8. Conversations and Workouts
 
@@ -450,7 +428,6 @@ In MVP, the canonical workout conversation is the `WorkoutCoachAgent` instance w
 
 - the workout detail screen opens `WorkoutCoachAgent/{workout.id}`
 - the general coach screen opens `GeneralCoachAgent/default`
-- workout mutations may carry `source_message_id`
 - `GeneralCoachAgent` may patch any workout, including historical corrections, through the same guarded mutation service layer as the workout-specific agent
 - `WorkoutCoachAgent` remains the canonical in-context conversation for one workout, not the exclusive mutation owner
 - the general coaching thread can create workouts, discuss history, and compare plans across workouts
@@ -481,8 +458,8 @@ Use Drizzle ORM for:
 Responsibilities of D1:
 
 - workouts, exercises, and sets
+- singleton `settings` row for global app configuration
 - top-level and exercise-level notes
-- append-only workout event log
 - versioned mutation guards
 - derived analytics projections
 - import/export metadata
@@ -496,7 +473,7 @@ Use Cloudflare `AIChatAgent` as the conversation/runtime layer:
 
 Model selection rule:
 
-- store one global model preference in user settings
+- store one global model preference in the singleton `settings` row
 - use the exact Cloudflare AI Gateway model ID string
 - default it to `openai/gpt-5.4`
 - do not introduce app-level model aliases in MVP
@@ -1151,7 +1128,6 @@ If the agent issues a stale mutation because the user manually changed the UI:
 - return `VERSION_MISMATCH`
 - include current version
 - include latest snapshot
-- include events since the caller's version
 
 The agent may retry once after refreshing context.
 
@@ -1169,7 +1145,6 @@ Examples:
 After a committed mutation:
 
 - the shared mutation pipeline updates D1 state
-- appends a `workout_events` row in D1
 - then emits a best-effort notification to `AppEvents/default`
 
 This applies to all persisted changes, including lightweight set-field updates such as `update_set_actuals`.
@@ -1239,10 +1214,10 @@ The user should be able to go from:
 Illustrative logical tables:
 
 - `profiles`
+- `settings`
 - `workouts`
 - `workout_exercises`
 - `exercise_sets`
-- `workout_events`
 - `exercise_aliases`
 - `exercise_set_facts`
 - `exercise_prs`
@@ -1252,6 +1227,11 @@ Chat message history is persisted by agent runtime storage, not by app-owned D1 
 ### Example workout tables
 
 ```text
+settings
+  singleton_key
+  default_model_id
+  updated_at
+
 workouts
   id
   title
@@ -1290,17 +1270,6 @@ exercise_sets
   actual_rpe
   status
   completed_at
-
-workout_events
-  id
-  workout_id
-  version
-  type
-  payload
-  actor_type
-  actor_id
-  source_message_id
-  created_at
 ```
 
 ## 20. API / Backend Boundaries
@@ -1311,7 +1280,6 @@ Not final, but the boundaries should look like this:
 - `GET /api/workouts`
 - `GET /api/workouts/:id`
 - `POST /api/workouts`
-- `POST /api/workouts/:id/events`
 - `GET/WS /events/default`
 - `GET/WS /agents/general-coach/default`
 - `GET/WS /agents/workout-coach/:workoutId`
