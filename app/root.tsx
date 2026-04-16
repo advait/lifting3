@@ -11,6 +11,7 @@ import {
 import type { Route } from "./+types/root";
 import { Badge } from "./components/ui/badge";
 import { Separator } from "./components/ui/separator";
+import { useAppEventRevalidation } from "./features/app-events/client";
 import { cn } from "./lib/utils";
 import "./app.css";
 
@@ -93,6 +94,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useAppEventRevalidation();
+
   return <Outlet />;
 }
 
