@@ -478,27 +478,23 @@ Illustrative shape:
     {
       "binding": "DB",
       "database_name": "lifting3",
-      "database_id": "replace-me"
-    }
+      "database_id": "replace-me",
+    },
   ],
   "durable_objects": {
     "bindings": [
       { "name": "GeneralCoachAgent", "class_name": "GeneralCoachAgent" },
       { "name": "WorkoutCoachAgent", "class_name": "WorkoutCoachAgent" },
-      { "name": "AppEvents", "class_name": "AppEvents" }
-    ]
+      { "name": "AppEvents", "class_name": "AppEvents" },
+    ],
   },
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": [
-        "GeneralCoachAgent",
-        "WorkoutCoachAgent",
-        "AppEvents"
-      ]
-    }
+      "new_sqlite_classes": ["GeneralCoachAgent", "WorkoutCoachAgent", "AppEvents"],
+    },
   ],
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
 }
 ```
 

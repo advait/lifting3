@@ -14,7 +14,7 @@ export const executionContextContext = createContext<ExecutionContext>();
 
 export const createAppRouterContext = (
   env: Env,
-  executionContext: ExecutionContext
+  executionContext: ExecutionContext,
 ): RouterContextProvider => {
   const context = new RouterContextProvider();
   const requestContext: AppRequestContext = {
@@ -29,13 +29,11 @@ export const createAppRouterContext = (
   return context;
 };
 
-export const getAppRequestContext = (
-  context: RouterContextReader
-): AppRequestContext => context.get(appRequestContext);
+export const getAppRequestContext = (context: RouterContextReader): AppRequestContext =>
+  context.get(appRequestContext);
 
 export const getCloudflareEnv = (context: RouterContextReader): Env =>
   context.get(cloudflareEnvContext);
 
-export const getExecutionContext = (
-  context: RouterContextReader
-): ExecutionContext => context.get(executionContextContext);
+export const getExecutionContext = (context: RouterContextReader): ExecutionContext =>
+  context.get(executionContextContext);

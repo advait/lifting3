@@ -8,7 +8,7 @@ export default async function handleRequest(
   responseStatusCode: number,
   responseHeaders: Headers,
   routerContext: EntryContext,
-  _loadContext: RouterContextProvider
+  _loadContext: RouterContextProvider,
 ) {
   let shellRendered = false;
   let statusCode = responseStatusCode;
@@ -24,7 +24,7 @@ export default async function handleRequest(
           console.error(error);
         }
       },
-    }
+    },
   );
   shellRendered = true;
 

@@ -1,4 +1,20 @@
 {
+  "name": "lifting3",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vp build",
+    "cf-typegen": "wrangler types",
+    "check": "pnpm cf-typegen && react-router typegen && vp check",
+    "deploy": "pnpm build && wrangler deploy",
+    "dev": "vp dev",
+    "fix": "pnpm cf-typegen && react-router typegen && vp check --fix",
+    "postinstall": "pnpm cf-typegen",
+    "preview": "pnpm build && vp preview",
+    "typecheck": "pnpm cf-typegen && react-router typegen && tsc -b",
+    "validate:workout-interchange": "node --experimental-strip-types ./scripts/validate-workout-interchange.ts",
+    "verify:lifting2-exercises": "node --experimental-strip-types ./scripts/verify-lifting2-exercise-compat.ts"
+  },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",
     "class-variance-authority": "^0.7.1",
@@ -15,7 +31,6 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.11",
     "@cloudflare/vite-plugin": "^1.13.5",
     "@react-router/dev": "7.14.0",
     "@tailwindcss/vite": "^4.2.2",
@@ -24,26 +39,9 @@
     "@types/react-dom": "^19.2.3",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
-    "ultracite": "7.5.9",
-    "vite": "catalog:",
-    "wrangler": "^4.83.0",
-    "vite-plus": "catalog:"
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.1.18",
+    "vite-plus": "0.1.18",
+    "wrangler": "^4.83.0"
   },
-  "name": "lifting3",
-  "scripts": {
-    "build": "react-router build",
-    "cf-typegen": "wrangler types",
-    "dev": "react-router dev",
-    "deploy": "pnpm build && wrangler deploy",
-    "postinstall": "pnpm cf-typegen",
-    "preview": "pnpm build && vp preview",
-    "typecheck": "pnpm cf-typegen && react-router typegen && tsc -b",
-    "validate:workout-interchange": "node --experimental-strip-types ./scripts/validate-workout-interchange.ts",
-    "verify:lifting2-exercises": "node --experimental-strip-types ./scripts/verify-lifting2-exercise-compat.ts",
-    "check": "ultracite check",
-    "fix": "ultracite fix"
-  },
-  "type": "module",
-  "private": true,
   "packageManager": "pnpm@10.33.0"
 }

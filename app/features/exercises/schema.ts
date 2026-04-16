@@ -1,9 +1,4 @@
-export const EXERCISE_CLASSIFICATIONS = [
-  "warmup",
-  "main_lift",
-  "assistance",
-  "core",
-] as const;
+export const EXERCISE_CLASSIFICATIONS = ["warmup", "main_lift", "assistance", "core"] as const;
 
 export type ExerciseClassification = (typeof EXERCISE_CLASSIFICATIONS)[number];
 
@@ -18,8 +13,7 @@ export const EXERCISE_MOVEMENT_PATTERNS = [
   "core",
 ] as const;
 
-export type ExerciseMovementPattern =
-  (typeof EXERCISE_MOVEMENT_PATTERNS)[number];
+export type ExerciseMovementPattern = (typeof EXERCISE_MOVEMENT_PATTERNS)[number];
 
 export const EXERCISE_EQUIPMENT = [
   "bodyweight",
@@ -39,8 +33,7 @@ export const EXERCISE_LOAD_TRACKING_MODES = [
   "machine_weight_lbs",
 ] as const;
 
-export type ExerciseLoadTrackingMode =
-  (typeof EXERCISE_LOAD_TRACKING_MODES)[number];
+export type ExerciseLoadTrackingMode = (typeof EXERCISE_LOAD_TRACKING_MODES)[number];
 
 /** Describes the logging capabilities the UI and reducers can rely on for a lift. */
 export interface ExerciseLoggingProfile {
@@ -313,9 +306,7 @@ function uniqueAliases(aliases: readonly string[]) {
   return deduped;
 }
 
-function freezeExerciseSchema(
-  definition: ExerciseSchemaDefinition
-): Readonly<ExerciseSchema> {
+function freezeExerciseSchema(definition: ExerciseSchemaDefinition): Readonly<ExerciseSchema> {
   const aliases = uniqueAliases([
     definition.displayName,
     ...(definition.aliases ?? []),
@@ -355,7 +346,7 @@ for (const schema of schemaList) {
 
     if (existing && existing.id !== schema.id) {
       throw new Error(
-        `Exercise alias collision: "${alias}" maps to both ${existing.id} and ${schema.id}`
+        `Exercise alias collision: "${alias}" maps to both ${existing.id} and ${schema.id}`,
       );
     }
 
@@ -365,11 +356,11 @@ for (const schema of schemaList) {
 
 export const EXERCISE_SCHEMAS = Object.freeze(schemaList);
 export const EXERCISE_SCHEMA_IDS = Object.freeze(
-  EXERCISE_SCHEMAS.map((schema) => schema.id)
+  EXERCISE_SCHEMAS.map((schema) => schema.id),
 ) as readonly [ExerciseId, ...ExerciseId[]];
 
 export const LIFTING2_EXERCISE_NAMES = Object.freeze(
-  EXERCISE_SCHEMAS.flatMap((schema) => schema.lifting2Aliases)
+  EXERCISE_SCHEMAS.flatMap((schema) => schema.lifting2Aliases),
 );
 
 export function getExerciseSchemaById(id: ExerciseId) {

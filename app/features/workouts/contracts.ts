@@ -1,8 +1,5 @@
 import { z } from "zod";
-import {
-  appInvalidateKeySchema,
-  workoutEventTypeSchema,
-} from "../app-events/schema.ts";
+import { appInvalidateKeySchema, workoutEventTypeSchema } from "../app-events/schema.ts";
 import {
   EXERCISE_CLASSIFICATIONS,
   EXERCISE_EQUIPMENT,
@@ -13,13 +10,7 @@ import {
 import { SET_KINDS, SET_STATUSES, WORKOUT_STATUSES } from "./interchange.ts";
 
 const WORKOUT_SOURCES = ["manual", "imported", "agent"] as const;
-const EXERCISE_STATUSES = [
-  "planned",
-  "active",
-  "completed",
-  "skipped",
-  "replaced",
-] as const;
+const EXERCISE_STATUSES = ["planned", "active", "completed", "skipped", "replaced"] as const;
 const AGENT_KINDS = ["general", "workout"] as const;
 const WORKOUT_ROUTE_ACTIONS = [
   "start_workout",
@@ -75,22 +66,18 @@ const setValuesPatchSchema = z.strictObject({
   rpe: halfStepRpeSchema.nullable().optional(),
 });
 
-const nonEmptySetValuesPatchSchema = setValuesPatchSchema.superRefine(
-  (values, context) => {
-    const hasDefinedField =
-      values.weightLbs !== undefined ||
-      values.reps !== undefined ||
-      values.rpe !== undefined;
+const nonEmptySetValuesPatchSchema = setValuesPatchSchema.superRefine((values, context) => {
+  const hasDefinedField =
+    values.weightLbs !== undefined || values.reps !== undefined || values.rpe !== undefined;
 
-    if (!hasDefinedField) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "At least one set field update is required.",
-        path: [],
-      });
-    }
+  if (!hasDefinedField) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "At least one set field update is required.",
+      path: [],
+    });
   }
-);
+});
 
 const notesPatchSchema = z
   .strictObject({
@@ -98,8 +85,7 @@ const notesPatchSchema = z
     coachNotes: nullableTrimmedStringSchema.optional(),
   })
   .superRefine((notes, context) => {
-    const hasDefinedField =
-      notes.userNotes !== undefined || notes.coachNotes !== undefined;
+    const hasDefinedField = notes.userNotes !== undefined || notes.coachNotes !== undefined;
 
     if (!hasDefinedField) {
       context.addIssue({
@@ -141,9 +127,7 @@ export const workoutSetSchema = z
   })
   .superRefine((set, context) => {
     const hasActualValue =
-      set.actual.weightLbs != null ||
-      set.actual.reps != null ||
-      set.actual.rpe != null;
+      set.actual.weightLbs != null || set.actual.reps != null || set.actual.rpe != null;
 
     if (set.status === "done" && !hasActualValue) {
       context.addIssue({
@@ -188,7 +172,7 @@ export const workoutExerciseDisplaySchema = z.strictObject({
 
 /** Decorated exercise route/view model combining persisted state with catalog-derived fields. */
 export const workoutExerciseSchema = workoutExerciseStateSchema.extend(
-  workoutExerciseDisplaySchema.shape
+  workoutExerciseDisplaySchema.shape,
 );
 
 /** Validates the URL/query filter surface for the workouts index route. */
@@ -385,9 +369,7 @@ export type WorkoutExerciseDisplay = z.infer<typeof workoutExerciseDisplaySchema
 export type WorkoutExercise = z.infer<typeof workoutExerciseSchema>;
 export type WorkoutAgentTarget = z.infer<typeof workoutAgentTargetSchema>;
 export type WorkoutDetailWorkout = z.infer<typeof workoutDetailWorkoutSchema>;
-export type WorkoutDetailLoaderData = z.infer<
-  typeof workoutDetailLoaderDataSchema
->;
+export type WorkoutDetailLoaderData = z.infer<typeof workoutDetailLoaderDataSchema>;
 export type StartWorkoutInput = z.infer<typeof startWorkoutInputSchema>;
 export type UpdateSetActualsInput = z.infer<typeof updateSetActualsInputSchema>;
 export type ConfirmSetInput = z.infer<typeof confirmSetInputSchema>;
@@ -395,12 +377,8 @@ export type SkipSetInput = z.infer<typeof skipSetInputSchema>;
 export type AddSetInput = z.infer<typeof addSetInputSchema>;
 export type RemoveSetInput = z.infer<typeof removeSetInputSchema>;
 export type ReorderExerciseInput = z.infer<typeof reorderExerciseInputSchema>;
-export type UpdateWorkoutNotesInput = z.infer<
-  typeof updateWorkoutNotesInputSchema
->;
-export type UpdateExerciseNotesInput = z.infer<
-  typeof updateExerciseNotesInputSchema
->;
+export type UpdateWorkoutNotesInput = z.infer<typeof updateWorkoutNotesInputSchema>;
+export type UpdateExerciseNotesInput = z.infer<typeof updateExerciseNotesInputSchema>;
 export type FinishWorkoutInput = z.infer<typeof finishWorkoutInputSchema>;
 export type WorkoutMutationInput = z.infer<typeof workoutMutationInputSchema>;
 export type WorkoutMutationResult = z.infer<typeof workoutMutationResultSchema>;

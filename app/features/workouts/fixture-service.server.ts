@@ -33,7 +33,7 @@ interface StoredWorkoutRecord {
 type MutationHandler<K extends WorkoutMutationInput["action"]> = (
   record: StoredWorkoutRecord,
   input: Extract<WorkoutMutationInput, { action: K }>,
-  updatedAt: string
+  updatedAt: string,
 ) => WorkoutMutationResult;
 
 export class FixtureWorkoutNotFoundError extends Error {
@@ -44,9 +44,7 @@ export class FixtureWorkoutNotFoundError extends Error {
 
 export class FixtureWorkoutConflictError extends Error {
   constructor(workoutId: string, expectedVersion: number, currentVersion: number) {
-    super(
-      `Version mismatch for ${workoutId}: expected ${expectedVersion}, got ${currentVersion}`
-    );
+    super(`Version mismatch for ${workoutId}: expected ${expectedVersion}, got ${currentVersion}`);
   }
 }
 
@@ -419,15 +417,12 @@ function getStoredWorkoutRecord(workoutId: string) {
   return record;
 }
 
-function assertExpectedVersion(
-  record: StoredWorkoutRecord,
-  expectedVersion: number
-) {
+function assertExpectedVersion(record: StoredWorkoutRecord, expectedVersion: number) {
   if (record.workout.version !== expectedVersion) {
     throw new FixtureWorkoutConflictError(
       record.workout.id,
       expectedVersion,
-      record.workout.version
+      record.workout.version,
     );
   }
 }
@@ -473,7 +468,7 @@ function createMutationResult(
   input: WorkoutMutationInput,
   record: StoredWorkoutRecord,
   eventType: WorkoutMutationResult["eventType"],
-  additionalInvalidations: readonly WorkoutMutationResult["invalidate"][number][] = []
+  additionalInvalidations: readonly WorkoutMutationResult["invalidate"][number][] = [],
 ) {
   const invalidate = uniqueInvalidateKeys([
     "workouts:list",
@@ -492,21 +487,12 @@ function createMutationResult(
   });
 }
 
-function matchesWorkoutSearch(
-  record: StoredWorkoutRecord,
-  search: WorkoutListSearch
-) {
-  if (
-    search.status.length > 0 &&
-    !search.status.includes(record.workout.status)
-  ) {
+function matchesWorkoutSearch(record: StoredWorkoutRecord, search: WorkoutListSearch) {
+  if (search.status.length > 0 && !search.status.includes(record.workout.status)) {
     return false;
   }
 
-  if (
-    search.source.length > 0 &&
-    !search.source.includes(record.workout.source)
-  ) {
+  if (search.source.length > 0 && !search.source.includes(record.workout.source)) {
     return false;
   }
 
@@ -522,10 +508,11 @@ function matchesWorkoutSearch(
 
   if (
     exerciseQuery &&
-    !record.exercises.some((exercise) =>
-      getExerciseSchemaById(exercise.exerciseSchemaId)
-        ?.displayName.toLowerCase()
-        .includes(exerciseQuery) ?? false
+    !record.exercises.some(
+      (exercise) =>
+        getExerciseSchemaById(exercise.exerciseSchemaId)
+          ?.displayName.toLowerCase()
+          .includes(exerciseQuery) ?? false,
     )
   ) {
     return false;
@@ -546,11 +533,7 @@ function getMutationTimestamp(input: WorkoutMutationInput) {
   return new Date().toISOString();
 }
 
-const startWorkout: MutationHandler<"start_workout"> = (
-  record,
-  input,
-  updatedAt
-) => {
+const startWorkout: MutationHandler<"start_workout"> = (record, input, updatedAt) => {
   record.workout.status = "active";
   record.workout.startedAt = input.startedAt ?? updatedAt;
   bumpWorkoutVersion(record, updatedAt);
@@ -558,18 +541,12 @@ const startWorkout: MutationHandler<"start_workout"> = (
   return createMutationResult(input, record, "workout_started");
 };
 
-const updateSetActuals: MutationHandler<"update_set_actuals"> = (
-  record,
-  input,
-  updatedAt
-) => {
+const updateSetActuals: MutationHandler<"update_set_actuals"> = (record, input, updatedAt) => {
   const exercise = findExercise(record, input.exerciseId);
   const set = findSet(exercise, input.setId);
 
   if (set.status === "skipped") {
-    throw new FixtureWorkoutMutationError(
-      "Skipped sets cannot accept actual-field updates."
-    );
+    throw new FixtureWorkoutMutationError("Skipped sets cannot accept actual-field updates.");
   }
 
   set.actual = {
@@ -639,7 +616,7 @@ const addSet: MutationHandler<"add_set"> = (record, input, updatedAt) => {
         weightLbs: input.planned?.weightLbs ?? null,
       },
       status: "tbd",
-    })
+    }),
   );
   reindexSets(exercise.sets);
   bumpWorkoutVersion(record, updatedAt);
@@ -659,7 +636,7 @@ const removeSet: MutationHandler<"remove_set"> = (record, input, updatedAt) => {
 
   if (exercise.sets[setIndex].status === "done") {
     throw new FixtureWorkoutMutationError(
-      "Completed sets are not removable in the fixture reducer."
+      "Completed sets are not removable in the fixture reducer.",
     );
   }
 
@@ -672,23 +649,14 @@ const removeSet: MutationHandler<"remove_set"> = (record, input, updatedAt) => {
   ]);
 };
 
-const reorderExercise: MutationHandler<"reorder_exercise"> = (
-  record,
-  input,
-  updatedAt
-) => {
-  const exerciseIndex = record.exercises.findIndex(
-    (exercise) => exercise.id === input.exerciseId
-  );
+const reorderExercise: MutationHandler<"reorder_exercise"> = (record, input, updatedAt) => {
+  const exerciseIndex = record.exercises.findIndex((exercise) => exercise.id === input.exerciseId);
 
   if (exerciseIndex < 0) {
     throw new FixtureWorkoutMutationError(`Unknown exercise: ${input.exerciseId}`);
   }
 
-  const boundedTargetIndex = Math.max(
-    0,
-    Math.min(input.targetIndex, record.exercises.length - 1)
-  );
+  const boundedTargetIndex = Math.max(0, Math.min(input.targetIndex, record.exercises.length - 1));
   const [exercise] = record.exercises.splice(exerciseIndex, 1);
 
   record.exercises.splice(boundedTargetIndex, 0, exercise);
@@ -698,11 +666,7 @@ const reorderExercise: MutationHandler<"reorder_exercise"> = (
   return createMutationResult(input, record, "exercise_reordered");
 };
 
-const updateWorkoutNotes: MutationHandler<"update_workout_notes"> = (
-  record,
-  input,
-  updatedAt
-) => {
+const updateWorkoutNotes: MutationHandler<"update_workout_notes"> = (record, input, updatedAt) => {
   if (input.notes.userNotes !== undefined) {
     record.workout.userNotes = input.notes.userNotes;
   }
@@ -719,7 +683,7 @@ const updateWorkoutNotes: MutationHandler<"update_workout_notes"> = (
 const updateExerciseNotes: MutationHandler<"update_exercise_notes"> = (
   record,
   input,
-  updatedAt
+  updatedAt,
 ) => {
   const exercise = findExercise(record, input.exerciseId);
 
@@ -738,11 +702,7 @@ const updateExerciseNotes: MutationHandler<"update_exercise_notes"> = (
   ]);
 };
 
-const finishWorkout: MutationHandler<"finish_workout"> = (
-  record,
-  input,
-  updatedAt
-) => {
+const finishWorkout: MutationHandler<"finish_workout"> = (record, input, updatedAt) => {
   record.workout.completedAt = input.completedAt ?? updatedAt;
   record.workout.status = "completed";
   bumpWorkoutVersion(record, updatedAt);
@@ -768,20 +728,16 @@ const mutationHandlers = {
 function applyWorkoutMutation(
   record: StoredWorkoutRecord,
   input: WorkoutMutationInput,
-  updatedAt: string
+  updatedAt: string,
 ) {
-  const handler = mutationHandlers[input.action] as MutationHandler<
-    typeof input.action
-  >;
+  const handler = mutationHandlers[input.action] as MutationHandler<typeof input.action>;
 
   return handler(record, input, updatedAt);
 }
 
 const fixtureWorkoutRouteService: WorkoutRouteService = {
   loadWorkoutDetail(params: WorkoutDetailParams) {
-    return Promise.resolve(
-      buildWorkoutDetail(getStoredWorkoutRecord(params.workoutId))
-    );
+    return Promise.resolve(buildWorkoutDetail(getStoredWorkoutRecord(params.workoutId)));
   },
 
   loadWorkoutList(search: WorkoutListSearch) {
@@ -790,7 +746,7 @@ const fixtureWorkoutRouteService: WorkoutRouteService = {
       .sort((left, right) => right.workout.date.localeCompare(left.workout.date))
       .map(buildWorkoutListItem);
     const activeWorkout = [...fixtureWorkouts.values()].find(
-      (record) => record.workout.status === "active"
+      (record) => record.workout.status === "active",
     );
 
     return Promise.resolve(
@@ -798,7 +754,7 @@ const fixtureWorkoutRouteService: WorkoutRouteService = {
         activeWorkoutId: activeWorkout?.workout.id ?? null,
         filters: search,
         items,
-      })
+      }),
     );
   },
 
@@ -807,9 +763,7 @@ const fixtureWorkoutRouteService: WorkoutRouteService = {
 
     assertExpectedVersion(record, input.expectedVersion);
 
-    return Promise.resolve(
-      applyWorkoutMutation(record, input, getMutationTimestamp(input))
-    );
+    return Promise.resolve(applyWorkoutMutation(record, input, getMutationTimestamp(input)));
   },
 };
 

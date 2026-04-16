@@ -1,10 +1,4 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 
 import type { Route } from "./+types/analytics";
 
@@ -26,13 +20,11 @@ export default function Analytics() {
         <Card className="border-border/70 bg-card/90" key={panel}>
           <CardHeader>
             <CardTitle className="text-base">{panel}</CardTitle>
-            <CardDescription>
-              Placeholder scaffold from the product IA.
-            </CardDescription>
+            <CardDescription>Placeholder scaffold from the product IA.</CardDescription>
           </CardHeader>
           <CardContent className="text-muted-foreground text-sm">
-            This route will later consume derived projections from the
-            authoritative workout event log.
+            This route will later consume derived projections from the authoritative workout event
+            log.
           </CardContent>
         </Card>
       ))}

@@ -1,11 +1,5 @@
 import { Badge } from "~/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 
 import type { Route } from "./+types/coach";
 
@@ -26,8 +20,8 @@ export default function Coach() {
           <Badge variant="secondary">General Session</Badge>
         </div>
         <CardDescription>
-          The general coaching thread will handle planning, historical analysis,
-          and next-workout generation.
+          The general coaching thread will handle planning, historical analysis, and next-workout
+          generation.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 md:grid-cols-3">
@@ -46,8 +40,7 @@ export default function Coach() {
         <div className="rounded-xl border border-border/80 p-4">
           <h2 className="font-medium">Guardrails</h2>
           <p className="mt-2 text-muted-foreground text-sm">
-            Tool surface stays small: create drafts, patch workouts, query
-            history.
+            Tool surface stays small: create drafts, patch workouts, query history.
           </p>
         </div>
       </CardContent>

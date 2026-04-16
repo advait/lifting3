@@ -1,17 +1,17 @@
 # lifting3
 
-Single-user workout coaching app built with TypeScript, React Router v7, Tailwind v4, shadcn/ui, and Ultracite.
+Single-user workout coaching app built with TypeScript, React Router v7, Tailwind v4, shadcn/ui, and Vite+.
 
 ## Commands
 
 ```bash
 pnpm dev
 pnpm build
+pnpm check
+pnpm fix
 pnpm typecheck
 pnpm validate:workout-interchange -- <path>
 pnpm verify:lifting2-exercises
-pnpm check
-pnpm fix
 ```
 
 ## Notes

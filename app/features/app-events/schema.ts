@@ -20,11 +20,7 @@ export const WORKOUT_EVENT_TYPES = [
   "workout_completed",
 ] as const;
 
-export const STATIC_INVALIDATE_KEYS = [
-  "home",
-  "workouts:list",
-  "analytics",
-] as const;
+export const STATIC_INVALIDATE_KEYS = ["home", "workouts:list", "analytics"] as const;
 
 const staticInvalidateKeySchema = z.enum(STATIC_INVALIDATE_KEYS);
 const workoutInvalidateKeySchema = z.string().regex(/^workout:[^:]+$/, {

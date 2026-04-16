@@ -1,13 +1,7 @@
 import { data, Link } from "react-router";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { defineAppEventRouteHandle } from "~/features/app-events/client";
 import { workoutListSearchSchema } from "~/features/workouts/contracts";
 import { getWorkoutRouteService } from "~/features/workouts/fixture-service.server";
@@ -38,7 +32,7 @@ export const meta: Route.MetaFunction = () => [
 
 function createFilterHref(
   currentFilters: Route.ComponentProps["loaderData"]["filters"],
-  status: (typeof FILTER_ITEMS)[number]["status"]
+  status: (typeof FILTER_ITEMS)[number]["status"],
 ) {
   const nextSearchParams = new URLSearchParams();
 
@@ -70,9 +64,7 @@ export function loader({ request }: Route.LoaderArgs) {
     dateFrom: url.searchParams.get("dateFrom") ?? undefined,
     dateTo: url.searchParams.get("dateTo") ?? undefined,
     exercise: url.searchParams.get("exercise") ?? undefined,
-    page: url.searchParams.get("page")
-      ? Number(url.searchParams.get("page"))
-      : undefined,
+    page: url.searchParams.get("page") ? Number(url.searchParams.get("page")) : undefined,
     source: url.searchParams.getAll("source"),
     status: url.searchParams.getAll("status"),
   });
@@ -85,9 +77,7 @@ export function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
-  const activeWorkout = loaderData.items.find(
-    (item) => item.id === loaderData.activeWorkoutId
-  );
+  const activeWorkout = loaderData.items.find((item) => item.id === loaderData.activeWorkoutId);
 
   return (
     <section className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.8fr)]">
@@ -96,8 +86,8 @@ export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
           <div>
             <CardTitle>Workouts</CardTitle>
             <CardDescription>
-              Fixture-backed RR7 loaders now drive the list and detail routes
-              through the shared workout contracts.
+              Fixture-backed RR7 loaders now drive the list and detail routes through the shared
+              workout contracts.
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -114,9 +104,7 @@ export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
                   size="sm"
                   variant={isActive ? "default" : "outline"}
                 >
-                  <Link
-                    to={createFilterHref(loaderData.filters, filter.status)}
-                  >
+                  <Link to={createFilterHref(loaderData.filters, filter.status)}>
                     {filter.label}
                   </Link>
                 </Button>
@@ -139,9 +127,8 @@ export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
                     <Badge variant="secondary">{item.source}</Badge>
                   </div>
                   <p className="text-muted-foreground text-sm">
-                    {new Date(item.date).toLocaleDateString()} ·{" "}
-                    {item.exerciseCount} exercises · {item.counts.done} /{" "}
-                    {item.counts.total} sets confirmed
+                    {new Date(item.date).toLocaleDateString()} · {item.exerciseCount} exercises ·{" "}
+                    {item.counts.done} / {item.counts.total} sets confirmed
                   </p>
                 </div>
                 <div className="grid min-w-36 gap-1 text-right text-muted-foreground text-xs">
@@ -161,8 +148,8 @@ export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
           <CardHeader>
             <CardTitle>Active Workout</CardTitle>
             <CardDescription>
-              The list loader surfaces the currently active workout so home and
-              workouts can share the same read model later.
+              The list loader surfaces the currently active workout so home and workouts can share
+              the same read model later.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
@@ -170,13 +157,10 @@ export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
               <>
                 <p className="font-medium">{activeWorkout.title}</p>
                 <p className="text-muted-foreground">
-                  {activeWorkout.counts.done} / {activeWorkout.counts.total}{" "}
-                  sets confirmed
+                  {activeWorkout.counts.done} / {activeWorkout.counts.total} sets confirmed
                 </p>
                 <Button asChild size="sm">
-                  <Link to={`/workouts/${activeWorkout.id}`}>
-                    Resume workout
-                  </Link>
+                  <Link to={`/workouts/${activeWorkout.id}`}>Resume workout</Link>
                 </Button>
               </>
             ) : (
@@ -191,15 +175,15 @@ export default function WorkoutsIndex({ loaderData }: Route.ComponentProps) {
           <CardHeader>
             <CardTitle>Import / Export Boundary</CardTitle>
             <CardDescription>
-              The interchange format remains the only supported boundary for
-              moving workouts in or out of the app.
+              The interchange format remains the only supported boundary for moving workouts in or
+              out of the app.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-muted-foreground text-sm">
             <p>Per-workout JSON files validated by the shared Zod schema.</p>
             <p>
-              The fixture slice keeps this boundary visible without introducing
-              HTTP import/export endpoints.
+              The fixture slice keeps this boundary visible without introducing HTTP import/export
+              endpoints.
             </p>
           </CardContent>
         </Card>

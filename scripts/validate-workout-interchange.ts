@@ -35,9 +35,7 @@ async function main() {
   const inputPath = args[0];
 
   if (!inputPath) {
-    console.error(
-      "Usage: pnpm validate:workout-interchange -- <path-to-json-or-directory>"
-    );
+    console.error("Usage: pnpm validate:workout-interchange -- <path-to-json-or-directory>");
     process.exitCode = 1;
     return;
   }

@@ -30,31 +30,24 @@ export const handle = defineAppEventRouteHandle({
       return [];
     }
 
-    const parsedLoaderData =
-      workoutDetailLoaderDataSchema.safeParse(loaderData);
+    const parsedLoaderData = workoutDetailLoaderDataSchema.safeParse(loaderData);
     const exerciseInvalidateKeys = parsedLoaderData.success
       ? parsedLoaderData.data.exercises.map((exercise) =>
-          createExerciseInvalidateKey(exercise.exerciseSchemaId)
+          createExerciseInvalidateKey(exercise.exerciseSchemaId),
         )
       : [];
 
-    return [
-      createWorkoutInvalidateKey(params.workoutId),
-      ...exerciseInvalidateKeys,
-    ];
+    return [createWorkoutInvalidateKey(params.workoutId), ...exerciseInvalidateKeys];
   },
 });
 
 export const meta: Route.MetaFunction = ({ loaderData }) => [
   {
-    title: loaderData
-      ? `${loaderData.workout.title} | lifting3`
-      : "Workout | lifting3",
+    title: loaderData ? `${loaderData.workout.title} | lifting3` : "Workout | lifting3",
   },
   {
     name: "description",
-    content:
-      "Workout detail fixture with RR7 loaders, forms, and app-event revalidation.",
+    content: "Workout detail fixture with RR7 loaders, forms, and app-event revalidation.",
   },
 ];
 
@@ -90,10 +83,7 @@ export async function action({ request }: Route.ActionArgs) {
   const parsedMutation = safeParseWorkoutMutationFormData(formData);
 
   if (!parsedMutation.success) {
-    throw data(
-      { message: formatWorkoutMutationParseError(parsedMutation.error) },
-      { status: 400 }
-    );
+    throw data({ message: formatWorkoutMutationParseError(parsedMutation.error) }, { status: 400 });
   }
 
   try {
@@ -115,9 +105,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
-export default function WorkoutDetail({
-  actionData,
-  loaderData,
-}: Route.ComponentProps) {
+export default function WorkoutDetail({ actionData, loaderData }: Route.ComponentProps) {
   return <WorkoutDetailView actionData={actionData} loaderData={loaderData} />;
 }

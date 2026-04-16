@@ -2,18 +2,11 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  EXERCISE_SCHEMAS,
-  resolveExerciseSchemaByName,
-} from "../app/features/exercises/schema.ts";
+import { EXERCISE_SCHEMAS, resolveExerciseSchemaByName } from "../app/features/exercises/schema.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const defaultWorkoutsDir = path.resolve(
-  __dirname,
-  "../../lifting2/entries/workouts"
-);
-const EXERCISE_BLOCK_PATTERN =
-  /\[\[exercises\]\](.*?)(?=\n\[\[exercises\]\]|$)/gs;
+const defaultWorkoutsDir = path.resolve(__dirname, "../../lifting2/entries/workouts");
+const EXERCISE_BLOCK_PATTERN = /\[\[exercises\]\](.*?)(?=\n\[\[exercises\]\]|$)/gs;
 const EXERCISE_NAME_PATTERN = /^name\s*=\s*"([^"]+)"/m;
 
 function extractExerciseNames(contents: string) {
@@ -71,7 +64,7 @@ async function main() {
   }
 
   console.log(
-    `Verified ${uniqueNames.size} lifting2 exercise names against ${EXERCISE_SCHEMAS.length} schemas.`
+    `Verified ${uniqueNames.size} lifting2 exercise names against ${EXERCISE_SCHEMAS.length} schemas.`,
   );
 }
 

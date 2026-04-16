@@ -23,9 +23,7 @@ interface AppEventRouteHandleArgs {
 }
 
 export interface AppEventRouteHandle {
-  invalidateKeys?: (
-    args: AppEventRouteHandleArgs
-  ) => readonly AppInvalidateKey[];
+  invalidateKeys?: (args: AppEventRouteHandleArgs) => readonly AppInvalidateKey[];
 }
 
 /**
@@ -50,9 +48,7 @@ function getBrowserWindow() {
   return candidate as BrowserEventTarget;
 }
 
-function getMountedInvalidateKeys(
-  matches: UIMatch<unknown, AppEventRouteHandle>[]
-) {
+function getMountedInvalidateKeys(matches: UIMatch<unknown, AppEventRouteHandle>[]) {
   const keys: AppInvalidateKey[] = [];
 
   for (const match of matches) {
@@ -85,7 +81,7 @@ function parseAppEventEnvelope(value: unknown) {
 
 function isIntersectingInvalidateSet(
   mountedKeys: readonly AppInvalidateKey[],
-  envelope: AppEventEnvelope
+  envelope: AppEventEnvelope,
 ) {
   return envelope.invalidate.some((key) => mountedKeys.includes(key));
 }
@@ -110,7 +106,7 @@ export function publishAppEvent(envelope: unknown) {
   browserWindow.dispatchEvent(
     new CustomEvent<AppEventEnvelope>(APP_EVENT_CUSTOM_EVENT, {
       detail: parsedEnvelope,
-    })
+    }),
   );
 
   if (typeof browserWindow.BroadcastChannel === "function") {
@@ -165,7 +161,7 @@ export function useAppEventRevalidation() {
       return;
     }
 
-    revalidator.revalidate();
+    void revalidator.revalidate();
   });
 
   useEffect(() => {
@@ -176,9 +172,7 @@ export function useAppEventRevalidation() {
     }
 
     const onWindowEvent = (event: Event) => {
-      const parsedEnvelope = parseAppEventEnvelope(
-        (event as CustomEvent<unknown>).detail
-      );
+      const parsedEnvelope = parseAppEventEnvelope((event as CustomEvent<unknown>).detail);
 
       if (!parsedEnvelope) {
         return;
@@ -191,10 +185,7 @@ export function useAppEventRevalidation() {
 
     if (typeof browserWindow.BroadcastChannel !== "function") {
       return () => {
-        browserWindow.removeEventListener(
-          APP_EVENT_CUSTOM_EVENT,
-          onWindowEvent
-        );
+        browserWindow.removeEventListener(APP_EVENT_CUSTOM_EVENT, onWindowEvent);
       };
     }
 

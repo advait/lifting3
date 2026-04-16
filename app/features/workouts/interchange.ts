@@ -5,12 +5,7 @@ import { EXERCISE_SCHEMA_IDS } from "../exercises/schema.ts";
 export const WORKOUT_INTERCHANGE_FORMAT = "lifting3.workout" as const;
 export const WORKOUT_INTERCHANGE_VERSION = 1 as const;
 
-export const WORKOUT_STATUSES = [
-  "planned",
-  "active",
-  "completed",
-  "canceled",
-] as const;
+export const WORKOUT_STATUSES = ["planned", "active", "completed", "canceled"] as const;
 
 export type WorkoutStatus = (typeof WORKOUT_STATUSES)[number];
 
@@ -24,13 +19,7 @@ const isoDateTimeSchema = z.iso.datetime({ offset: true });
 const nullableTrimmedStringSchema = z.string().trim().min(1).nullable();
 const exerciseSchemaIdSchema = z.enum(EXERCISE_SCHEMA_IDS);
 
-type JsonValue =
-  | boolean
-  | null
-  | number
-  | string
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+type JsonValue = boolean | null | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
@@ -40,7 +29,7 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
     z.string(),
     z.array(jsonValueSchema),
     z.record(z.string(), jsonValueSchema),
-  ])
+  ]),
 );
 
 export const sourceMetadataSchema = z.record(z.string(), jsonValueSchema);
@@ -72,15 +61,13 @@ export const workoutInterchangeSetSchema = z
   })
   .superRefine((set, context) => {
     if (set.status === "done") {
-      const hasLoggedValue =
-        set.reps != null ||
-        set.weight_lbs != null ||
-        set.rpe != null;
+      const hasLoggedValue = set.reps != null || set.weight_lbs != null || set.rpe != null;
 
       if (!hasLoggedValue) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "Completed sets must include at least one logged value such as reps, weight, or RPE.",
+          message:
+            "Completed sets must include at least one logged value such as reps, weight, or RPE.",
           path: [],
         });
       }
@@ -88,9 +75,7 @@ export const workoutInterchangeSetSchema = z
 
     if (set.status === "skipped") {
       const hasUnexpectedLoggedValue =
-        set.reps != null ||
-        set.weight_lbs != null ||
-        set.rpe != null;
+        set.reps != null || set.weight_lbs != null || set.rpe != null;
 
       if (hasUnexpectedLoggedValue) {
         context.addIssue({
@@ -135,15 +120,9 @@ export const workoutInterchangeFileSchema = z.object({
 });
 
 export type WorkoutInterchangeSet = z.infer<typeof workoutInterchangeSetSchema>;
-export type WorkoutInterchangeExercise = z.infer<
-  typeof workoutInterchangeExerciseSchema
->;
-export type WorkoutInterchangeWorkout = z.infer<
-  typeof workoutInterchangeWorkoutSchema
->;
-export type WorkoutInterchangeFile = z.infer<
-  typeof workoutInterchangeFileSchema
->;
+export type WorkoutInterchangeExercise = z.infer<typeof workoutInterchangeExerciseSchema>;
+export type WorkoutInterchangeWorkout = z.infer<typeof workoutInterchangeWorkoutSchema>;
+export type WorkoutInterchangeFile = z.infer<typeof workoutInterchangeFileSchema>;
 
 export function parseWorkoutInterchangeFile(value: unknown) {
   return workoutInterchangeFileSchema.parse(value);

@@ -1,12 +1,6 @@
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 
 import type { Route } from "./+types/home";
 
@@ -18,13 +12,7 @@ export const meta: Route.MetaFunction = () => [
   },
 ];
 
-const STACK = [
-  "TypeScript",
-  "React Router v7",
-  "Tailwind v4",
-  "shadcn/ui",
-  "Ultracite",
-] as const;
+const STACK = ["TypeScript", "React Router v7", "Tailwind v4", "shadcn/ui", "Ultracite"] as const;
 
 const NOW_CARDS = [
   {
@@ -55,9 +43,9 @@ export default function Home() {
               Workout state first. Agent second.
             </CardTitle>
             <CardDescription className="mt-3 max-w-2xl text-pretty text-base">
-              `lifting3` starts from the durable workout model: structured
-              sessions, event-sourced changes, local JSON interchange, and a
-              coach embedded into the workflow instead of bolted on top.
+              `lifting3` starts from the durable workout model: structured sessions, event-sourced
+              changes, local JSON interchange, and a coach embedded into the workflow instead of
+              bolted on top.
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -84,9 +72,7 @@ export default function Home() {
             <CardHeader>
               <CardTitle className="text-base">{card.title}</CardTitle>
             </CardHeader>
-            <CardContent className="text-muted-foreground text-sm">
-              {card.body}
-            </CardContent>
+            <CardContent className="text-muted-foreground text-sm">{card.body}</CardContent>
           </Card>
         ))}
       </div>
