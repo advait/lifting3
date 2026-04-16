@@ -5,3 +5,10 @@
 # React Router
 /.react-router/
 /build/
+
+# Cloudflare
+/.wrangler/
+
+# Local exports / imports
+/tmp/
+/exports/

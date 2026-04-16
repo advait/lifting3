@@ -27,7 +27,7 @@
     "ultracite": "7.5.9",
     "vite": "^8.0.3"
   },
-  "name": "tmp-lifting3-rr",
+  "name": "lifting3",
   "scripts": {
     "build": "react-router build",
     "dev": "react-router dev",
@@ -37,5 +37,6 @@
     "fix": "ultracite fix"
   },
   "type": "module",
-  "private": true
+  "private": true,
+  "packageManager": "pnpm@10.33.0"
 }
