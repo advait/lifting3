@@ -7,7 +7,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Form, useFetcher, useNavigate } from "react-router";
+import { Form, useFetcher, useLocation, useNavigate } from "react-router";
 
 import {
   AlertDialog,
@@ -1296,6 +1296,7 @@ function SessionSummarySection({ exercisesCount, progress, workout }: SessionSum
 }
 
 export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewProps) {
+  const location = useLocation();
   const navigate = useNavigate();
   const [isHistoricalEditMode, setIsHistoricalEditMode] = useState(false);
   usePublishAppEvent(actionData);
@@ -1313,6 +1314,26 @@ export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewP
 
     void navigate("/workouts", { replace: true });
   }, [actionData, navigate]);
+
+  useEffect(() => {
+    setIsHistoricalEditMode(false);
+  }, [loaderData.workout.id, location.key]);
+
+  useEffect(() => {
+    const resetHistoricalEditMode = (event: PageTransitionEvent) => {
+      if (!event.persisted) {
+        return;
+      }
+
+      setIsHistoricalEditMode(false);
+    };
+
+    window.addEventListener("pageshow", resetHistoricalEditMode);
+
+    return () => {
+      window.removeEventListener("pageshow", resetHistoricalEditMode);
+    };
+  }, []);
 
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(240px,0.7fr)] lg:gap-8">
