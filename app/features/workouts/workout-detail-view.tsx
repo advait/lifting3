@@ -2,13 +2,7 @@ import { Form, Link } from "react-router";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { usePublishAppEvent } from "~/features/app-events/client";
 
 import type {
@@ -72,7 +66,7 @@ function hiddenValue(value: number | string | null | undefined) {
 }
 
 function getAvailableActions(
-  workoutStatus: WorkoutDetailWorkout["status"]
+  workoutStatus: WorkoutDetailWorkout["status"],
 ): readonly WorkoutRouteAction[] {
   switch (workoutStatus) {
     case "planned":
@@ -104,18 +98,12 @@ function getAvailableActions(
   }
 }
 
-function hasAction(
-  availableActions: readonly WorkoutRouteAction[],
-  action: WorkoutRouteAction
-) {
+function hasAction(availableActions: readonly WorkoutRouteAction[], action: WorkoutRouteAction) {
   return availableActions.includes(action);
 }
 
 function getAgentTargetPath(loaderData: WorkoutDetailLoaderData) {
-  const agentSlug =
-    loaderData.agentTarget.kind === "workout"
-      ? "workout-coach"
-      : "general-coach";
+  const agentSlug = loaderData.agentTarget.kind === "workout" ? "workout-coach" : "general-coach";
 
   return `/agents/${agentSlug}/${loaderData.agentTarget.instanceName}`;
 }
@@ -133,11 +121,7 @@ function getSetStatusBadgeVariant(status: WorkoutSet["status"]) {
 }
 
 function hasActualValues(set: WorkoutSet) {
-  return (
-    set.actual.weightLbs != null ||
-    set.actual.reps != null ||
-    set.actual.rpe != null
-  );
+  return set.actual.weightLbs != null || set.actual.reps != null || set.actual.rpe != null;
 }
 
 function getActualRpeSuffix(set: WorkoutSet) {
@@ -159,22 +143,14 @@ function MutationFields({
     <>
       <input name="action" type="hidden" value={action} />
       <input name="expectedVersion" type="hidden" value={workoutVersion} />
-      {exerciseId ? (
-        <input name="exerciseId" type="hidden" value={exerciseId} />
-      ) : null}
+      {exerciseId ? <input name="exerciseId" type="hidden" value={exerciseId} /> : null}
       {setId ? <input name="setId" type="hidden" value={setId} /> : null}
       <input name="workoutId" type="hidden" value={workoutId} />
     </>
   );
 }
 
-function SetCard({
-  availableActions,
-  exerciseId,
-  set,
-  workoutId,
-  workoutVersion,
-}: SetCardProps) {
+function SetCard({ availableActions, exerciseId, set, workoutId, workoutVersion }: SetCardProps) {
   const resolvedWeight = set.actual.weightLbs ?? set.planned.weightLbs;
   const resolvedReps = set.actual.reps ?? set.planned.reps;
   const canUpdateActuals =
@@ -188,22 +164,16 @@ function SetCard({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-sm">
-              Set {set.orderIndex + 1}
-            </span>
+            <span className="font-medium text-sm">Set {set.orderIndex + 1}</span>
             <Badge variant="outline">{set.designation}</Badge>
-            <Badge variant={getSetStatusBadgeVariant(set.status)}>
-              {set.status}
-            </Badge>
+            <Badge variant={getSetStatusBadgeVariant(set.status)}>{set.status}</Badge>
           </div>
           <p className="text-muted-foreground text-sm">
-            Planned: {hiddenValue(set.planned.weightLbs)} lbs ×{" "}
-            {hiddenValue(set.planned.reps)} reps
+            Planned: {hiddenValue(set.planned.weightLbs)} lbs × {hiddenValue(set.planned.reps)} reps
           </p>
           {hasActualValues(set) ? (
             <p className="text-muted-foreground text-sm">
-              Actual: {hiddenValue(set.actual.weightLbs)} lbs ×{" "}
-              {hiddenValue(set.actual.reps)} reps
+              Actual: {hiddenValue(set.actual.weightLbs)} lbs × {hiddenValue(set.actual.reps)} reps
               {getActualRpeSuffix(set)}
             </p>
           ) : null}
@@ -211,10 +181,7 @@ function SetCard({
 
         {canUpdateActuals ? (
           <div className="grid gap-2 md:min-w-80">
-            <Form
-              className="grid gap-2 md:grid-cols-[repeat(2,minmax(0,1fr))_auto]"
-              method="post"
-            >
+            <Form className="grid gap-2 md:grid-cols-[repeat(2,minmax(0,1fr))_auto]" method="post">
               <MutationFields
                 action="update_set_actuals"
                 exerciseId={exerciseId}
@@ -254,17 +221,9 @@ function SetCard({
                         workoutId={workoutId}
                         workoutVersion={workoutVersion}
                       />
-                      <input
-                        name="reps"
-                        type="hidden"
-                        value={hiddenValue(resolvedReps)}
-                      />
+                      <input name="reps" type="hidden" value={hiddenValue(resolvedReps)} />
                       <input name="rpe" type="hidden" value={rpe} />
-                      <input
-                        name="weightLbs"
-                        type="hidden"
-                        value={hiddenValue(resolvedWeight)}
-                      />
+                      <input name="weightLbs" type="hidden" value={hiddenValue(resolvedWeight)} />
                       <Button size="xs" type="submit">
                         RPE {rpe}
                       </Button>
@@ -324,10 +283,7 @@ function ExerciseCard({
 }: ExerciseCardProps) {
   const canReorder = hasAction(availableActions, "reorder_exercise");
   const canAddSet = hasAction(availableActions, "add_set");
-  const canUpdateExerciseNotes = hasAction(
-    availableActions,
-    "update_exercise_notes"
-  );
+  const canUpdateExerciseNotes = hasAction(availableActions, "update_exercise_notes");
 
   return (
     <Card className="border-border/70 bg-card/90">
@@ -339,8 +295,7 @@ function ExerciseCard({
             <Badge variant="secondary">{exercise.classification}</Badge>
           </div>
           <CardDescription>
-            {exercise.logging.loadTracking.replaceAll("_", " ")} ·{" "}
-            {exercise.sets.length} sets
+            {exercise.logging.loadTracking.replaceAll("_", " ")} · {exercise.sets.length} sets
           </CardDescription>
         </div>
         {canReorder ? (
@@ -352,17 +307,8 @@ function ExerciseCard({
                 workoutId={workout.id}
                 workoutVersion={workout.version}
               />
-              <input
-                name="targetIndex"
-                type="hidden"
-                value={Math.max(0, exerciseIndex - 1)}
-              />
-              <Button
-                disabled={exerciseIndex === 0}
-                size="sm"
-                type="submit"
-                variant="outline"
-              >
+              <input name="targetIndex" type="hidden" value={Math.max(0, exerciseIndex - 1)} />
+              <Button disabled={exerciseIndex === 0} size="sm" type="submit" variant="outline">
                 Move up
               </Button>
             </Form>
@@ -449,15 +395,9 @@ function ExerciseCard({
               workoutId={workout.id}
               workoutVersion={workout.version}
             />
-            <input
-              name="insertAfterSetId"
-              type="hidden"
-              value={exercise.sets.at(-1)?.id ?? ""}
-            />
+            <input name="insertAfterSetId" type="hidden" value={exercise.sets.at(-1)?.id ?? ""} />
             <label className="grid gap-1">
-              <span className="text-muted-foreground text-xs">
-                Planned weight
-              </span>
+              <span className="text-muted-foreground text-xs">Planned weight</span>
               <input
                 className={INPUT_CLASSNAME}
                 name="weightLbs"
@@ -467,9 +407,7 @@ function ExerciseCard({
               />
             </label>
             <label className="grid gap-1">
-              <span className="text-muted-foreground text-xs">
-                Planned reps
-              </span>
+              <span className="text-muted-foreground text-xs">Planned reps</span>
               <input
                 className={INPUT_CLASSNAME}
                 name="reps"
@@ -488,10 +426,7 @@ function ExerciseCard({
   );
 }
 
-export function WorkoutDetailView({
-  actionData,
-  loaderData,
-}: WorkoutDetailViewProps) {
+export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewProps) {
   usePublishAppEvent(actionData);
 
   const availableActions = getAvailableActions(loaderData.workout.status);
@@ -515,8 +450,7 @@ export function WorkoutDetailView({
                 <CardTitle>{loaderData.workout.title}</CardTitle>
                 <CardDescription>
                   {new Date(loaderData.workout.date).toLocaleDateString()} ·{" "}
-                  {loaderData.progress.done} / {loaderData.progress.total} sets
-                  confirmed
+                  {loaderData.progress.done} / {loaderData.progress.total} sets confirmed
                 </CardDescription>
               </div>
             </div>
@@ -553,8 +487,7 @@ export function WorkoutDetailView({
           <CardHeader>
             <CardTitle>Workout Notes</CardTitle>
             <CardDescription>
-              This posts through the same mutation contract as future D1-backed
-              routes.
+              This posts through the same mutation contract as future D1-backed routes.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -608,17 +541,16 @@ export function WorkoutDetailView({
           <CardHeader>
             <CardTitle>Live Invalidation</CardTitle>
             <CardDescription>
-              This screen publishes mutation results as app events, and the root
-              hook revalidates mounted routes when their handle keys intersect.
+              This screen publishes mutation results as app events, and the root hook revalidates
+              mounted routes when their handle keys intersect.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-muted-foreground text-sm">
             <p>Agent target: {agentTargetPath}</p>
             <p>Available actions: {availableActions.join(", ")}</p>
             <p>
-              Progress breakdown: {loaderData.progress.tbd} tbd /{" "}
-              {loaderData.progress.done} done / {loaderData.progress.skipped}{" "}
-              skipped
+              Progress breakdown: {loaderData.progress.tbd} tbd / {loaderData.progress.done} done /{" "}
+              {loaderData.progress.skipped} skipped
             </p>
           </CardContent>
         </Card>
@@ -629,14 +561,13 @@ export function WorkoutDetailView({
           </CardHeader>
           <CardContent className="space-y-2 text-muted-foreground text-sm">
             <p>
-              The route loader/action shapes now match the shared contracts,
-              which lets fixture UI and future D1 plumbing evolve against the
-              same boundary.
+              The route loader/action shapes now match the shared contracts, which lets fixture UI
+              and future D1 plumbing evolve against the same boundary.
             </p>
             <p>
-              The detail route does not directly patch client state from the
-              action result. It republishes an app event and lets RR7 loader
-              revalidation refresh the authoritative data.
+              The detail route does not directly patch client state from the action result. It
+              republishes an app event and lets RR7 loader revalidation refresh the authoritative
+              data.
             </p>
           </CardContent>
         </Card>

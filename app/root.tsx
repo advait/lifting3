@@ -44,9 +44,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <h1 className="font-semibold text-lg tracking-tight">
-                        lifting3
-                      </h1>
+                      <h1 className="font-semibold text-lg tracking-tight">lifting3</h1>
                       <Badge variant="secondary">Scaffold</Badge>
                     </div>
                     <p className="text-muted-foreground text-sm">
@@ -62,7 +60,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                           "rounded-full px-3 py-2 font-medium text-sm transition-colors",
                           isActive
                             ? "bg-primary text-primary-foreground shadow-sm"
-                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                         )
                       }
                       end={item.end}
@@ -107,9 +105,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   if (isRouteErrorResponse(error)) {
     message = error.status === 404 ? "404" : "Error";
     details =
-      error.status === 404
-        ? "The requested page could not be found."
-        : error.statusText || details;
+      error.status === 404 ? "The requested page could not be found." : error.statusText || details;
   } else if (import.meta.env.DEV && error && error instanceof Error) {
     details = error.message;
     stack = error.stack;

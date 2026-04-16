@@ -12,9 +12,7 @@ import type {
  * and future D1-backed loaders can satisfy the same RR7 contracts.
  */
 export interface WorkoutRouteService {
-  loadWorkoutDetail(
-    params: WorkoutDetailParams
-  ): Promise<WorkoutDetailLoaderData>;
+  loadWorkoutDetail(params: WorkoutDetailParams): Promise<WorkoutDetailLoaderData>;
   loadWorkoutList(search: WorkoutListSearch): Promise<WorkoutListLoaderData>;
   mutateWorkout(input: WorkoutMutationInput): Promise<WorkoutMutationResult>;
 }
