@@ -1,14 +1,9 @@
-import {
-  CheckIcon,
-  Clock3Icon,
-  DumbbellIcon,
-  MoreHorizontalIcon,
-} from "lucide-react";
-import { Form, Link } from "react-router";
+import { CheckIcon, Clock3Icon, DumbbellIcon, MoreHorizontalIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Form } from "react-router";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { usePublishAppEvent } from "~/features/app-events/client";
 import { cn } from "~/lib/utils";
 
@@ -19,8 +14,6 @@ import type {
   WorkoutSet,
 } from "./contracts";
 
-const TEXTAREA_CLASSNAME =
-  "min-h-24 rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 const REST_TIMER_PLACEHOLDER = "02:00";
 const WORKOUT_ROUTE_ACTIONS = [
   "start_workout",
@@ -53,6 +46,16 @@ interface MutationFieldsProps {
 interface ExerciseCardProps {
   availableActions: readonly WorkoutRouteAction[];
   exercise: WorkoutExercise;
+  workout: WorkoutDetailWorkout;
+}
+
+interface WorkoutOverviewCardProps {
+  workout: WorkoutDetailWorkout;
+}
+
+interface SessionSummarySectionProps {
+  exercisesCount: number;
+  progress: WorkoutDetailLoaderData["progress"];
   workout: WorkoutDetailWorkout;
 }
 
@@ -115,6 +118,19 @@ function formatWorkoutDate(value: string) {
   return new Date(value).toLocaleDateString();
 }
 
+function formatDuration(durationMs: number) {
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 function formatOptionalValue(value: number | null) {
   return value == null ? "\u2014" : String(value);
 }
@@ -145,6 +161,119 @@ function getSetLabel(set: WorkoutSet, workingSetNumber: number) {
   return set.designation === "warmup" ? "W" : String(workingSetNumber);
 }
 
+function getWorkoutStatusClass(status: WorkoutDetailWorkout["status"]) {
+  switch (status) {
+    case "active":
+      return "border-emerald-500/25 bg-emerald-500/10 text-emerald-100";
+    case "completed":
+      return "border-sky-500/25 bg-sky-500/10 text-sky-100";
+    case "canceled":
+      return "border-rose-500/25 bg-rose-500/10 text-rose-100";
+    case "planned":
+    default:
+      return "border-border/80 bg-transparent text-muted-foreground";
+  }
+}
+
+function getWorkoutStatusLabel(status: WorkoutDetailWorkout["status"]) {
+  switch (status) {
+    case "active":
+      return "Active";
+    case "completed":
+      return "Completed";
+    case "canceled":
+      return "Canceled";
+    case "planned":
+    default:
+      return "Planned";
+  }
+}
+
+function getWorkoutDurationMs(workout: WorkoutDetailWorkout, nowMs: number) {
+  if (!workout.startedAt) {
+    return null;
+  }
+
+  const startedAtMs = Date.parse(workout.startedAt);
+
+  if (Number.isNaN(startedAtMs)) {
+    return null;
+  }
+
+  const endedAtMs =
+    workout.status === "active"
+      ? nowMs
+      : workout.completedAt
+        ? Date.parse(workout.completedAt)
+        : nowMs;
+
+  if (Number.isNaN(endedAtMs)) {
+    return null;
+  }
+
+  return Math.max(0, endedAtMs - startedAtMs);
+}
+
+function WorkoutOverviewCard({ workout }: WorkoutOverviewCardProps) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const durationMs = getWorkoutDurationMs(workout, nowMs);
+
+  useEffect(() => {
+    if (workout.status !== "active" || !workout.startedAt) {
+      return;
+    }
+
+    setNowMs(Date.now());
+
+    const intervalId = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [workout.startedAt, workout.status]);
+
+  return (
+    <section className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <Badge
+          className={cn(
+            "rounded-full px-2.5 py-1 font-medium text-[11px] tracking-[0.08em]",
+            getWorkoutStatusClass(workout.status),
+          )}
+          variant="outline"
+        >
+          {getWorkoutStatusLabel(workout.status)}
+        </Badge>
+
+        <div className="inline-flex items-center gap-2 text-sm">
+          <Clock3Icon aria-hidden className="size-3.5 text-muted-foreground" />
+          <span className="font-medium tabular-nums">
+            {durationMs == null ? "Not started" : formatDuration(durationMs)}
+          </span>
+        </div>
+      </div>
+
+      <p className="text-muted-foreground text-sm">{formatWorkoutDate(workout.date)}</p>
+
+      {getExerciseNotes(workout.coachNotes) || getExerciseNotes(workout.userNotes) ? (
+        <div className="grid gap-2 pt-1">
+          {getExerciseNotes(workout.coachNotes) ? (
+            <p className="text-muted-foreground text-sm italic leading-relaxed">
+              {getExerciseNotes(workout.coachNotes)}
+            </p>
+          ) : null}
+
+          {getExerciseNotes(workout.userNotes) ? (
+            <p className="font-medium text-sm leading-relaxed">{getExerciseNotes(workout.userNotes)}</p>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function SetRpeButton({ set }: { set: WorkoutSet }) {
   const isComplete = set.status === "done" && set.actual.rpe != null;
 
@@ -169,12 +298,12 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
   let workingSetNumber = 0;
 
   return (
-    <Card className="border-border/70 bg-card/90">
-      <CardHeader className="grid-cols-[auto_1fr_auto] items-center gap-3">
-        <div className="flex size-10 items-center justify-center rounded-2xl border border-border/80 bg-background/70 text-muted-foreground">
+    <section className="grid gap-3 py-5 first:pt-0">
+      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
+        <div className="flex size-9 items-center justify-center rounded-full bg-background/70 text-muted-foreground">
           <DumbbellIcon aria-hidden />
         </div>
-        <CardTitle>{exercise.displayName}</CardTitle>
+        <h2 className="font-semibold text-base tracking-tight">{exercise.displayName}</h2>
         <Button
           aria-label={`Open exercise actions for ${exercise.displayName}`}
           size="icon"
@@ -183,82 +312,145 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
         >
           <MoreHorizontalIcon />
         </Button>
-      </CardHeader>
-      <CardContent className="grid gap-4">
-        {getExerciseNotes(exercise.coachNotes) ? (
-          <p className="text-muted-foreground text-sm italic leading-relaxed">
-            {getExerciseNotes(exercise.coachNotes)}
-          </p>
-        ) : null}
+      </div>
 
-        {getExerciseNotes(exercise.userNotes) ? (
-          <p className="font-medium text-sm leading-relaxed">{getExerciseNotes(exercise.userNotes)}</p>
-        ) : null}
+      {getExerciseNotes(exercise.coachNotes) ? (
+        <p className="text-muted-foreground text-sm italic leading-relaxed">
+          {getExerciseNotes(exercise.coachNotes)}
+        </p>
+      ) : null}
 
-        <div className="flex items-center gap-2 rounded-2xl border border-border/80 bg-background/60 px-3 py-3 text-sm">
-          <Clock3Icon aria-hidden className="text-muted-foreground" />
-          <span className="text-muted-foreground">Rest Timer:</span>
-          <span className="font-medium">{REST_TIMER_PLACEHOLDER}</span>
+      {getExerciseNotes(exercise.userNotes) ? (
+        <p className="font-medium text-sm leading-relaxed">{getExerciseNotes(exercise.userNotes)}</p>
+      ) : null}
+
+      <div className="flex items-center gap-2 text-sm">
+        <Clock3Icon aria-hidden className="size-3.5 text-muted-foreground" />
+        <span className="text-muted-foreground">Rest Timer:</span>
+        <span className="font-medium">{REST_TIMER_PLACEHOLDER}</span>
+      </div>
+
+      <div className="-mx-4 w-[calc(100%+2rem)] border-border/70 border-y sm:mx-0 sm:w-full">
+        <table className="w-full table-fixed text-sm">
+          <thead className="border-border/70 border-b text-muted-foreground text-[11px] uppercase tracking-[0.12em]">
+            <tr>
+              <th className="w-12 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                Set
+              </th>
+              <th className="px-2 py-2 text-center font-medium first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
+                Previous
+              </th>
+              <th className="w-16 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                LBS
+              </th>
+              <th className="w-14 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                Reps
+              </th>
+              <th className="w-18 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                RPE
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {exercise.sets.map((set, setIndex) => {
+              const setLabel =
+                set.designation === "warmup"
+                  ? getSetLabel(set, workingSetNumber)
+                  : getSetLabel(set, ++workingSetNumber);
+
+              return (
+                <tr className="odd:bg-background/45 even:bg-transparent" key={set.id}>
+                  <td className="px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                    {setLabel}
+                  </td>
+                  <td className="px-2 py-2 text-center text-muted-foreground leading-relaxed first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
+                    {formatSetPerformance(exercise.sets[setIndex - 1])}
+                  </td>
+                  <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                    {formatOptionalValue(set.actual.weightLbs ?? set.planned.weightLbs)}
+                  </td>
+                  <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                    {formatOptionalValue(set.actual.reps ?? set.planned.reps)}
+                  </td>
+                  <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                    <SetRpeButton set={set} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {canAddSet ? (
+        <Form method="post">
+          <MutationFields
+            action="add_set"
+            exerciseId={exercise.id}
+            workoutId={workout.id}
+            workoutVersion={workout.version}
+          />
+          <input name="insertAfterSetId" type="hidden" value={exercise.sets.at(-1)?.id ?? ""} />
+          <Button className="w-full" size="sm" type="submit" variant="outline">
+            Add Set
+          </Button>
+        </Form>
+      ) : (
+        <div>
+          <Button className="w-full" disabled size="sm" type="button" variant="outline">
+            Add Set
+          </Button>
         </div>
+      )}
+    </section>
+  );
+}
 
-        <div className="rounded-2xl border border-border/80 bg-background/50">
-          <table className="w-full table-fixed text-sm">
-            <thead className="border-border/80 border-b text-muted-foreground text-xs uppercase tracking-[0.12em]">
-              <tr>
-                <th className="w-14 px-3 py-3 text-center font-medium sm:px-4">Set</th>
-                <th className="px-3 py-3 text-center font-medium sm:px-4">Previous</th>
-                <th className="w-16 px-3 py-3 text-center font-medium sm:px-4">Reps</th>
-                <th className="w-20 px-3 py-3 text-center font-medium sm:px-4">RPE</th>
-              </tr>
-            </thead>
-            <tbody>
-              {exercise.sets.map((set, setIndex) => {
-                const setLabel =
-                  set.designation === "warmup"
-                    ? getSetLabel(set, workingSetNumber)
-                    : getSetLabel(set, ++workingSetNumber);
+function SessionSummarySection({ exercisesCount, progress, workout }: SessionSummarySectionProps) {
+  return (
+    <section className="grid gap-3 text-sm">
+      <h2 className="font-semibold text-sm tracking-tight">Session Summary</h2>
 
-                return (
-                  <tr className="border-border/70 border-b last:border-b-0" key={set.id}>
-                    <td className="px-3 py-3 text-center font-medium sm:px-4">{setLabel}</td>
-                    <td className="px-3 py-3 text-center text-muted-foreground leading-relaxed sm:px-4">
-                      {formatSetPerformance(exercise.sets[setIndex - 1])}
-                    </td>
-                    <td className="px-3 py-3 text-center sm:px-4">
-                      {formatOptionalValue(set.actual.reps ?? set.planned.reps)}
-                    </td>
-                    <td className="px-3 py-3 text-center sm:px-4">
-                      <SetRpeButton set={set} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">TBD</p>
+          <p className="mt-1 font-medium">{progress.tbd}</p>
         </div>
+        <div>
+          <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">Done</p>
+          <p className="mt-1 font-medium">{progress.done}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">Skipped</p>
+          <p className="mt-1 font-medium">{progress.skipped}</p>
+        </div>
+      </div>
 
-        {canAddSet ? (
-          <Form method="post">
-            <MutationFields
-              action="add_set"
-              exerciseId={exercise.id}
-              workoutId={workout.id}
-              workoutVersion={workout.version}
-            />
-            <input name="insertAfterSetId" type="hidden" value={exercise.sets.at(-1)?.id ?? ""} />
-            <Button className="w-full" size="sm" type="submit" variant="outline">
-              Add Set
-            </Button>
-          </Form>
-        ) : (
-          <div>
-            <Button className="w-full" disabled size="sm" type="button" variant="outline">
-              Add Set
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      <dl className="grid gap-2 text-muted-foreground">
+        <div className="flex items-center justify-between gap-3">
+          <dt>Date</dt>
+          <dd className="text-foreground">{formatWorkoutDate(workout.date)}</dd>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <dt>Exercises</dt>
+          <dd className="text-foreground">{exercisesCount}</dd>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <dt>Started</dt>
+          <dd className="text-foreground">
+            {workout.startedAt ? new Date(workout.startedAt).toLocaleTimeString() : "Not started"}
+          </dd>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <dt>Completed</dt>
+          <dd className="text-foreground">
+            {workout.completedAt
+              ? new Date(workout.completedAt).toLocaleTimeString()
+              : "Not finished"}
+          </dd>
+        </div>
+      </dl>
+    </section>
   );
 }
 
@@ -268,79 +460,15 @@ export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewP
   const availableActions = getAvailableActions(loaderData.workout.status);
 
   return (
-    <section className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.8fr)]">
-      <div className="grid gap-4">
-        <Card className="border-border/70 bg-card/90">
-          <CardHeader className="gap-4 md:flex-row md:items-end md:justify-between">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button asChild size="sm" variant="outline">
-                  <Link to="/workouts">Back to workouts</Link>
-                </Button>
-                <Badge variant="outline">{loaderData.workout.status}</Badge>
-              </div>
-              <div>
-                <CardTitle>{loaderData.workout.title}</CardTitle>
-                <CardDescription>
-                  {formatWorkoutDate(loaderData.workout.date)} · {loaderData.progress.done} /{" "}
-                  {loaderData.progress.total} sets confirmed
-                </CardDescription>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {hasAction(availableActions, "start_workout") ? (
-                <Form method="post">
-                  <MutationFields
-                    action="start_workout"
-                    workoutId={loaderData.workout.id}
-                    workoutVersion={loaderData.workout.version}
-                  />
-                  <Button size="sm" type="submit">
-                    Start workout
-                  </Button>
-                </Form>
-              ) : null}
-            </div>
-          </CardHeader>
-        </Card>
+    <section className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(240px,0.7fr)] lg:gap-8">
+      <div className="grid gap-0">
+        <WorkoutOverviewCard workout={loaderData.workout} />
+        <div
+          aria-hidden="true"
+          className="my-6 -mx-4 w-[calc(100%+2rem)] border-border/70 border-t sm:mx-0 sm:my-8 sm:w-full"
+        />
 
-        <Card className="border-border/70 bg-card/90" id="workout-notes">
-          <CardHeader>
-            <CardTitle>Workout Notes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Form className="grid gap-3" method="post">
-              <MutationFields
-                action="update_workout_notes"
-                workoutId={loaderData.workout.id}
-                workoutVersion={loaderData.workout.version}
-              />
-              <label className="grid gap-1">
-                <span className="font-medium text-sm">User notes</span>
-                <textarea
-                  className={TEXTAREA_CLASSNAME}
-                  defaultValue={loaderData.workout.userNotes ?? ""}
-                  name="userNotes"
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="font-medium text-sm">Coach notes</span>
-                <textarea
-                  className={TEXTAREA_CLASSNAME}
-                  defaultValue={loaderData.workout.coachNotes ?? ""}
-                  name="coachNotes"
-                />
-              </label>
-              <div>
-                <Button size="sm" type="submit" variant="outline">
-                  Save workout notes
-                </Button>
-              </div>
-            </Form>
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-4">
+        <div>
           {loaderData.exercises.map((exercise) => (
             <ExerciseCard
               availableActions={availableActions}
@@ -352,56 +480,13 @@ export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewP
         </div>
       </div>
 
-      <div className="grid gap-4">
-        <Card className="border-border/70 bg-card/90">
-          <CardHeader>
-            <CardTitle>Session Summary</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3 text-sm">
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-2xl border border-border/80 bg-background/70 px-3 py-3">
-                <p className="text-muted-foreground text-xs">TBD</p>
-                <p className="mt-1 font-medium">{loaderData.progress.tbd}</p>
-              </div>
-              <div className="rounded-2xl border border-border/80 bg-background/70 px-3 py-3">
-                <p className="text-muted-foreground text-xs">Done</p>
-                <p className="mt-1 font-medium">{loaderData.progress.done}</p>
-              </div>
-              <div className="rounded-2xl border border-border/80 bg-background/70 px-3 py-3">
-                <p className="text-muted-foreground text-xs">Skipped</p>
-                <p className="mt-1 font-medium">{loaderData.progress.skipped}</p>
-              </div>
-            </div>
-
-            <dl className="grid gap-2 text-muted-foreground">
-              <div className="flex items-center justify-between gap-3">
-                <dt>Date</dt>
-                <dd className="text-foreground">{formatWorkoutDate(loaderData.workout.date)}</dd>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <dt>Exercises</dt>
-                <dd className="text-foreground">{loaderData.exercises.length}</dd>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <dt>Started</dt>
-                <dd className="text-foreground">
-                  {loaderData.workout.startedAt
-                    ? new Date(loaderData.workout.startedAt).toLocaleTimeString()
-                    : "Not started"}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <dt>Completed</dt>
-                <dd className="text-foreground">
-                  {loaderData.workout.completedAt
-                    ? new Date(loaderData.workout.completedAt).toLocaleTimeString()
-                    : "Not finished"}
-                </dd>
-              </div>
-            </dl>
-          </CardContent>
-        </Card>
-      </div>
+      <aside className="grid content-start gap-4 lg:border-border/70 lg:border-l lg:pl-6">
+        <SessionSummarySection
+          exercisesCount={loaderData.exercises.length}
+          progress={loaderData.progress}
+          workout={loaderData.workout}
+        />
+      </aside>
     </section>
   );
 }
