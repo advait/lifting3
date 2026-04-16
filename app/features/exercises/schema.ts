@@ -45,7 +45,6 @@ export type ExerciseLoadTrackingMode =
 /** Describes the logging capabilities the UI and reducers can rely on for a lift. */
 export interface ExerciseLoggingProfile {
   readonly loadTracking: ExerciseLoadTrackingMode;
-  readonly supportsDuration: boolean;
   readonly supportsReps: boolean;
   readonly supportsRpe: boolean;
 }
@@ -79,8 +78,7 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["bodyweight"],
     logging: {
       loadTracking: "none",
-      supportsDuration: true,
-      supportsReps: false,
+      supportsReps: true,
       supportsRpe: false,
     },
     lifting2Aliases: ["Warm Up"],
@@ -94,7 +92,6 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["barbell"],
     logging: {
       loadTracking: "weight_lbs",
-      supportsDuration: false,
       supportsReps: true,
       supportsRpe: true,
     },
@@ -109,7 +106,6 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["barbell"],
     logging: {
       loadTracking: "weight_lbs",
-      supportsDuration: false,
       supportsReps: true,
       supportsRpe: true,
     },
@@ -124,7 +120,6 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["dumbbell"],
     logging: {
       loadTracking: "weight_lbs_per_hand",
-      supportsDuration: false,
       supportsReps: true,
       supportsRpe: true,
     },
@@ -139,7 +134,6 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["barbell"],
     logging: {
       loadTracking: "weight_lbs",
-      supportsDuration: false,
       supportsReps: true,
       supportsRpe: true,
     },
@@ -154,7 +148,6 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["dumbbell"],
     logging: {
       loadTracking: "weight_lbs_per_hand",
-      supportsDuration: false,
       supportsReps: true,
       supportsRpe: true,
     },
@@ -169,7 +162,6 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["dumbbell"],
     logging: {
       loadTracking: "weight_lbs_per_hand",
-      supportsDuration: false,
       supportsReps: true,
       supportsRpe: true,
     },
@@ -184,7 +176,6 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["machine"],
     logging: {
       loadTracking: "machine_weight_lbs",
-      supportsDuration: false,
       supportsReps: true,
       supportsRpe: true,
     },
@@ -199,7 +190,6 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["dumbbell"],
     logging: {
       loadTracking: "weight_lbs_per_hand",
-      supportsDuration: false,
       supportsReps: true,
       supportsRpe: true,
     },
@@ -214,7 +204,6 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["dumbbell"],
     logging: {
       loadTracking: "weight_lbs",
-      supportsDuration: false,
       supportsReps: true,
       supportsRpe: true,
     },
@@ -229,7 +218,6 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["band"],
     logging: {
       loadTracking: "none",
-      supportsDuration: false,
       supportsReps: true,
       supportsRpe: true,
     },
@@ -244,7 +232,6 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["bodyweight"],
     logging: {
       loadTracking: "none",
-      supportsDuration: false,
       supportsReps: true,
       supportsRpe: true,
     },
@@ -259,7 +246,6 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["bodyweight"],
     logging: {
       loadTracking: "none",
-      supportsDuration: false,
       supportsReps: true,
       supportsRpe: true,
     },
@@ -274,7 +260,6 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["cable"],
     logging: {
       loadTracking: "machine_weight_lbs",
-      supportsDuration: false,
       supportsReps: true,
       supportsRpe: true,
     },
@@ -290,7 +275,6 @@ const EXERCISE_DEFINITIONS = [
     equipment: ["bodyweight"],
     logging: {
       loadTracking: "none",
-      supportsDuration: false,
       supportsReps: true,
       supportsRpe: true,
     },

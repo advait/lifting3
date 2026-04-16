@@ -59,7 +59,6 @@ const halfStepRpeSchema = z
 
 const exerciseLoggingSchema = z.strictObject({
   loadTracking: z.enum(EXERCISE_LOAD_TRACKING_MODES),
-  supportsDuration: z.boolean(),
   supportsReps: z.boolean(),
   supportsRpe: z.boolean(),
 });
@@ -68,14 +67,12 @@ const setValuesSchema = z.strictObject({
   weightLbs: z.number().nonnegative().nullable(),
   reps: nonNegativeIntegerSchema.nullable(),
   rpe: halfStepRpeSchema.nullable(),
-  durationSec: positiveIntegerSchema.nullable(),
 });
 
 const setValuesPatchSchema = z.strictObject({
   weightLbs: z.number().nonnegative().nullable().optional(),
   reps: nonNegativeIntegerSchema.nullable().optional(),
   rpe: halfStepRpeSchema.nullable().optional(),
-  durationSec: positiveIntegerSchema.nullable().optional(),
 });
 
 const nonEmptySetValuesPatchSchema = setValuesPatchSchema.superRefine(
@@ -83,8 +80,7 @@ const nonEmptySetValuesPatchSchema = setValuesPatchSchema.superRefine(
     const hasDefinedField =
       values.weightLbs !== undefined ||
       values.reps !== undefined ||
-      values.rpe !== undefined ||
-      values.durationSec !== undefined;
+      values.rpe !== undefined;
 
     if (!hasDefinedField) {
       context.addIssue({
@@ -147,8 +143,7 @@ export const workoutSetSchema = z
     const hasActualValue =
       set.actual.weightLbs != null ||
       set.actual.reps != null ||
-      set.actual.rpe != null ||
-      set.actual.durationSec != null;
+      set.actual.rpe != null;
 
     if (set.status === "done" && !hasActualValue) {
       context.addIssue({
@@ -167,27 +162,40 @@ export const workoutSetSchema = z
     }
   });
 
-/** Carries the fully decorated exercise view model used by workout detail routes and fixtures. */
-export const workoutExerciseSchema = z.strictObject({
+/**
+ * Captures only the persisted exercise state we expect to house in D1.
+ * Derived exercise-catalog decoration belongs in separate loader/view shapes.
+ */
+export const workoutExerciseStateSchema = z.strictObject({
   id: nonEmptyStringSchema,
   orderIndex: nonNegativeIntegerSchema,
   exerciseSchemaId: exerciseSchemaIdSchema,
-  exerciseSlug: nonEmptyStringSchema,
-  displayName: nonEmptyStringSchema,
-  classification: z.enum(EXERCISE_CLASSIFICATIONS),
-  movementPattern: z.enum(EXERCISE_MOVEMENT_PATTERNS),
-  equipment: z.array(z.enum(EXERCISE_EQUIPMENT)).min(1),
-  logging: exerciseLoggingSchema,
   status: exerciseStatusSchema,
   userNotes: nullableTrimmedStringSchema,
   coachNotes: nullableTrimmedStringSchema,
   sets: z.array(workoutSetSchema),
 });
 
+/** Carries the exercise-catalog decoration the UI can derive from exerciseSchemaId. */
+export const workoutExerciseDisplaySchema = z.strictObject({
+  exerciseSlug: nonEmptyStringSchema,
+  displayName: nonEmptyStringSchema,
+  classification: z.enum(EXERCISE_CLASSIFICATIONS),
+  movementPattern: z.enum(EXERCISE_MOVEMENT_PATTERNS),
+  equipment: z.array(z.enum(EXERCISE_EQUIPMENT)).min(1),
+  logging: exerciseLoggingSchema,
+});
+
+/** Decorated exercise route/view model combining persisted state with catalog-derived fields. */
+export const workoutExerciseSchema = workoutExerciseStateSchema.extend(
+  workoutExerciseDisplaySchema.shape
+);
+
 /** Validates the URL/query filter surface for the workouts index route. */
 export const workoutListSearchSchema = z
   .strictObject({
     status: z.array(workoutStatusSchema).default([]),
+    source: z.array(workoutSourceSchema).default([]),
     dateFrom: isoDateSchema.optional(),
     dateTo: isoDateSchema.optional(),
     exercise: nonEmptyStringSchema.optional(),
@@ -237,10 +245,7 @@ export const workoutDetailParamsSchema = z.strictObject({
 export const workoutAgentTargetSchema = z.strictObject({
   kind: agentKindSchema,
   instanceName: nonEmptyStringSchema,
-  path: nonEmptyStringSchema,
 });
-
-export const workoutAvailableActionSchema = workoutRouteActionSchema;
 
 export const workoutDetailWorkoutSchema = z.strictObject({
   id: nonEmptyStringSchema,
@@ -263,7 +268,6 @@ export const workoutDetailLoaderDataSchema = z.strictObject({
   exercises: z.array(workoutExerciseSchema),
   progress: workoutSetCountsSchema,
   agentTarget: workoutAgentTargetSchema,
-  availableActions: z.array(workoutAvailableActionSchema),
 });
 
 const workoutMutationBaseSchema = {
@@ -294,7 +298,6 @@ export const confirmSetInputSchema = z.strictObject({
     weightLbs: z.number().nonnegative().nullable().optional(),
     reps: nonNegativeIntegerSchema.nullable().optional(),
     rpe: halfStepRpeSchema,
-    durationSec: positiveIntegerSchema.nullable().optional(),
   }),
 });
 
@@ -377,14 +380,13 @@ export type WorkoutListItem = z.infer<typeof workoutListItemSchema>;
 export type WorkoutListLoaderData = z.infer<typeof workoutListLoaderDataSchema>;
 export type WorkoutDetailParams = z.infer<typeof workoutDetailParamsSchema>;
 export type WorkoutSet = z.infer<typeof workoutSetSchema>;
+export type WorkoutExerciseState = z.infer<typeof workoutExerciseStateSchema>;
+export type WorkoutExerciseDisplay = z.infer<typeof workoutExerciseDisplaySchema>;
 export type WorkoutExercise = z.infer<typeof workoutExerciseSchema>;
 export type WorkoutAgentTarget = z.infer<typeof workoutAgentTargetSchema>;
 export type WorkoutDetailWorkout = z.infer<typeof workoutDetailWorkoutSchema>;
 export type WorkoutDetailLoaderData = z.infer<
   typeof workoutDetailLoaderDataSchema
->;
-export type WorkoutAvailableAction = z.infer<
-  typeof workoutAvailableActionSchema
 >;
 export type StartWorkoutInput = z.infer<typeof startWorkoutInputSchema>;
 export type UpdateSetActualsInput = z.infer<typeof updateSetActualsInputSchema>;

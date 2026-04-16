@@ -45,7 +45,7 @@ export const appInvalidateKeySchema = z.union([
 /** Describes the non-authoritative websocket payload that tells mounted routes what to refetch. */
 export const appEventEnvelopeSchema = z.strictObject({
   type: workoutEventTypeSchema,
-  workoutId: nonEmptyStringSchema.optional(),
+  workoutId: nonEmptyStringSchema,
   version: versionSchema,
   eventId: nonEmptyStringSchema,
   invalidate: z.array(appInvalidateKeySchema).min(1),

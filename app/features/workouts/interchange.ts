@@ -69,12 +69,10 @@ export const workoutInterchangeSetSchema = z
     weight_lbs: z.number().nonnegative().nullable().optional(),
     reps: z.number().int().nonnegative().nullable().optional(),
     rpe: halfStepRpeSchema.nullable().optional(),
-    duration_sec: z.number().int().positive().nullable().optional(),
   })
   .superRefine((set, context) => {
     if (set.status === "done") {
       const hasLoggedValue =
-        set.duration_sec != null ||
         set.reps != null ||
         set.weight_lbs != null ||
         set.rpe != null;
@@ -82,8 +80,7 @@ export const workoutInterchangeSetSchema = z
       if (!hasLoggedValue) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message:
-            "Completed sets must include at least one logged value such as reps, weight, duration, or RPE.",
+          message: "Completed sets must include at least one logged value such as reps, weight, or RPE.",
           path: [],
         });
       }
@@ -91,7 +88,6 @@ export const workoutInterchangeSetSchema = z
 
     if (set.status === "skipped") {
       const hasUnexpectedLoggedValue =
-        set.duration_sec != null ||
         set.reps != null ||
         set.weight_lbs != null ||
         set.rpe != null;
@@ -113,14 +109,12 @@ export const workoutInterchangeExerciseSchema = z.object({
   source_exercise_name: nullableTrimmedStringSchema.optional(),
   user_notes: nullableTrimmedStringSchema.optional(),
   coach_notes: nullableTrimmedStringSchema.optional(),
-  source_metadata: sourceMetadataSchema.default({}),
   sets: z.array(workoutInterchangeSetSchema),
 });
 
 /** Represents one whole workout file payload apart from format/version wrapper metadata. */
 export const workoutInterchangeWorkoutSchema = z.object({
   id: z.string().trim().min(1),
-  workout_type: z.literal("lifting"),
   title: z.string().trim().min(1),
   status: z.enum(WORKOUT_STATUSES),
   date: isoDateTimeSchema,
