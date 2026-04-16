@@ -95,7 +95,7 @@ export async function loader({ context }: Route.LoaderArgs) {
   );
 
   return {
-    recentWorkouts: loaderData.items.slice(0, 2).map((item) => ({
+    recentWorkouts: loaderData.items.slice(0, 4).map((item) => ({
       date: item.date,
       id: item.id,
       status: item.status,

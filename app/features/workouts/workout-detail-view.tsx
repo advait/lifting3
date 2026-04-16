@@ -1,14 +1,42 @@
-import { CheckIcon, Clock3Icon, DumbbellIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  CheckIcon,
+  Clock3Icon,
+  DumbbellIcon,
+  MoreHorizontalIcon,
+  PlusIcon,
+  Trash2Icon,
+} from "lucide-react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Form, useFetcher, useNavigate } from "react-router";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { Textarea } from "~/components/ui/textarea";
 import { usePublishAppEvent } from "~/features/app-events/client";
 import { cn } from "~/lib/utils";
 
@@ -21,6 +49,7 @@ import type {
 } from "./contracts";
 
 const REST_TIMER_PLACEHOLDER = "02:00";
+const RPE_OPTIONS = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10] as const;
 const workoutDateFormatter = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   month: "short",
@@ -72,6 +101,8 @@ interface ExerciseCardProps {
 
 interface WorkoutOverviewCardProps {
   availableActions: readonly WorkoutRouteAction[];
+  isHistoricalEditMode: boolean;
+  onEnterHistoricalEditMode: () => void;
   workout: WorkoutDetailWorkout;
 }
 
@@ -83,7 +114,23 @@ interface SessionSummarySectionProps {
 
 function getAvailableActions(
   workoutStatus: WorkoutDetailWorkout["status"],
+  options?: {
+    historicalEditMode?: boolean;
+  },
 ): readonly WorkoutRouteAction[] {
+  const historicalEditActions: readonly WorkoutRouteAction[] = [
+    "update_set_designation",
+    "update_set_actuals",
+    "confirm_set",
+    "skip_set",
+    "add_set",
+    "remove_set",
+    "remove_exercise",
+    "reorder_exercise",
+    "update_workout_notes",
+    "update_exercise_notes",
+  ];
+
   switch (workoutStatus) {
     case "planned":
       return [
@@ -113,7 +160,9 @@ function getAvailableActions(
       ];
     case "completed":
     case "canceled":
-      return ["update_workout_notes", "update_exercise_notes"];
+      return options?.historicalEditMode
+        ? historicalEditActions
+        : ["update_workout_notes", "update_exercise_notes"];
     default:
       return [];
   }
@@ -263,11 +312,24 @@ function getWorkoutDurationMs(workout: WorkoutDetailWorkout, nowMs: number) {
   return Math.max(0, endedAtMs - startedAtMs);
 }
 
-function WorkoutOverviewCard({ availableActions, workout }: WorkoutOverviewCardProps) {
+function WorkoutOverviewCard({
+  availableActions,
+  isHistoricalEditMode,
+  onEnterHistoricalEditMode,
+  workout,
+}: WorkoutOverviewCardProps) {
+  const notesFetcher = useFetcher();
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isNotesDialogOpen, setIsNotesDialogOpen] = useState(false);
+  const [draftWorkoutNotes, setDraftWorkoutNotes] = useState(workout.userNotes ?? "");
+  const [didSubmitNotes, setDidSubmitNotes] = useState(false);
   const durationMs = getWorkoutDurationMs(workout, nowMs);
+  const canEditWorkoutNotes = hasAction(availableActions, "update_workout_notes");
   const canStartWorkout = hasAction(availableActions, "start_workout");
   const canFinishWorkout = hasAction(availableActions, "finish_workout");
+  const canEnterHistoricalEditMode =
+    (workout.status === "completed" || workout.status === "canceled") && !isHistoricalEditMode;
   const deleteWorkoutFormId = `delete-workout-${workout.id}`;
 
   useEffect(() => {
@@ -286,117 +348,322 @@ function WorkoutOverviewCard({ availableActions, workout }: WorkoutOverviewCardP
     };
   }, [workout.startedAt, workout.status]);
 
+  useEffect(() => {
+    if (!isNotesDialogOpen) {
+      return;
+    }
+
+    setDraftWorkoutNotes(workout.userNotes ?? "");
+  }, [isNotesDialogOpen, workout.userNotes]);
+
+  useEffect(() => {
+    if (notesFetcher.state !== "idle" || !didSubmitNotes) {
+      return;
+    }
+
+    const parsedMutationResult = workoutMutationResultSchema.safeParse(notesFetcher.data);
+
+    if (
+      !parsedMutationResult.success ||
+      parsedMutationResult.data.action !== "update_workout_notes"
+    ) {
+      setDidSubmitNotes(false);
+      return;
+    }
+
+    setDidSubmitNotes(false);
+    setIsNotesDialogOpen(false);
+  }, [didSubmitNotes, notesFetcher.data, notesFetcher.state]);
+
   return (
-    <section className="grid gap-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="grid grid-cols-3 gap-2">
-            <div className={cn(workoutMetaPillClassName, getWorkoutStatusClass(workout.status))}>
-              <span className="truncate">{getWorkoutStatusLabel(workout.status)}</span>
+    <AlertDialog onOpenChange={setIsDeleteDialogOpen} open={isDeleteDialogOpen}>
+      <Dialog onOpenChange={setIsNotesDialogOpen} open={isNotesDialogOpen}>
+        <section className="grid gap-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="grid grid-cols-3 gap-2">
+                <div className={cn(workoutMetaPillClassName, getWorkoutStatusClass(workout.status))}>
+                  <span className="truncate">{getWorkoutStatusLabel(workout.status)}</span>
+                </div>
+
+                <div
+                  className={cn(workoutMetaPillClassName, "border-border/70 text-muted-foreground")}
+                >
+                  <span className="truncate">{getWorkoutDurationLabel(durationMs)}</span>
+                </div>
+
+                <div
+                  className={cn(workoutMetaPillClassName, "border-border/70 text-muted-foreground")}
+                >
+                  <span className="truncate">{formatWorkoutDateChip(workout.date)}</span>
+                </div>
+              </div>
             </div>
 
-            <div className={cn(workoutMetaPillClassName, "border-border/70 text-muted-foreground")}>
-              <span className="truncate">{getWorkoutDurationLabel(durationMs)}</span>
-            </div>
-
-            <div className={cn(workoutMetaPillClassName, "border-border/70 text-muted-foreground")}>
-              <span className="truncate">{formatWorkoutDateChip(workout.date)}</span>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button aria-label="Open workout actions" size="icon" type="button" variant="ghost">
+                  <MoreHorizontalIcon />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-44">
+                <DropdownMenuGroup>
+                  {canEnterHistoricalEditMode ? (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        onEnterHistoricalEditMode();
+                      }}
+                    >
+                      Edit workout
+                    </DropdownMenuItem>
+                  ) : null}
+                  {canEditWorkoutNotes ? (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        setIsNotesDialogOpen(true);
+                      }}
+                    >
+                      Edit notes
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuItem
+                    className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                    onSelect={() => {
+                      setIsDeleteDialogOpen(true);
+                    }}
+                  >
+                    Delete workout
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button aria-label="Open workout actions" size="icon" type="button" variant="ghost">
-              <MoreHorizontalIcon />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-44">
-            <DropdownMenuItem disabled>Edit workout</DropdownMenuItem>
-            <Form id={deleteWorkoutFormId} method="post">
+          {getExerciseNotes(workout.coachNotes) || getExerciseNotes(workout.userNotes) ? (
+            <div className="grid gap-2 pt-1">
+              {getExerciseNotes(workout.coachNotes) ? (
+                <p className="text-muted-foreground text-sm italic leading-relaxed">
+                  {getExerciseNotes(workout.coachNotes)}
+                </p>
+              ) : null}
+
+              {getExerciseNotes(workout.userNotes) ? (
+                <p className="font-medium text-sm leading-relaxed">
+                  {getExerciseNotes(workout.userNotes)}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {canStartWorkout ? (
+            <Form method="post">
               <MutationFields
-                action="delete_workout"
+                action="start_workout"
                 workoutId={workout.id}
                 workoutVersion={workout.version}
               />
+              <Button className="w-full" type="submit">
+                Start workout
+              </Button>
             </Form>
-            <DropdownMenuItem
-              className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-              onSelect={() => {
-                const form = document.getElementById(deleteWorkoutFormId);
+          ) : null}
 
-                if (form instanceof HTMLFormElement) {
-                  form.requestSubmit();
-                }
+          {canFinishWorkout ? (
+            <Form method="post">
+              <MutationFields
+                action="finish_workout"
+                workoutId={workout.id}
+                workoutVersion={workout.version}
+              />
+              <Button className="w-full" type="submit" variant="secondary">
+                Finish workout
+              </Button>
+            </Form>
+          ) : null}
+
+          <Form id={deleteWorkoutFormId} method="post">
+            <MutationFields
+              action="delete_workout"
+              workoutId={workout.id}
+              workoutVersion={workout.version}
+            />
+          </Form>
+        </section>
+
+        <DialogContent>
+          <notesFetcher.Form
+            className="grid gap-4"
+            method="post"
+            onSubmit={() => {
+              setDidSubmitNotes(true);
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Edit workout notes</DialogTitle>
+              <DialogDescription>
+                Update your top-level notes for this workout. Coach notes stay read-only here.
+              </DialogDescription>
+            </DialogHeader>
+            <MutationFields
+              action="update_workout_notes"
+              workoutId={workout.id}
+              workoutVersion={workout.version}
+            />
+            <Textarea
+              name="userNotes"
+              onChange={(event) => {
+                setDraftWorkoutNotes(event.target.value);
               }}
-            >
+              placeholder="Add context for this session..."
+              value={draftWorkoutNotes}
+            />
+            <DialogFooter>
+              <Button
+                onClick={() => {
+                  setIsNotesDialogOpen(false);
+                }}
+                type="button"
+                variant="outline"
+              >
+                Cancel
+              </Button>
+              <Button disabled={notesFetcher.state !== "idle"} type="submit">
+                Save notes
+              </Button>
+            </DialogFooter>
+          </notesFetcher.Form>
+        </DialogContent>
+
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogMedia className="bg-destructive/10 text-destructive">
+              <Trash2Icon />
+            </AlertDialogMedia>
+            <AlertDialogTitle>Delete workout?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete{" "}
+              <span className="font-medium text-foreground">{workout.title}</span> and all of its
+              logged sets. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel variant="ghost">Cancel</AlertDialogCancel>
+            <AlertDialogAction form={deleteWorkoutFormId} type="submit" variant="destructive">
               Delete workout
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {getExerciseNotes(workout.coachNotes) || getExerciseNotes(workout.userNotes) ? (
-        <div className="grid gap-2 pt-1">
-          {getExerciseNotes(workout.coachNotes) ? (
-            <p className="text-muted-foreground text-sm italic leading-relaxed">
-              {getExerciseNotes(workout.coachNotes)}
-            </p>
-          ) : null}
-
-          {getExerciseNotes(workout.userNotes) ? (
-            <p className="font-medium text-sm leading-relaxed">
-              {getExerciseNotes(workout.userNotes)}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {canStartWorkout ? (
-        <Form method="post">
-          <MutationFields
-            action="start_workout"
-            workoutId={workout.id}
-            workoutVersion={workout.version}
-          />
-          <Button className="w-full" type="submit">
-            Start workout
-          </Button>
-        </Form>
-      ) : null}
-
-      {canFinishWorkout ? (
-        <Form method="post">
-          <MutationFields
-            action="finish_workout"
-            workoutId={workout.id}
-            workoutVersion={workout.version}
-          />
-          <Button className="w-full" type="submit" variant="secondary">
-            Finish workout
-          </Button>
-        </Form>
-      ) : null}
-    </section>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </Dialog>
+    </AlertDialog>
   );
 }
 
-function SetRpeButton({ set }: { set: WorkoutSet }) {
+function SetRpeButton({
+  canChoose,
+  isOpen,
+  onToggle,
+  set,
+}: {
+  canChoose: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+  set: WorkoutSet;
+}) {
   const isComplete = set.status === "done" && set.actual.rpe != null;
 
   return (
     <Button
       aria-label={isComplete ? `RPE ${set.actual.rpe}` : "Set incomplete"}
+      aria-pressed={isOpen}
       className={cn(
         "min-w-12 rounded-full",
+        canChoose && isOpen && "border-foreground/20 bg-muted text-foreground",
         isComplete ? "bg-emerald-600 text-white hover:bg-emerald-500" : "text-muted-foreground",
       )}
+      disabled={!canChoose}
+      onClick={onToggle}
       size="xs"
       type="button"
       variant={isComplete ? "default" : "outline"}
     >
       {isComplete ? set.actual.rpe : <CheckIcon />}
     </Button>
+  );
+}
+
+interface SetRpeChooserRowProps {
+  exerciseId: string;
+  onClose: () => void;
+  set: WorkoutSet;
+  workout: WorkoutDetailWorkout;
+}
+
+function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRowProps) {
+  const fetcher = useFetcher();
+  const [didSubmit, setDidSubmit] = useState(false);
+
+  useEffect(() => {
+    if (fetcher.state !== "idle" || !didSubmit) {
+      return;
+    }
+
+    setDidSubmit(false);
+    onClose();
+  }, [didSubmit, fetcher.state, onClose]);
+
+  const submitRpe = (rpe: number) => {
+    const formData = new FormData();
+    const reps = set.actual.reps ?? set.planned.reps;
+    const weightLbs = set.actual.weightLbs ?? set.planned.weightLbs;
+
+    formData.set("action", "confirm_set");
+    formData.set("expectedVersion", String(workout.version));
+    formData.set("exerciseId", exerciseId);
+    formData.set("setId", set.id);
+    formData.set("workoutId", workout.id);
+    formData.set("rpe", String(rpe));
+
+    if (reps != null) {
+      formData.set("reps", String(reps));
+    }
+
+    if (weightLbs != null) {
+      formData.set("weightLbs", String(weightLbs));
+    }
+
+    setDidSubmit(true);
+    fetcher.submit(formData, { method: "post" });
+  };
+
+  return (
+    <tr className="bg-background/90">
+      <td className="px-4 py-2 sm:px-2" colSpan={5}>
+        <div className="flex items-center justify-center gap-1.5">
+          {RPE_OPTIONS.map((value) => {
+            const isSelected = set.status === "done" && set.actual.rpe === value;
+
+            return (
+              <Button
+                className={cn(
+                  "min-w-10 rounded-full",
+                  isSelected && "bg-emerald-600 text-white hover:bg-emerald-500",
+                )}
+                disabled={fetcher.state !== "idle"}
+                key={value}
+                onClick={() => {
+                  submitRpe(value);
+                }}
+                size="xs"
+                type="button"
+                variant={isSelected ? "default" : "outline"}
+              >
+                {value}
+              </Button>
+            );
+          })}
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -654,6 +921,7 @@ function SetPickerModal({
 
 function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps) {
   const canAddSet = hasAction(availableActions, "add_set");
+  const canConfirmSet = hasAction(availableActions, "confirm_set");
   const canRemoveExercise = hasAction(availableActions, "remove_exercise");
   const canRemoveExerciseNow =
     canRemoveExercise && !exercise.sets.some((set) => set.status === "done");
@@ -672,6 +940,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
     label: string;
     set: WorkoutSet;
   } | null>(null);
+  const [selectedSetIdForRpe, setSelectedSetIdForRpe] = useState<string | null>(null);
   let workingSetNumber = 0;
 
   return (
@@ -765,53 +1034,80 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
                   : getSetLabel(set, ++workingSetNumber);
 
               return (
-                <tr className="odd:bg-background/45 even:bg-transparent" key={set.id}>
-                  <td className="px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                    <Button
-                      className="h-auto min-w-8 rounded-full px-2 py-1 font-medium"
-                      disabled={!canOpenSetPicker}
-                      onClick={() => {
-                        setSelectedSetForPicker({
-                          label: setLabel,
-                          set,
-                        });
+                <Fragment key={set.id}>
+                  <tr className="odd:bg-background/45 even:bg-transparent">
+                    <td className="px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                      <Button
+                        className="h-auto min-w-8 rounded-full px-2 py-1 font-medium"
+                        disabled={!canOpenSetPicker}
+                        onClick={() => {
+                          setSelectedSetIdForRpe(null);
+                          setSelectedSetForPicker({
+                            label: setLabel,
+                            set,
+                          });
+                        }}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        {setLabel}
+                      </Button>
+                    </td>
+                    <td className="px-2 py-2 text-center text-muted-foreground leading-relaxed first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
+                      {formatSetPerformance(set.previous)}
+                    </td>
+                    <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                      <EditableSetNumberCell
+                        editAction={setWeightEditAction}
+                        exerciseId={exercise.id}
+                        fieldName="weightLbs"
+                        inputMode="decimal"
+                        set={set}
+                        step="0.5"
+                        workout={workout}
+                      />
+                    </td>
+                    <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                      <EditableSetNumberCell
+                        editAction={setWeightEditAction}
+                        exerciseId={exercise.id}
+                        fieldName="reps"
+                        inputMode="numeric"
+                        set={set}
+                        step="1"
+                        workout={workout}
+                      />
+                    </td>
+                    <td className="px-2 py-2 text-center pr-4 sm:px-2 sm:pr-2">
+                      <SetRpeButton
+                        canChoose={canConfirmSet}
+                        isOpen={selectedSetIdForRpe === set.id}
+                        onToggle={() => {
+                          if (!canConfirmSet) {
+                            return;
+                          }
+
+                          setSelectedSetForPicker(null);
+                          setSelectedSetIdForRpe((currentValue) =>
+                            currentValue === set.id ? null : set.id,
+                          );
+                        }}
+                        set={set}
+                      />
+                    </td>
+                  </tr>
+                  {selectedSetIdForRpe === set.id ? (
+                    <SetRpeChooserRow
+                      exerciseId={exercise.id}
+                      onClose={() => {
+                        setSelectedSetIdForRpe(null);
                       }}
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      {setLabel}
-                    </Button>
-                  </td>
-                  <td className="px-2 py-2 text-center text-muted-foreground leading-relaxed first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
-                    {formatSetPerformance(set.previous)}
-                  </td>
-                  <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                    <EditableSetNumberCell
-                      editAction={setWeightEditAction}
-                      exerciseId={exercise.id}
-                      fieldName="weightLbs"
-                      inputMode="decimal"
                       set={set}
-                      step="0.5"
                       workout={workout}
                     />
-                  </td>
-                  <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                    <EditableSetNumberCell
-                      editAction={setWeightEditAction}
-                      exerciseId={exercise.id}
-                      fieldName="reps"
-                      inputMode="numeric"
-                      set={set}
-                      step="1"
-                      workout={workout}
-                    />
-                  </td>
-                  <td className="px-2 py-2 text-center pr-4 sm:px-2 sm:pr-2">
-                    <SetRpeButton set={set} />
-                  </td>
-                </tr>
+                  ) : null}
+                </Fragment>
               );
             })}
           </tbody>
@@ -868,18 +1164,18 @@ function SessionSummarySection({ exercisesCount, progress, workout }: SessionSum
     <section className="grid gap-3 text-sm">
       <h2 className="font-semibold text-sm tracking-tight">Session Summary</h2>
 
-      <div className="grid grid-cols-3 gap-3">
-        <div>
+      <div className="mx-auto grid w-full max-w-xs grid-cols-3 gap-3 text-center">
+        <div className="grid justify-items-center gap-1">
           <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">TBD</p>
-          <p className="mt-1 font-medium">{progress.tbd}</p>
+          <p className="font-medium">{progress.tbd}</p>
         </div>
-        <div>
+        <div className="grid justify-items-center gap-1">
           <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">Done</p>
-          <p className="mt-1 font-medium">{progress.done}</p>
+          <p className="font-medium">{progress.done}</p>
         </div>
-        <div>
+        <div className="grid justify-items-center gap-1">
           <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">Skipped</p>
-          <p className="mt-1 font-medium">{progress.skipped}</p>
+          <p className="font-medium">{progress.skipped}</p>
         </div>
       </div>
 
@@ -913,9 +1209,12 @@ function SessionSummarySection({ exercisesCount, progress, workout }: SessionSum
 
 export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewProps) {
   const navigate = useNavigate();
+  const [isHistoricalEditMode, setIsHistoricalEditMode] = useState(false);
   usePublishAppEvent(actionData);
 
-  const availableActions = getAvailableActions(loaderData.workout.status);
+  const availableActions = getAvailableActions(loaderData.workout.status, {
+    historicalEditMode: isHistoricalEditMode,
+  });
 
   useEffect(() => {
     const parsedActionData = workoutMutationResultSchema.safeParse(actionData);
@@ -930,7 +1229,14 @@ export function WorkoutDetailView({ actionData, loaderData }: WorkoutDetailViewP
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(240px,0.7fr)] lg:gap-8">
       <div className="grid gap-0">
-        <WorkoutOverviewCard availableActions={availableActions} workout={loaderData.workout} />
+        <WorkoutOverviewCard
+          availableActions={availableActions}
+          isHistoricalEditMode={isHistoricalEditMode}
+          onEnterHistoricalEditMode={() => {
+            setIsHistoricalEditMode(true);
+          }}
+          workout={loaderData.workout}
+        />
         <div
           aria-hidden="true"
           className="my-6 -mx-4 w-[calc(100%+2rem)] border-border/70 border-t sm:mx-0 sm:my-8 sm:w-full"
