@@ -36,6 +36,7 @@
     "postinstall": "pnpm cf-typegen",
     "preview": "pnpm build && vite preview",
     "typecheck": "pnpm cf-typegen && react-router typegen && tsc -b",
+    "verify:lifting2-exercises": "node --experimental-strip-types ./scripts/verify-lifting2-exercise-compat.ts",
     "check": "ultracite check",
     "fix": "ultracite fix"
   },
