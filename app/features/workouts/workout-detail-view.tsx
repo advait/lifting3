@@ -634,7 +634,7 @@ function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRo
     }
 
     setDidSubmit(true);
-    fetcher.submit(formData, { method: "post" });
+    void fetcher.submit(formData, { method: "post" });
   };
 
   return (
@@ -729,7 +729,7 @@ function EditableSetNumberCell({
     }
 
     setDidSubmit(true);
-    fetcher.submit(
+    void fetcher.submit(
       {
         action: editAction,
         exerciseId,
