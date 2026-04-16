@@ -9,7 +9,6 @@ import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { useAgent } from "agents/react";
 import {
   AlertTriangleIcon,
-  BotIcon,
   CalendarIcon,
   CheckCircle2Icon,
   DumbbellIcon,
@@ -876,19 +875,13 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
                   return (
                     <div
                       className={cn(
-                        "rounded-2xl px-4 py-3 text-sm leading-relaxed",
+                        "text-sm leading-relaxed",
                         message.role === "user"
-                          ? "ml-8 bg-primary text-primary-foreground"
-                          : "mr-8 border border-border/70 bg-background/70 text-foreground shadow-sm",
+                          ? "ml-8 rounded-2xl bg-primary px-4 py-3 text-primary-foreground"
+                          : "w-full text-foreground",
                       )}
                       key={message.id}
                     >
-                      <p className="mb-1 flex items-center gap-2 font-medium text-[11px] uppercase tracking-[0.12em] opacity-75">
-                        {message.role === "assistant" ? (
-                          <BotIcon aria-hidden className="size-3.5" />
-                        ) : null}
-                        {message.role === "user" ? "You" : "Coach"}
-                      </p>
                       <div className="grid gap-3">{renderedParts}</div>
                     </div>
                   );
