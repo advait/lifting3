@@ -489,17 +489,24 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
     stack = error.stack;
   }
 
+  const errorContent = stack ? `${details}\n\n${stack}` : details;
+
   return (
     <main className="mx-auto max-w-3xl px-4 py-16">
       <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <h1 className="font-semibold text-2xl tracking-tight">{message}</h1>
-        <p className="mt-2 text-muted-foreground">{details}</p>
+        <div className="mt-4 overflow-hidden rounded-2xl border border-border/80 bg-muted/35">
+          <pre
+            className="overflow-x-auto whitespace-pre-wrap break-words p-4 text-foreground/88 text-sm leading-relaxed"
+            style={{
+              fontFamily:
+                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+            }}
+          >
+            {errorContent}
+          </pre>
+        </div>
       </div>
-      {stack ? (
-        <pre className="mt-4 overflow-x-auto rounded-2xl border border-border bg-muted p-4">
-          <code>{stack}</code>
-        </pre>
-      ) : null}
     </main>
   );
 }
