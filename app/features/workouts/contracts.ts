@@ -114,6 +114,7 @@ const notesPatchSchema = z
     }
   });
 
+/** Summarizes visible set progress for list/detail routes without exposing storage internals. */
 export const workoutSetCountsSchema = z
   .strictObject({
     total: nonNegativeIntegerSchema,
@@ -131,6 +132,7 @@ export const workoutSetCountsSchema = z
     }
   });
 
+/** Defines the set shape the workout UI renders and mutates regardless of backing storage. */
 export const workoutSetSchema = z
   .strictObject({
     id: nonEmptyStringSchema,
@@ -165,6 +167,7 @@ export const workoutSetSchema = z
     }
   });
 
+/** Carries the fully decorated exercise view model used by workout detail routes and fixtures. */
 export const workoutExerciseSchema = z.strictObject({
   id: nonEmptyStringSchema,
   orderIndex: nonNegativeIntegerSchema,
@@ -181,6 +184,7 @@ export const workoutExerciseSchema = z.strictObject({
   sets: z.array(workoutSetSchema),
 });
 
+/** Validates the URL/query filter surface for the workouts index route. */
 export const workoutListSearchSchema = z
   .strictObject({
     status: z.array(workoutStatusSchema).default([]),
@@ -217,16 +221,19 @@ export const workoutListItemSchema = z.strictObject({
   updatedAt: isoDateTimeSchema,
 });
 
+/** Describes the authoritative loader payload for the workouts list screen. */
 export const workoutListLoaderDataSchema = z.strictObject({
   items: z.array(workoutListItemSchema),
   filters: workoutListSearchSchema,
   activeWorkoutId: nonEmptyStringSchema.nullable(),
 });
 
+/** Makes the route-param boundary explicit before detail loaders or actions touch domain code. */
 export const workoutDetailParamsSchema = z.strictObject({
   workoutId: nonEmptyStringSchema,
 });
 
+/** Identifies the canonical agent thread a workout screen should attach to. */
 export const workoutAgentTargetSchema = z.strictObject({
   kind: agentKindSchema,
   instanceName: nonEmptyStringSchema,
@@ -250,6 +257,7 @@ export const workoutDetailWorkoutSchema = z.strictObject({
   coachNotes: nullableTrimmedStringSchema,
 });
 
+/** Defines the complete RR7 loader contract for a workout detail page. */
 export const workoutDetailLoaderDataSchema = z.strictObject({
   workout: workoutDetailWorkoutSchema,
   exercises: z.array(workoutExerciseSchema),
@@ -339,6 +347,7 @@ export const finishWorkoutInputSchema = z.strictObject({
   completedAt: isoDateTimeSchema.optional(),
 });
 
+/** Unifies route and fetcher mutations behind one parsed action contract. */
 export const workoutMutationInputSchema = z.discriminatedUnion("action", [
   startWorkoutInputSchema,
   updateSetActualsInputSchema,
@@ -352,6 +361,7 @@ export const workoutMutationInputSchema = z.discriminatedUnion("action", [
   finishWorkoutInputSchema,
 ]);
 
+/** Standardizes mutation responses so routes can revalidate from app events consistently. */
 export const workoutMutationResultSchema = z.strictObject({
   ok: z.boolean(),
   action: workoutRouteActionSchema,

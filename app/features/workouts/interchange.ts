@@ -45,6 +45,7 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
 
 export const sourceMetadataSchema = z.record(z.string(), jsonValueSchema);
 
+/** Captures where a workout came from so imports and generated plans can stay attributable. */
 export const workoutSourceSchema = z.object({
   system: z.string().trim().min(1),
   workout_id: nullableTrimmedStringSchema.optional(),
@@ -59,6 +60,7 @@ const halfStepRpeSchema = z
     message: "RPE must be in 0.5 increments.",
   });
 
+/** Defines the portable per-set shape used for import, export, and fixture exchange. */
 export const workoutInterchangeSetSchema = z
   .object({
     id: z.string().trim().min(1),
@@ -104,6 +106,7 @@ export const workoutInterchangeSetSchema = z
     }
   });
 
+/** Preserves exercise order, notes, and canonical exercise ids at the interchange boundary. */
 export const workoutInterchangeExerciseSchema = z.object({
   id: z.string().trim().min(1),
   exercise_schema_id: exerciseSchemaIdSchema,
@@ -114,6 +117,7 @@ export const workoutInterchangeExerciseSchema = z.object({
   sets: z.array(workoutInterchangeSetSchema),
 });
 
+/** Represents one whole workout file payload apart from format/version wrapper metadata. */
 export const workoutInterchangeWorkoutSchema = z.object({
   id: z.string().trim().min(1),
   workout_type: z.literal("lifting"),
@@ -128,6 +132,7 @@ export const workoutInterchangeWorkoutSchema = z.object({
   exercises: z.array(workoutInterchangeExerciseSchema),
 });
 
+/** Serves as the stable import/export contract for workouts across tooling and environments. */
 export const workoutInterchangeFileSchema = z.object({
   format: z.literal(WORKOUT_INTERCHANGE_FORMAT),
   version: z.literal(WORKOUT_INTERCHANGE_VERSION),

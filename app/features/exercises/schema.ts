@@ -42,6 +42,7 @@ export const EXERCISE_LOAD_TRACKING_MODES = [
 export type ExerciseLoadTrackingMode =
   (typeof EXERCISE_LOAD_TRACKING_MODES)[number];
 
+/** Describes the logging capabilities the UI and reducers can rely on for a lift. */
 export interface ExerciseLoggingProfile {
   readonly loadTracking: ExerciseLoadTrackingMode;
   readonly supportsDuration: boolean;
@@ -49,6 +50,7 @@ export interface ExerciseLoggingProfile {
   readonly supportsRpe: boolean;
 }
 
+/** Defines the canonical exercise catalog entry before aliases and arrays are normalized. */
 interface ExerciseSchemaDefinition {
   readonly aliases?: readonly string[];
   readonly classification: ExerciseClassification;
@@ -61,6 +63,7 @@ interface ExerciseSchemaDefinition {
   readonly slug: string;
 }
 
+/** Represents the frozen, application-facing exercise record used everywhere else in the app. */
 export interface ExerciseSchema extends ExerciseSchemaDefinition {
   readonly aliases: readonly string[];
   readonly lifting2Aliases: readonly string[];

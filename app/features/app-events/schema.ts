@@ -35,12 +35,14 @@ const exerciseInvalidateKeySchema = z.string().regex(/^exercise:[^:]+$/, {
 });
 
 export const workoutEventTypeSchema = z.enum(WORKOUT_EVENT_TYPES);
+/** Constrains fanout keys so producers and RR7 listeners share the same invalidation vocabulary. */
 export const appInvalidateKeySchema = z.union([
   staticInvalidateKeySchema,
   workoutInvalidateKeySchema,
   exerciseInvalidateKeySchema,
 ]);
 
+/** Describes the non-authoritative websocket payload that tells mounted routes what to refetch. */
 export const appEventEnvelopeSchema = z.strictObject({
   type: workoutEventTypeSchema,
   workoutId: nonEmptyStringSchema.optional(),

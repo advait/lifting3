@@ -1,5 +1,6 @@
 import { createContext, RouterContextProvider } from "react-router";
 
+/** Carries the Cloudflare request primitives through RR7 middleware, loaders, and actions. */
 export interface AppRequestContext {
   env: Env;
   executionContext: ExecutionContext;
