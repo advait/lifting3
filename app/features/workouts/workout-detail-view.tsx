@@ -69,7 +69,6 @@ const WORKOUT_ROUTE_ACTIONS = [
   "update_set_planned",
   "update_set_actuals",
   "confirm_set",
-  "skip_set",
   "add_set",
   "remove_set",
   "remove_exercise",
@@ -357,7 +356,7 @@ function WorkoutOverviewCard({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="grid grid-cols-3 gap-2">
-                <WorkoutStatusBadge className="min-w-0" size="lg" status={workout.status} />
+                <WorkoutStatusBadge className="min-w-0 w-full" size="lg" status={workout.status} />
 
                 <div
                   className={cn(workoutMetaPillClassName, "border-border/70 text-muted-foreground")}
