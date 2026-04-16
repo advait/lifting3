@@ -116,7 +116,7 @@ export const confirmSetInputSchema = z.strictObject({
   ...workoutActionBaseShape,
   actual: z.strictObject({
     reps: nonNegativeIntegerSchema.nullable().optional(),
-    rpe: halfStepRpeSchema,
+    rpe: halfStepRpeSchema.nullable().optional(),
     weightLbs: z.number().nonnegative().nullable().optional(),
   }),
   exerciseId: nonEmptyStringSchema,

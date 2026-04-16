@@ -532,6 +532,67 @@ describe("createWorkoutRouteService.mutateWorkout", () => {
     ]);
     expect(detail.exercises.map((exercise) => exercise.orderIndex)).toEqual([0, 1]);
   });
+
+  it("confirms a set without requiring an rpe value", async () => {
+    await insertSeedWorkout({
+      date: "2026-04-16T00:00:00.000Z",
+      exercises: [
+        {
+          exerciseSchemaId: "bench_press_barbell",
+          id: "route-exercise-confirm-no-rpe",
+          sets: [
+            {
+              id: "route-confirm-no-rpe-set-1",
+              planned: { reps: 5, weightLbs: 225 },
+            },
+          ],
+          status: "active",
+        },
+      ],
+      id: "route-workout-confirm-no-rpe",
+      title: "Route Confirm Without RPE",
+      version: 1,
+    });
+
+    const result = await workoutRouteService.mutateWorkout({
+      action: "confirm_set",
+      actual: {
+        reps: 5,
+        weightLbs: 225,
+      },
+      exerciseId: "route-exercise-confirm-no-rpe",
+      expectedVersion: 1,
+      setId: "route-confirm-no-rpe-set-1",
+      workoutId: "route-workout-confirm-no-rpe",
+    });
+
+    expect(result).toMatchObject({
+      action: "confirm_set",
+      eventType: "set_confirmed",
+      invalidate: [
+        "workouts:list",
+        "workout:route-workout-confirm-no-rpe",
+        "exercise:bench_press_barbell",
+      ],
+      ok: true,
+      version: 2,
+      workoutId: "route-workout-confirm-no-rpe",
+    });
+    expect(result.eventId).toBe("route-workout-confirm-no-rpe-v2-set_confirmed");
+
+    const detail = await workoutRouteService.loadWorkoutDetail({
+      workoutId: "route-workout-confirm-no-rpe",
+    });
+    const confirmedSet = detail.exercises[0]?.sets[0];
+
+    expect(detail.workout.version).toBe(2);
+    expect(confirmedSet?.actual).toEqual({
+      reps: 5,
+      rpe: null,
+      weightLbs: 225,
+    });
+    expect(confirmedSet?.confirmedAt).not.toBeNull();
+  });
 });
 
 describe("createWorkoutAgentToolService.createWorkout", () => {

@@ -586,7 +586,7 @@ function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRo
     onClose();
   }, [didSubmit, fetcher.state, onClose]);
 
-  const submitRpe = (rpe: number) => {
+  const submitConfirmation = (rpe?: number) => {
     const formData = new FormData();
     const reps = set.actual.reps ?? set.planned.reps;
     const weightLbs = set.actual.weightLbs ?? set.planned.weightLbs;
@@ -596,7 +596,10 @@ function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRo
     formData.set("exerciseId", exerciseId);
     formData.set("setId", set.id);
     formData.set("workoutId", workout.id);
-    formData.set("rpe", String(rpe));
+
+    if (rpe != null) {
+      formData.set("rpe", String(rpe));
+    }
 
     if (reps != null) {
       formData.set("reps", String(reps));
@@ -614,6 +617,24 @@ function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRo
     <tr className="bg-background/90">
       <td className="px-4 py-2 sm:px-2" colSpan={5}>
         <div className="flex items-center justify-center gap-1.5">
+          <Button
+            aria-label="Confirm set without RPE"
+            className={cn(
+              "min-w-10 rounded-full",
+              isSetConfirmed(set) &&
+                set.actual.rpe == null &&
+                "bg-emerald-600 text-white hover:bg-emerald-500",
+            )}
+            disabled={fetcher.state !== "idle"}
+            onClick={() => {
+              submitConfirmation();
+            }}
+            size="xs"
+            type="button"
+            variant={isSetConfirmed(set) && set.actual.rpe == null ? "default" : "outline"}
+          >
+            <CheckIcon />
+          </Button>
           {RPE_OPTIONS.map((value) => {
             const isSelected = isSetConfirmed(set) && set.actual.rpe === value;
 
@@ -626,7 +647,7 @@ function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRo
                 disabled={fetcher.state !== "idle"}
                 key={value}
                 onClick={() => {
-                  submitRpe(value);
+                  submitConfirmation(value);
                 }}
                 size="xs"
                 type="button"
