@@ -35,6 +35,11 @@
       "source": "cloudflare/skills",
       "sourceType": "github",
       "computedHash": "a27fded44ce73b7ef69b1b52fcdf0cdde9c2b17f345b761bf11ca32d37da2220"
+    },
+    "zod": {
+      "source": "anivar/zod-skill",
+      "sourceType": "github",
+      "computedHash": "8f746325460dba852bd07b63d3afd74af86fcf267def6dc509694882a58d91ee"
     }
   }
 }
