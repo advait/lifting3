@@ -18,6 +18,14 @@ import {
   uniqueInvalidateKeys,
 } from "../app-events/schema.ts";
 import { getExerciseSchemaById } from "../exercises/schema.ts";
+import type {
+  CreateWorkoutToolInput,
+  ExerciseSetTemplateInput,
+  PatchWorkoutToolInput,
+  PatchWorkoutToolOp,
+  QueryHistoryToolInput,
+  WorkoutExercisePlanInput,
+} from "./agent-tools.ts";
 import type { WorkoutMutationInput, WorkoutMutationResult } from "./actions.ts";
 import { workoutMutationResultSchema } from "./actions.ts";
 import type {
@@ -32,6 +40,7 @@ import {
   workoutDetailWorkoutSchema,
   workoutExerciseSchema,
   workoutExerciseStateSchema,
+  workoutListExerciseSummarySchema,
   workoutListItemSchema,
   workoutListLoaderDataSchema,
   workoutSetCountsSchema,
@@ -44,6 +53,82 @@ interface StoredWorkoutRecord {
   exercises: WorkoutExerciseState[];
   workout: WorkoutDetailWorkout;
 }
+
+type CreateWorkoutToolResult =
+  | {
+      createdAt: string;
+      exerciseCount: number;
+      invalidate: ReturnType<typeof uniqueInvalidateKeys>;
+      ok: true;
+      title: string;
+      workoutId: string;
+      workoutUrl: string;
+    }
+  | {
+      code: "UNKNOWN_SOURCE_WORKOUT";
+      message: string;
+      ok: false;
+      sourceWorkoutId: string;
+    };
+
+type PatchWorkoutToolResult =
+  | {
+      applied: Array<{
+        summary: string;
+        type: PatchWorkoutToolOp["type"];
+      }>;
+      invalidate: ReturnType<typeof uniqueInvalidateKeys>;
+      ok: true;
+      reason: string;
+      version: number;
+      workoutId: string;
+    }
+  | {
+      code: "UNKNOWN_WORKOUT" | "VERSION_MISMATCH" | "MUTATION_ERROR";
+      currentVersion?: number;
+      message: string;
+      ok: false;
+      workoutId: string;
+    };
+
+type QueryHistoryToolResult =
+  | {
+      code: "INVALID_FILTERS";
+      message: string;
+      ok: false;
+    }
+  | {
+      compare?: {
+        delta: number | null;
+        sampleSize: number;
+        value: number | string | null;
+        window: {
+          dateFrom: string | null;
+          dateTo: string | null;
+        };
+      };
+      details?: Record<string, unknown>;
+      filters: QueryHistoryToolInput["filters"];
+      metric: QueryHistoryToolInput["metric"];
+      ok: true;
+      result: {
+        sampleSize: number;
+        sessions: Array<{
+          date: string;
+          title: string;
+          value: number;
+          workoutId: string;
+          workoutStatus: WorkoutDetailWorkout["status"];
+        }>;
+        unit: "count" | "e1rm_lbs" | "load_lbs" | "reps" | "volume_lbs" | null;
+        value: number | string | null;
+      };
+      subject: QueryHistoryToolInput["subject"];
+      window: {
+        dateFrom: string | null;
+        dateTo: string | null;
+      };
+    };
 
 type NonDeleteWorkoutMutationInput = Exclude<WorkoutMutationInput, { action: "delete_workout" }>;
 
@@ -111,6 +196,92 @@ function createExercise(input: {
     status: input.status ?? "planned",
     userNotes: input.userNotes ?? null,
   });
+}
+
+function clonePlannedSetTemplate(orderIndex: number, template: ExerciseSetTemplateInput) {
+  return createSet({
+    designation: template.designation,
+    id: crypto.randomUUID(),
+    orderIndex,
+    planned: {
+      reps: template.planned?.reps ?? null,
+      rpe: template.planned?.rpe ?? null,
+      weightLbs: template.planned?.weightLbs ?? null,
+    },
+    status: "tbd",
+  });
+}
+
+function buildPlannedSetsFromTemplates(templates: readonly ExerciseSetTemplateInput[]) {
+  const sets: WorkoutSet[] = [];
+
+  for (const template of templates) {
+    for (let index = 0; index < template.count; index += 1) {
+      sets.push(clonePlannedSetTemplate(sets.length, template));
+    }
+  }
+
+  return sets;
+}
+
+function createExerciseFromPlan(orderIndex: number, plan: WorkoutExercisePlanInput) {
+  const exerciseId = crypto.randomUUID();
+
+  return createExercise({
+    coachNotes: plan.coachNotes ?? null,
+    exerciseSchemaId: plan.exerciseSchemaId,
+    id: exerciseId,
+    orderIndex,
+    sets: buildPlannedSetsFromTemplates(plan.setTemplates),
+    status: "planned",
+    userNotes: plan.userNotes ?? null,
+  });
+}
+
+function appendNote(existingValue: string | null, nextValue: string) {
+  const trimmedNextValue = nextValue.trim();
+
+  if (trimmedNextValue.length === 0) {
+    return existingValue;
+  }
+
+  const trimmedExistingValue = existingValue?.trim() ?? "";
+
+  return trimmedExistingValue.length === 0
+    ? trimmedNextValue
+    : `${trimmedExistingValue}\n${trimmedNextValue}`;
+}
+
+function getExerciseCompletionStatus(sets: readonly WorkoutSet[]): WorkoutExerciseState["status"] {
+  const doneCount = sets.filter((set) => set.status === "done").length;
+  const remainingCount = sets.filter((set) => set.status === "tbd").length;
+  const skippedCount = sets.filter((set) => set.status === "skipped").length;
+
+  if (remainingCount > 0 && doneCount > 0) {
+    return "active";
+  }
+
+  if (remainingCount > 0) {
+    return "planned";
+  }
+
+  if (doneCount > 0) {
+    return "completed";
+  }
+
+  if (skippedCount > 0) {
+    return "skipped";
+  }
+
+  return "planned";
+}
+
+function syncExerciseStatus(exercise: WorkoutExerciseState) {
+  if (exercise.status === "replaced") {
+    return;
+  }
+
+  exercise.status = getExerciseCompletionStatus(exercise.sets);
 }
 
 function hasLoggedSetPerformance(set: WorkoutSet) {
@@ -227,12 +398,58 @@ function getWorkoutSetCounts(exercises: readonly WorkoutExerciseState[]) {
   });
 }
 
+function getTopSetSummary(sets: readonly WorkoutSet[]) {
+  let topWeightLbs: number | null = null;
+  let topSetRpe: number | null = null;
+
+  for (const set of sets) {
+    const weightLbs = set.actual.weightLbs ?? set.planned.weightLbs;
+    const rpe = set.actual.rpe ?? set.planned.rpe;
+
+    if (weightLbs == null) {
+      continue;
+    }
+
+    if (
+      topWeightLbs == null ||
+      weightLbs > topWeightLbs ||
+      (weightLbs === topWeightLbs && topSetRpe == null && rpe != null)
+    ) {
+      topWeightLbs = weightLbs;
+      topSetRpe = rpe;
+    }
+  }
+
+  return {
+    rpe: topSetRpe,
+    weightLbs: topWeightLbs,
+  };
+}
+
+function buildWorkoutListExerciseSummary(exercise: WorkoutExerciseState) {
+  const exerciseSchema = getExerciseSchemaById(exercise.exerciseSchemaId);
+  const counts = getWorkoutSetCounts([exercise]);
+
+  if (!exerciseSchema) {
+    throw new WorkoutMutationError(`Unknown exercise schema: ${exercise.exerciseSchemaId}`);
+  }
+
+  return workoutListExerciseSummarySchema.parse({
+    completedSetCount: counts.done,
+    displayName: exerciseSchema.displayName,
+    orderIndex: exercise.orderIndex,
+    topSet: getTopSetSummary(exercise.sets),
+    totalSetCount: counts.total,
+  });
+}
+
 function buildWorkoutListItem(record: StoredWorkoutRecord) {
   return workoutListItemSchema.parse({
     completedAt: record.workout.completedAt,
     counts: getWorkoutSetCounts(record.exercises),
     date: record.workout.date,
     exerciseCount: record.exercises.length,
+    exerciseSummaries: record.exercises.map(buildWorkoutListExerciseSummary),
     id: record.workout.id,
     source: record.workout.source,
     startedAt: record.workout.startedAt,
@@ -963,6 +1180,920 @@ async function deleteStoredWorkoutRecord(
 
     throw error;
   }
+}
+
+function createToolInvalidateKeys(workoutId: string, exerciseSchemaIds: readonly string[] = []) {
+  return uniqueInvalidateKeys([
+    "home",
+    "workouts:list",
+    "analytics",
+    createWorkoutInvalidateKey(workoutId),
+    ...exerciseSchemaIds.map((exerciseSchemaId) => createExerciseInvalidateKey(exerciseSchemaId)),
+  ]);
+}
+
+function buildWorkoutDateTimestamp(targetDate: string) {
+  return `${targetDate}T00:00:00.000Z`;
+}
+
+function buildCreatedWorkoutTitle(input: CreateWorkoutToolInput) {
+  const explicitTitle = input.title?.trim();
+
+  if (explicitTitle) {
+    return explicitTitle;
+  }
+
+  return input.intent.trim().slice(0, 120);
+}
+
+function buildCreatedWorkoutCoachNotes(
+  input: CreateWorkoutToolInput,
+  sourceWorkoutTitle: string | null,
+) {
+  const noteLines = [
+    input.coachNotes?.trim() ?? null,
+    `Planning intent: ${input.intent.trim()}`,
+    input.constraints.length > 0 ? `Constraints: ${input.constraints.join("; ")}` : null,
+    sourceWorkoutTitle ? `Adapted from: ${sourceWorkoutTitle}` : null,
+  ].filter((line) => line !== null);
+
+  return noteLines.length > 0 ? noteLines.join("\n") : null;
+}
+
+function cloneExerciseForPlannedWorkout(
+  workoutId: string,
+  orderIndex: number,
+  sourceExercise: WorkoutExerciseState,
+) {
+  const exerciseId = crypto.randomUUID();
+
+  return createExercise({
+    coachNotes: sourceExercise.coachNotes,
+    exerciseSchemaId: sourceExercise.exerciseSchemaId,
+    id: exerciseId,
+    orderIndex,
+    sets: sourceExercise.sets.map((set, setIndex) =>
+      createSet({
+        designation: set.designation,
+        id: crypto.randomUUID(),
+        orderIndex: setIndex,
+        planned: {
+          reps: set.planned.reps,
+          rpe: set.planned.rpe,
+          weightLbs: set.planned.weightLbs,
+        },
+        status: "tbd",
+      }),
+    ),
+    status: "planned",
+    userNotes: sourceExercise.userNotes,
+  });
+}
+
+function createPlannedWorkoutRecord(
+  input: CreateWorkoutToolInput,
+  createdAt: string,
+  sourceRecord: StoredWorkoutRecord | null,
+) {
+  const workoutId = crypto.randomUUID();
+  const exercises =
+    input.exercises?.map((exercisePlan, orderIndex) =>
+      createExerciseFromPlan(orderIndex, exercisePlan),
+    ) ??
+    sourceRecord?.exercises.map((exercise, orderIndex) =>
+      cloneExerciseForPlannedWorkout(workoutId, orderIndex, exercise),
+    ) ??
+    [];
+
+  return {
+    exercises,
+    workout: workoutDetailWorkoutSchema.parse({
+      coachNotes: buildCreatedWorkoutCoachNotes(input, sourceRecord?.workout.title ?? null),
+      completedAt: null,
+      createdAt,
+      date: buildWorkoutDateTimestamp(input.targetDate),
+      id: workoutId,
+      source: "agent",
+      startedAt: null,
+      status: "planned",
+      title: buildCreatedWorkoutTitle(input),
+      updatedAt: createdAt,
+      userNotes: input.userNotes ?? null,
+      version: 1,
+    }),
+  } satisfies StoredWorkoutRecord;
+}
+
+async function insertStoredWorkoutRecord(db: AppDatabase, record: StoredWorkoutRecord) {
+  const exerciseRows = toWorkoutExerciseInsertRows(record);
+  const setRows = toExerciseSetInsertRows(record);
+  const maxExerciseRowsPerInsert = Math.max(
+    1,
+    Math.floor(D1_MAX_VARIABLES_PER_STATEMENT / WORKOUT_EXERCISE_INSERT_VARIABLE_COUNT),
+  );
+  const maxSetRowsPerInsert = Math.max(
+    1,
+    Math.floor(D1_MAX_VARIABLES_PER_STATEMENT / EXERCISE_SET_INSERT_VARIABLE_COUNT),
+  );
+
+  const batchStatements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
+    db.insert(workouts).values({
+      coachNotes: record.workout.coachNotes,
+      completedAt: record.workout.completedAt,
+      createdAt: record.workout.createdAt,
+      date: record.workout.date,
+      id: record.workout.id,
+      source: record.workout.source,
+      startedAt: record.workout.startedAt,
+      status: record.workout.status,
+      title: record.workout.title,
+      updatedAt: record.workout.updatedAt,
+      userNotes: record.workout.userNotes,
+      version: record.workout.version,
+    }),
+    ...chunkRows(exerciseRows, maxExerciseRowsPerInsert).map((rows) =>
+      db.insert(workoutExercises).values(rows),
+    ),
+    ...chunkRows(setRows, maxSetRowsPerInsert).map((rows) => db.insert(exerciseSets).values(rows)),
+  ];
+
+  await db.batch(batchStatements);
+}
+
+type AppliedPatchOperation = {
+  exerciseSchemaIds: string[];
+  summary: string;
+  type: PatchWorkoutToolOp["type"];
+};
+
+function skipPendingSets(exercise: WorkoutExerciseState, note: string | undefined) {
+  let skippedCount = 0;
+
+  for (const set of exercise.sets) {
+    if (set.status !== "tbd") {
+      continue;
+    }
+
+    skippedCount += 1;
+    set.actual = {
+      reps: null,
+      rpe: null,
+      weightLbs: null,
+    };
+    set.completedAt = null;
+    set.status = "skipped";
+  }
+
+  if (note) {
+    exercise.coachNotes = appendNote(exercise.coachNotes, note);
+  }
+
+  syncExerciseStatus(exercise);
+
+  return skippedCount;
+}
+
+function applyPatchOperation(
+  record: StoredWorkoutRecord,
+  op: PatchWorkoutToolOp,
+): AppliedPatchOperation {
+  switch (op.type) {
+    case "add_exercise": {
+      const targetIndex = Math.min(
+        op.targetIndex ?? record.exercises.length,
+        record.exercises.length,
+      );
+      const exercise = createExerciseFromPlan(targetIndex, op.exercise);
+
+      record.exercises.splice(targetIndex, 0, exercise);
+      reindexExercises(record.exercises);
+
+      return {
+        exerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Added ${getExerciseSchemaById(exercise.exerciseSchemaId)?.displayName ?? exercise.exerciseSchemaId}.`,
+        type: op.type,
+      };
+    }
+    case "replace_exercise": {
+      const exerciseIndex = record.exercises.findIndex((exercise) => exercise.id === op.exerciseId);
+
+      if (exerciseIndex < 0) {
+        throw new WorkoutMutationError(`Unknown exercise: ${op.exerciseId}`);
+      }
+
+      const existingExercise = record.exercises[exerciseIndex];
+      const replacementExercise = createExerciseFromPlan(exerciseIndex, op.replacement);
+      const existingDisplayName =
+        getExerciseSchemaById(existingExercise.exerciseSchemaId)?.displayName ??
+        existingExercise.exerciseSchemaId;
+      const replacementDisplayName =
+        getExerciseSchemaById(replacementExercise.exerciseSchemaId)?.displayName ??
+        replacementExercise.exerciseSchemaId;
+      const doneSetCount = existingExercise.sets.filter((set) => set.status === "done").length;
+
+      if (doneSetCount > 0) {
+        skipPendingSets(existingExercise, undefined);
+        existingExercise.status = "replaced";
+        record.exercises.splice(exerciseIndex + 1, 0, replacementExercise);
+      } else {
+        record.exercises.splice(exerciseIndex, 1, replacementExercise);
+      }
+
+      reindexExercises(record.exercises);
+
+      return {
+        exerciseSchemaIds: [
+          existingExercise.exerciseSchemaId,
+          replacementExercise.exerciseSchemaId,
+        ],
+        summary:
+          doneSetCount > 0
+            ? `Preserved logged work for ${existingDisplayName} and inserted ${replacementDisplayName} for the remaining work.`
+            : `Replaced ${existingDisplayName} with ${replacementDisplayName}.`,
+        type: op.type,
+      };
+    }
+    case "skip_exercise": {
+      const exercise = findExercise(record, op.exerciseId);
+      const skippedCount = skipPendingSets(exercise, op.note);
+      const displayName =
+        getExerciseSchemaById(exercise.exerciseSchemaId)?.displayName ?? exercise.exerciseSchemaId;
+
+      return {
+        exerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary:
+          skippedCount > 0
+            ? `Skipped ${skippedCount} remaining set${skippedCount === 1 ? "" : "s"} in ${displayName}.`
+            : `No remaining sets were skipped in ${displayName}.`,
+        type: op.type,
+      };
+    }
+    case "reorder_exercise": {
+      const exerciseIndex = record.exercises.findIndex((exercise) => exercise.id === op.exerciseId);
+
+      if (exerciseIndex < 0) {
+        throw new WorkoutMutationError(`Unknown exercise: ${op.exerciseId}`);
+      }
+
+      const targetIndex = Math.max(0, Math.min(op.targetIndex, record.exercises.length - 1));
+      const [exercise] = record.exercises.splice(exerciseIndex, 1);
+
+      record.exercises.splice(targetIndex, 0, exercise);
+      reindexExercises(record.exercises);
+
+      return {
+        exerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Moved ${getExerciseSchemaById(exercise.exerciseSchemaId)?.displayName ?? exercise.exerciseSchemaId} to position ${targetIndex + 1}.`,
+        type: op.type,
+      };
+    }
+    case "update_exercise_targets": {
+      const exercise = findExercise(record, op.exerciseId);
+
+      for (const setUpdate of op.setUpdates) {
+        const set = findSet(exercise, setUpdate.setId);
+
+        if (set.status !== "tbd") {
+          throw new WorkoutMutationError(
+            `Only remaining sets can be retargeted. Set ${setUpdate.setId} is ${set.status}.`,
+          );
+        }
+
+        if (setUpdate.designation !== undefined) {
+          set.designation = setUpdate.designation;
+        }
+
+        if (setUpdate.planned !== undefined) {
+          set.planned = {
+            ...set.planned,
+            ...setUpdate.planned,
+          };
+        }
+      }
+
+      syncExerciseStatus(exercise);
+
+      return {
+        exerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Updated targets for ${op.setUpdates.length} set${op.setUpdates.length === 1 ? "" : "s"} in ${getExerciseSchemaById(exercise.exerciseSchemaId)?.displayName ?? exercise.exerciseSchemaId}.`,
+        type: op.type,
+      };
+    }
+    case "add_set": {
+      const exercise = findExercise(record, op.exerciseId);
+      const insertAfterIndex =
+        op.insertAfterSetId == null
+          ? exercise.sets.length - 1
+          : exercise.sets.findIndex((set) => set.id === op.insertAfterSetId);
+      const insertAt = insertAfterIndex < 0 ? exercise.sets.length : insertAfterIndex + 1;
+
+      for (let index = 0; index < op.template.count; index += 1) {
+        exercise.sets.splice(
+          insertAt + index,
+          0,
+          clonePlannedSetTemplate(insertAt + index, {
+            ...op.template,
+            count: 1,
+          }),
+        );
+      }
+
+      reindexSets(exercise.sets);
+      syncExerciseStatus(exercise);
+
+      return {
+        exerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Added ${op.template.count} ${op.template.designation} set${op.template.count === 1 ? "" : "s"} to ${getExerciseSchemaById(exercise.exerciseSchemaId)?.displayName ?? exercise.exerciseSchemaId}.`,
+        type: op.type,
+      };
+    }
+    case "skip_remaining_sets": {
+      const exercise = findExercise(record, op.exerciseId);
+      const skippedCount = skipPendingSets(exercise, op.note);
+
+      return {
+        exerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Skipped ${skippedCount} remaining set${skippedCount === 1 ? "" : "s"} in ${getExerciseSchemaById(exercise.exerciseSchemaId)?.displayName ?? exercise.exerciseSchemaId}.`,
+        type: op.type,
+      };
+    }
+    case "add_note": {
+      if (op.scope === "workout") {
+        if (op.field === "coach") {
+          record.workout.coachNotes = appendNote(record.workout.coachNotes, op.text);
+        } else {
+          record.workout.userNotes = appendNote(record.workout.userNotes, op.text);
+        }
+
+        return {
+          exerciseSchemaIds: [],
+          summary: `Added a ${op.field} note to the workout.`,
+          type: op.type,
+        };
+      }
+
+      if (!op.exerciseId) {
+        throw new WorkoutMutationError("exerciseId is required when adding an exercise note.");
+      }
+
+      const exercise = findExercise(record, op.exerciseId);
+
+      if (op.field === "coach") {
+        exercise.coachNotes = appendNote(exercise.coachNotes, op.text);
+      } else {
+        exercise.userNotes = appendNote(exercise.userNotes, op.text);
+      }
+
+      return {
+        exerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Added a ${op.field} note to ${getExerciseSchemaById(exercise.exerciseSchemaId)?.displayName ?? exercise.exerciseSchemaId}.`,
+        type: op.type,
+      };
+    }
+  }
+}
+
+type HistoryMatchedSet = {
+  exerciseSchemaId: WorkoutExerciseState["exerciseSchemaId"];
+  set: WorkoutSet;
+  workout: WorkoutDetailWorkout;
+};
+
+type HistorySessionSummary = {
+  date: string;
+  e1rm: number;
+  maxLoad: number;
+  topSet: HistoryMatchedSet | null;
+  title: string;
+  volume: number;
+  workoutId: string;
+  workoutStatus: WorkoutDetailWorkout["status"];
+};
+
+function getEstimatedE1rm(set: WorkoutSet) {
+  const weight = set.actual.weightLbs;
+  const reps = set.actual.reps;
+
+  if (weight == null || reps == null || reps <= 0) {
+    return null;
+  }
+
+  return weight * (1 + reps / 30);
+}
+
+function loadFilterMatchesSet(set: WorkoutSet, filters: QueryHistoryToolInput["filters"]) {
+  if (set.status !== "done") {
+    return false;
+  }
+
+  const reps = set.actual.reps;
+  const weight = set.actual.weightLbs;
+
+  if (filters.minReps !== undefined && (reps == null || reps < filters.minReps)) {
+    return false;
+  }
+
+  if (filters.maxReps !== undefined && (reps == null || reps > filters.maxReps)) {
+    return false;
+  }
+
+  if (filters.loadLbs !== undefined && weight !== filters.loadLbs) {
+    return false;
+  }
+
+  return true;
+}
+
+function summarizeHistorySessions(
+  records: readonly StoredWorkoutRecord[],
+  filters: QueryHistoryToolInput["filters"],
+) {
+  const matchedSets: HistoryMatchedSet[] = [];
+
+  for (const record of records) {
+    for (const exercise of record.exercises) {
+      if (
+        filters.exerciseSchemaId !== undefined &&
+        exercise.exerciseSchemaId !== filters.exerciseSchemaId
+      ) {
+        continue;
+      }
+
+      for (const set of exercise.sets) {
+        if (!loadFilterMatchesSet(set, filters)) {
+          continue;
+        }
+
+        matchedSets.push({
+          exerciseSchemaId: exercise.exerciseSchemaId,
+          set,
+          workout: record.workout,
+        });
+      }
+    }
+  }
+
+  const sessionsByWorkoutId = new Map<string, HistorySessionSummary>();
+
+  for (const matchedSet of matchedSets) {
+    const weight = matchedSet.set.actual.weightLbs ?? 0;
+    const reps = matchedSet.set.actual.reps ?? 0;
+    const volume = weight * reps;
+    const e1rm = getEstimatedE1rm(matchedSet.set) ?? 0;
+    const session =
+      sessionsByWorkoutId.get(matchedSet.workout.id) ??
+      ({
+        date: matchedSet.workout.date,
+        e1rm: 0,
+        maxLoad: 0,
+        topSet: null,
+        title: matchedSet.workout.title,
+        volume: 0,
+        workoutId: matchedSet.workout.id,
+        workoutStatus: matchedSet.workout.status,
+      } satisfies HistorySessionSummary);
+
+    session.volume += volume;
+    session.maxLoad = Math.max(session.maxLoad, weight);
+    session.e1rm = Math.max(session.e1rm, e1rm);
+
+    const currentTopSet = session.topSet;
+    const currentTopSetWeight = currentTopSet?.set.actual.weightLbs ?? -1;
+    const currentTopSetReps = currentTopSet?.set.actual.reps ?? -1;
+
+    if (
+      session.topSet === null ||
+      weight > currentTopSetWeight ||
+      (weight === currentTopSetWeight && reps > currentTopSetReps)
+    ) {
+      session.topSet = matchedSet;
+    }
+
+    sessionsByWorkoutId.set(matchedSet.workout.id, session);
+  }
+
+  return {
+    matchedSets,
+    sessions: [...sessionsByWorkoutId.values()].sort((left, right) =>
+      right.date.localeCompare(left.date),
+    ),
+  };
+}
+
+async function loadHistoryRecords(
+  db: AppDatabase,
+  filters: QueryHistoryToolInput["filters"],
+  compareWindow: QueryHistoryToolInput["compareWindow"] | undefined,
+) {
+  const earliestDate = [filters.dateFrom, compareWindow?.dateFrom]
+    .filter((date): date is string => date !== undefined)
+    .sort()[0];
+  const latestDate = [filters.dateTo, compareWindow?.dateTo]
+    .filter((date): date is string => date !== undefined)
+    .sort()
+    .at(-1);
+  const conditions = [];
+
+  if (filters.status.length > 0) {
+    conditions.push(inArray(workouts.status, [...filters.status]));
+  }
+
+  if (earliestDate) {
+    conditions.push(gte(workouts.date, `${earliestDate}T00:00:00.000Z`));
+  }
+
+  if (latestDate) {
+    conditions.push(lte(workouts.date, `${latestDate}T23:59:59.999Z`));
+  }
+
+  const workoutRows = await db
+    .select()
+    .from(workouts)
+    .where(buildWhereClause(conditions))
+    .orderBy(desc(workouts.date), desc(workouts.updatedAt));
+
+  return loadStoredWorkoutRecords(db, workoutRows);
+}
+
+function evaluateHistoryWindow(
+  records: readonly StoredWorkoutRecord[],
+  input: QueryHistoryToolInput,
+  dateFrom: string | undefined,
+  dateTo: string | undefined,
+) {
+  const windowedRecords = records.filter((record) => {
+    const workoutDate = record.workout.date.slice(0, 10);
+
+    if (dateFrom && workoutDate < dateFrom) {
+      return false;
+    }
+
+    if (dateTo && workoutDate > dateTo) {
+      return false;
+    }
+
+    return true;
+  });
+  const { matchedSets, sessions } = summarizeHistorySessions(windowedRecords, input.filters);
+
+  switch (input.metric) {
+    case "frequency":
+      return {
+        details: undefined,
+        sampleSize: sessions.length,
+        sessions: sessions.map((session) => ({
+          date: session.date,
+          title: session.title,
+          value: 1,
+          workoutId: session.workoutId,
+          workoutStatus: session.workoutStatus,
+        })),
+        unit: "count" as const,
+        value: sessions.length,
+      };
+    case "volume":
+      return {
+        details: undefined,
+        sampleSize: sessions.length,
+        sessions: sessions
+          .map((session) => ({
+            date: session.date,
+            title: session.title,
+            value: session.volume,
+            workoutId: session.workoutId,
+            workoutStatus: session.workoutStatus,
+          }))
+          .sort((left, right) => right.value - left.value)
+          .slice(0, 5),
+        unit: "volume_lbs" as const,
+        value: sessions.reduce((total, session) => total + session.volume, 0),
+      };
+    case "max_load": {
+      const maxLoad = matchedSets.reduce(
+        (currentMax, entry) => Math.max(currentMax, entry.set.actual.weightLbs ?? 0),
+        0,
+      );
+
+      return {
+        details: undefined,
+        sampleSize: matchedSets.length,
+        sessions: sessions
+          .map((session) => ({
+            date: session.date,
+            title: session.title,
+            value: session.maxLoad,
+            workoutId: session.workoutId,
+            workoutStatus: session.workoutStatus,
+          }))
+          .sort((left, right) => right.value - left.value)
+          .slice(0, 5),
+        unit: "load_lbs" as const,
+        value: maxLoad,
+      };
+    }
+    case "e1rm": {
+      const peakE1rm = matchedSets.reduce(
+        (currentMax, entry) => Math.max(currentMax, getEstimatedE1rm(entry.set) ?? 0),
+        0,
+      );
+
+      return {
+        details: undefined,
+        sampleSize: matchedSets.length,
+        sessions: sessions
+          .map((session) => ({
+            date: session.date,
+            title: session.title,
+            value: session.e1rm,
+            workoutId: session.workoutId,
+            workoutStatus: session.workoutStatus,
+          }))
+          .sort((left, right) => right.value - left.value)
+          .slice(0, 5),
+        unit: "e1rm_lbs" as const,
+        value: Math.round(peakE1rm * 10) / 10,
+      };
+    }
+    case "reps_at_load": {
+      if (input.filters.loadLbs === undefined) {
+        return null;
+      }
+
+      const totalReps = matchedSets.reduce(
+        (total, entry) => total + (entry.set.actual.reps ?? 0),
+        0,
+      );
+
+      return {
+        details: {
+          loadLbs: input.filters.loadLbs,
+        },
+        sampleSize: matchedSets.length,
+        sessions: sessions
+          .map((session) => ({
+            date: session.date,
+            title: session.title,
+            value: matchedSets
+              .filter((entry) => entry.workout.id === session.workoutId)
+              .reduce((total, entry) => total + (entry.set.actual.reps ?? 0), 0),
+            workoutId: session.workoutId,
+            workoutStatus: session.workoutStatus,
+          }))
+          .sort((left, right) => right.value - left.value)
+          .slice(0, 5),
+        unit: "reps" as const,
+        value: totalReps,
+      };
+    }
+    case "top_set": {
+      const topSet = matchedSets.reduce<HistoryMatchedSet | null>((currentTopSet, entry) => {
+        if (currentTopSet === null) {
+          return entry;
+        }
+
+        const currentWeight = currentTopSet.set.actual.weightLbs ?? -1;
+        const nextWeight = entry.set.actual.weightLbs ?? -1;
+
+        if (nextWeight > currentWeight) {
+          return entry;
+        }
+
+        if (nextWeight < currentWeight) {
+          return currentTopSet;
+        }
+
+        return (entry.set.actual.reps ?? -1) > (currentTopSet.set.actual.reps ?? -1)
+          ? entry
+          : currentTopSet;
+      }, null);
+
+      return {
+        details:
+          topSet === null
+            ? undefined
+            : {
+                reps: topSet.set.actual.reps,
+                rpe: topSet.set.actual.rpe,
+                setId: topSet.set.id,
+                workoutId: topSet.workout.id,
+              },
+        sampleSize: matchedSets.length,
+        sessions: sessions
+          .map((session) => ({
+            date: session.date,
+            title: session.title,
+            value: session.topSet?.set.actual.weightLbs ?? 0,
+            workoutId: session.workoutId,
+            workoutStatus: session.workoutStatus,
+          }))
+          .sort((left, right) => right.value - left.value)
+          .slice(0, 5),
+        unit: "load_lbs" as const,
+        value:
+          topSet === null
+            ? null
+            : `${topSet.set.actual.weightLbs ?? 0} lb x ${topSet.set.actual.reps ?? 0}`,
+      };
+    }
+    case "best_session": {
+      const bestSession =
+        [...sessions].sort((left, right) => right.volume - left.volume)[0] ?? null;
+
+      return {
+        details:
+          bestSession === null
+            ? undefined
+            : {
+                metric: "volume",
+                workoutId: bestSession.workoutId,
+              },
+        sampleSize: sessions.length,
+        sessions: sessions
+          .map((session) => ({
+            date: session.date,
+            title: session.title,
+            value: session.volume,
+            workoutId: session.workoutId,
+            workoutStatus: session.workoutStatus,
+          }))
+          .sort((left, right) => right.value - left.value)
+          .slice(0, 5),
+        unit: "volume_lbs" as const,
+        value:
+          bestSession === null ? null : `${bestSession.title} (${bestSession.date.slice(0, 10)})`,
+      };
+    }
+  }
+}
+
+export function createWorkoutAgentToolService(db: AppDatabase) {
+  return {
+    async createWorkout(input: CreateWorkoutToolInput): Promise<CreateWorkoutToolResult> {
+      const createdAt = new Date().toISOString();
+      const sourceRecord = input.sourceWorkoutId
+        ? await loadStoredWorkoutRecord(db, input.sourceWorkoutId).catch((error) => {
+            if (error instanceof WorkoutNotFoundError) {
+              return null;
+            }
+
+            throw error;
+          })
+        : null;
+
+      if (input.sourceWorkoutId && sourceRecord === null) {
+        return {
+          code: "UNKNOWN_SOURCE_WORKOUT",
+          message: `Unknown workout: ${input.sourceWorkoutId}`,
+          ok: false,
+          sourceWorkoutId: input.sourceWorkoutId,
+        };
+      }
+
+      const record = createPlannedWorkoutRecord(input, createdAt, sourceRecord);
+
+      await insertStoredWorkoutRecord(db, record);
+
+      return {
+        createdAt,
+        exerciseCount: record.exercises.length,
+        invalidate: createToolInvalidateKeys(
+          record.workout.id,
+          record.exercises.map((exercise) => exercise.exerciseSchemaId),
+        ),
+        ok: true,
+        title: record.workout.title,
+        workoutId: record.workout.id,
+        workoutUrl: `/workouts/${record.workout.id}`,
+      };
+    },
+
+    async patchWorkout(input: PatchWorkoutToolInput): Promise<PatchWorkoutToolResult> {
+      try {
+        const record = await loadStoredWorkoutRecord(db, input.workoutId);
+
+        assertExpectedVersion(record, input.expectedVersion);
+
+        const applied = input.ops.map((operation) => applyPatchOperation(record, operation));
+
+        record.workout.updatedAt = new Date().toISOString();
+        record.workout.version += 1;
+
+        await persistStoredWorkoutRecord(db, record, input.expectedVersion);
+
+        return {
+          applied: applied.map(({ summary, type }) => ({ summary, type })),
+          invalidate: createToolInvalidateKeys(
+            record.workout.id,
+            applied.flatMap((operation) => operation.exerciseSchemaIds),
+          ),
+          ok: true,
+          reason: input.reason,
+          version: record.workout.version,
+          workoutId: record.workout.id,
+        };
+      } catch (error) {
+        if (error instanceof WorkoutNotFoundError) {
+          return {
+            code: "UNKNOWN_WORKOUT",
+            message: error.message,
+            ok: false,
+            workoutId: input.workoutId,
+          };
+        }
+
+        if (error instanceof WorkoutConflictError) {
+          return {
+            code: "VERSION_MISMATCH",
+            currentVersion: error.currentVersion,
+            message: error.message,
+            ok: false,
+            workoutId: input.workoutId,
+          };
+        }
+
+        if (error instanceof WorkoutMutationError) {
+          return {
+            code: "MUTATION_ERROR",
+            message: error.message,
+            ok: false,
+            workoutId: input.workoutId,
+          };
+        }
+
+        throw error;
+      }
+    },
+
+    async queryHistory(input: QueryHistoryToolInput): Promise<QueryHistoryToolResult> {
+      if (input.metric === "reps_at_load" && input.filters.loadLbs === undefined) {
+        return {
+          code: "INVALID_FILTERS",
+          message: "reps_at_load requires filters.loadLbs.",
+          ok: false,
+        };
+      }
+
+      const records = await loadHistoryRecords(db, input.filters, input.compareWindow);
+      const baseWindowResult = evaluateHistoryWindow(
+        records,
+        input,
+        input.filters.dateFrom,
+        input.filters.dateTo,
+      );
+
+      if (baseWindowResult === null) {
+        return {
+          code: "INVALID_FILTERS",
+          message: "The requested metric requires additional filters.",
+          ok: false,
+        };
+      }
+
+      const compareWindowResult =
+        input.compareWindow === undefined
+          ? undefined
+          : evaluateHistoryWindow(
+              records,
+              input,
+              input.compareWindow.dateFrom,
+              input.compareWindow.dateTo,
+            );
+
+      return {
+        compare:
+          compareWindowResult === undefined || compareWindowResult === null
+            ? undefined
+            : {
+                delta:
+                  typeof baseWindowResult.value === "number" &&
+                  typeof compareWindowResult.value === "number"
+                    ? baseWindowResult.value - compareWindowResult.value
+                    : null,
+                sampleSize: compareWindowResult.sampleSize,
+                value: compareWindowResult.value,
+                window: {
+                  dateFrom: input.compareWindow?.dateFrom ?? null,
+                  dateTo: input.compareWindow?.dateTo ?? null,
+                },
+              },
+        details: baseWindowResult.details,
+        filters: input.filters,
+        metric: input.metric,
+        ok: true,
+        result: {
+          sampleSize: baseWindowResult.sampleSize,
+          sessions: baseWindowResult.sessions,
+          unit: baseWindowResult.unit,
+          value: baseWindowResult.value,
+        },
+        subject: input.subject,
+        window: {
+          dateFrom: input.filters.dateFrom ?? null,
+          dateTo: input.filters.dateTo ?? null,
+        },
+      };
+    },
+  };
 }
 
 export function createWorkoutRouteService(db: AppDatabase): WorkoutRouteService {

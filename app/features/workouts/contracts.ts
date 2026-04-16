@@ -150,19 +150,51 @@ export const workoutListSearchSchema = z
     }
   });
 
-export const workoutListItemSchema = z.strictObject({
-  id: nonEmptyStringSchema,
-  title: nonEmptyStringSchema,
-  date: isoDateTimeSchema,
-  status: workoutStatusSchema,
-  source: workoutSourceSchema,
-  version: nonNegativeIntegerSchema,
-  exerciseCount: nonNegativeIntegerSchema,
-  counts: workoutSetCountsSchema,
-  startedAt: isoDateTimeSchema.nullable(),
-  completedAt: isoDateTimeSchema.nullable(),
-  updatedAt: isoDateTimeSchema,
-});
+export const workoutListExerciseSummarySchema = z
+  .strictObject({
+    displayName: nonEmptyStringSchema,
+    orderIndex: nonNegativeIntegerSchema,
+    completedSetCount: nonNegativeIntegerSchema,
+    totalSetCount: nonNegativeIntegerSchema,
+    topSet: z.strictObject({
+      rpe: halfStepRpeSchema.nullable(),
+      weightLbs: z.number().nonnegative().nullable(),
+    }),
+  })
+  .superRefine((summary, context) => {
+    if (summary.completedSetCount > summary.totalSetCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "completedSetCount cannot exceed totalSetCount.",
+        path: ["completedSetCount"],
+      });
+    }
+  });
+
+export const workoutListItemSchema = z
+  .strictObject({
+    id: nonEmptyStringSchema,
+    title: nonEmptyStringSchema,
+    date: isoDateTimeSchema,
+    status: workoutStatusSchema,
+    source: workoutSourceSchema,
+    version: nonNegativeIntegerSchema,
+    exerciseCount: nonNegativeIntegerSchema,
+    exerciseSummaries: z.array(workoutListExerciseSummarySchema),
+    counts: workoutSetCountsSchema,
+    startedAt: isoDateTimeSchema.nullable(),
+    completedAt: isoDateTimeSchema.nullable(),
+    updatedAt: isoDateTimeSchema,
+  })
+  .superRefine((item, context) => {
+    if (item.exerciseCount !== item.exerciseSummaries.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "exerciseCount must match the number of exercise summaries.",
+        path: ["exerciseCount"],
+      });
+    }
+  });
 
 /** Describes the authoritative loader payload for the workouts list screen. */
 export const workoutListLoaderDataSchema = z.strictObject({
@@ -206,6 +238,7 @@ export const workoutDetailLoaderDataSchema = z.strictObject({
 });
 
 export type WorkoutListSearch = z.infer<typeof workoutListSearchSchema>;
+export type WorkoutListExerciseSummary = z.infer<typeof workoutListExerciseSummarySchema>;
 export type WorkoutListItem = z.infer<typeof workoutListItemSchema>;
 export type WorkoutListLoaderData = z.infer<typeof workoutListLoaderDataSchema>;
 export type WorkoutDetailParams = z.infer<typeof workoutDetailParamsSchema>;
