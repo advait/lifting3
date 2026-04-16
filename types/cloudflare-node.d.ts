@@ -8,7 +8,10 @@ interface D1Database {
 }
 
 interface Env extends Record<string, unknown> {
+  AI: Ai;
+  CF_AIG_TOKEN?: string;
   DB: D1Database;
+  OPENAI_API_KEY?: string;
 }
 
 interface ExecutionContext {

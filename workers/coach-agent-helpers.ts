@@ -5,12 +5,52 @@ import {
   type UIMessageChunk,
   type UIMessage,
 } from "ai";
+import { createAiGateway } from "ai-gateway-provider";
+import { createUnified } from "ai-gateway-provider/providers/unified";
 import { createWorkersAI } from "workers-ai-provider";
 
 import { EXERCISE_SCHEMAS } from "~/features/exercises/schema";
 
 export const HARDCODED_AI_GATEWAY_MODEL_ID = "openai/gpt-5.4";
 export const DEFAULT_AI_GATEWAY_ID = "default";
+export const DEFAULT_AI_GATEWAY_ACCOUNT_ID = "f1158871427aaa3140ffb04c45902b8a";
+const PATCH_WORKOUT_ALLOWED_OPERATION_TYPES = [
+  "add_exercise",
+  "replace_exercise",
+  "skip_exercise",
+  "reorder_exercise",
+  "update_exercise_targets",
+  "add_set",
+  "skip_remaining_sets",
+  "add_note",
+] as const;
+const PATCH_WORKOUT_EXAMPLE_PAYLOAD = JSON.stringify({
+  expectedVersion: 3,
+  ops: [
+    {
+      exerciseId: "exercise-id",
+      setUpdates: [
+        {
+          planned: {
+            reps: 12,
+            weightLbs: 50,
+          },
+          setId: "set-1",
+        },
+        {
+          planned: {
+            reps: 12,
+            weightLbs: 55,
+          },
+          setId: "set-2",
+        },
+      ],
+      type: "update_exercise_targets",
+    },
+  ],
+  reason: "Adjust row targets upward based on recent performance.",
+  workoutId: "workout-id",
+});
 const COACH_ERROR_PREFIX_PATTERN = /^(?:AI_APICallError|Error|InferenceUpstreamError):\s*/i;
 const DEFAULT_COACH_ERROR_MESSAGE = "The coach could not complete this request.";
 const XML_TEXT_ESCAPE_PATTERN = /[&<>]/g;
@@ -45,6 +85,18 @@ function writeStaticAssistantText(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function getOptionalStringEnvValue(env: Env, key: "CF_AIG_TOKEN" | "OPENAI_API_KEY") {
+  const value = (env as unknown as Record<string, unknown>)[key];
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+
+  return trimmedValue.length > 0 ? trimmedValue : null;
 }
 
 function extractCoachErrorMessage(error: unknown): string | null {
@@ -215,6 +267,36 @@ export function createErrorAwareChatResponse({
 }
 
 export function createCoachLanguageModel(env: Env): LanguageModel {
+  const openAiApiKey = getOptionalStringEnvValue(env, "OPENAI_API_KEY");
+
+  if (openAiApiKey) {
+    const cloudflareGatewayToken = getOptionalStringEnvValue(env, "CF_AIG_TOKEN");
+    const gatewayOptions = {
+      collectLog: true,
+    } as const;
+    const unified = createUnified({
+      apiKey: openAiApiKey,
+    });
+
+    if (cloudflareGatewayToken) {
+      const gateway = createAiGateway({
+        accountId: DEFAULT_AI_GATEWAY_ACCOUNT_ID,
+        apiKey: cloudflareGatewayToken,
+        gateway: DEFAULT_AI_GATEWAY_ID,
+        options: gatewayOptions,
+      });
+
+      return gateway(unified(HARDCODED_AI_GATEWAY_MODEL_ID));
+    }
+
+    const gateway = createAiGateway({
+      binding: env.AI.gateway(DEFAULT_AI_GATEWAY_ID),
+      options: gatewayOptions,
+    });
+
+    return gateway(unified(HARDCODED_AI_GATEWAY_MODEL_ID));
+  }
+
   const workersai = createWorkersAI({
     binding: env.AI,
     gateway: {
@@ -254,4 +336,24 @@ export function buildUserProfilePrompt(userProfile: string | null) {
     profileText,
     "</UserProfile>",
   ].join("\n");
+}
+
+export function buildPatchWorkoutContractPrompt() {
+  return [
+    "For patch_workout, ops[].type must be exactly one of:",
+    `- ${PATCH_WORKOUT_ALLOWED_OPERATION_TYPES.join(", ")}`,
+    'For planned set retargeting, always use type "update_exercise_targets". Do not invent aliases like "update_sets" or "exercise_update_sets".',
+    "Canonical patch_workout payload example:",
+    PATCH_WORKOUT_EXAMPLE_PAYLOAD,
+    "Replace workoutId, expectedVersion, exerciseId, and setId values with the real ids from the workout context.",
+  ].join("\n");
+}
+
+export function getPatchWorkoutToolDescription() {
+  return [
+    "Apply one guarded workout patch using the current expected version.",
+    `Allowed ops[].type values: ${PATCH_WORKOUT_ALLOWED_OPERATION_TYPES.join(", ")}.`,
+    'For planned set retargeting, always use "update_exercise_targets". Never use aliases like "update_sets" or "exercise_update_sets".',
+    `Example payload: ${PATCH_WORKOUT_EXAMPLE_PAYLOAD}`,
+  ].join(" ");
 }
