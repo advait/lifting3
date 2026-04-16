@@ -634,6 +634,7 @@ function buildRouteInvalidateKeys(
 ) {
   const invalidate = uniqueInvalidateKeys([
     "workouts:list",
+    "exercises:list",
     createWorkoutInvalidateKey(workoutId),
     ...(includeExerciseInvalidations
       ? exerciseSchemaIds.map((exerciseSchemaId) => createExerciseInvalidateKey(exerciseSchemaId))

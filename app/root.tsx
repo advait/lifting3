@@ -2,6 +2,7 @@ import {
   ActivityIcon,
   BotIcon,
   ChartColumnBigIcon,
+  DumbbellIcon,
   HouseIcon,
   PanelLeftIcon,
   Settings2Icon,
@@ -71,6 +72,11 @@ const NAV_ITEMS: ReadonlyArray<NavigationItem> = [
     icon: ActivityIcon,
     label: "Workouts",
     to: "/workouts",
+  },
+  {
+    icon: DumbbellIcon,
+    label: "Exercises",
+    to: "/exercises",
   },
   {
     icon: ChartColumnBigIcon,

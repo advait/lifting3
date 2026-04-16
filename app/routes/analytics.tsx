@@ -1,6 +1,6 @@
 import { ActivityIcon, Clock3Icon, DumbbellIcon } from "lucide-react";
 
-import { Badge } from "~/components/ui/badge";
+import { ComingSoonBadge } from "~/components/coming-soon-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 
 import type { Route } from "./+types/analytics";
@@ -37,12 +37,7 @@ export default function Analytics() {
       <Card className="overflow-hidden border-border/70 bg-card/95 shadow-lg shadow-black/10">
         <CardHeader className="gap-3 border-border/70 border-b bg-white/[0.02]">
           <div>
-            <Badge
-              className="border-primary/30 bg-primary/12 text-primary-foreground"
-              variant="outline"
-            >
-              Coming Soon
-            </Badge>
+            <ComingSoonBadge />
           </div>
           <CardTitle className="text-2xl tracking-tight sm:text-3xl">Exercise analytics</CardTitle>
           <CardDescription className="max-w-2xl text-sm leading-relaxed text-foreground/72 sm:text-base">
