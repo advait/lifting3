@@ -281,9 +281,18 @@ function renderPatchWorkoutToolBody(
   if (output.ok === true) {
     const applied = Array.isArray(output.applied)
       ? output.applied
-          .flatMap((item) =>
-            isRecord(item) && typeof item.summary === "string" ? [item.summary] : [],
-          )
+          .flatMap((item, index) => {
+            if (!isRecord(item) || typeof item.summary !== "string") {
+              return [];
+            }
+
+            return [
+              {
+                key: `${index}:${item.summary}`,
+                summary: item.summary,
+              },
+            ];
+          })
           .slice(0, TOOL_SUMMARY_LIMIT)
       : [];
     const totalApplied = Array.isArray(output.applied) ? output.applied.length : 0;
@@ -293,13 +302,13 @@ function renderPatchWorkoutToolBody(
       <div className="grid gap-2">
         {applied.length > 0 ? (
           <ul className="grid gap-1.5 text-sm">
-            {applied.map((summary) => (
-              <li className="flex items-start gap-2" key={summary}>
+            {applied.map((item) => (
+              <li className="flex items-start gap-2" key={item.key}>
                 <CheckCircle2Icon
                   aria-hidden
                   className="mt-0.5 size-3.5 shrink-0 text-emerald-600"
                 />
-                <span>{summary}</span>
+                <span>{item.summary}</span>
               </li>
             ))}
           </ul>
