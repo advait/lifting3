@@ -61,7 +61,7 @@ function formatTopSet(topSet: WorkoutExerciseSummary["topSet"]) {
 
 function ExerciseSummaryTable({ item }: { item: WorkoutListItem }) {
   return (
-    <div className="w-full border-y border-white/6 bg-linear-to-b from-white/[0.035] via-white/[0.018] to-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors group-hover/card:from-white/[0.045] group-hover/card:via-white/[0.024]">
+    <div className="w-full border-white/6 border-t bg-linear-to-b from-white/[0.035] via-white/[0.018] to-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors group-hover/card:from-white/[0.045] group-hover/card:via-white/[0.024]">
       <table className="w-full table-fixed text-sm">
         <thead className="border-white/10 border-b bg-white/[0.055] text-[11px] text-foreground/46 uppercase tracking-[0.16em] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
           <tr>
@@ -118,7 +118,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               key={item.id}
               to={`/workouts/${item.id}`}
             >
-              <Card className="border-border/70 bg-card/95 transition-[transform,box-shadow,background-color] duration-300 hover:-translate-y-0.5 hover:bg-card hover:shadow-xl hover:shadow-black/5 hover:ring-primary/20">
+              <Card className="border-border/70 bg-card/95 pb-0 transition-[transform,box-shadow,background-color] duration-300 hover:-translate-y-0.5 hover:bg-card hover:shadow-xl hover:shadow-black/5 hover:ring-primary/20">
                 <CardHeader className="gap-3">
                   <CardAction className="flex flex-wrap gap-2">
                     <Badge className="border-border/70 bg-background/60" variant="outline">

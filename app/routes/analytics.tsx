@@ -1,4 +1,4 @@
-import { ActivityIcon, ChartColumnBigIcon, Clock3Icon, DumbbellIcon } from "lucide-react";
+import { ActivityIcon, Clock3Icon, DumbbellIcon } from "lucide-react";
 
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
@@ -15,22 +15,19 @@ export const meta: Route.MetaFunction = () => [
 
 const ANALYTICS_REPORTS = [
   {
-    description:
-      "Surface best sets, e1RM signals, and top-load progressions so each exercise shows whether strength is climbing, stalling, or ready for a push.",
+    description: "Best sets, top load, and estimated strength trends for each lift.",
     icon: DumbbellIcon,
-    title: "Strength Progression",
+    title: "Strength progress",
   },
   {
-    description:
-      "Track session density, weekly volume, and training frequency so workload trends stay visible before they turn into missed lifts or flat weeks.",
+    description: "Weekly volume, session density, and training frequency across your history.",
     icon: ActivityIcon,
-    title: "Workload Trends",
+    title: "Volume + frequency",
   },
   {
-    description:
-      "Roll every chart back into the original workout so spikes, PRs, and gaps can be explained by the exact session that created them.",
+    description: "Direct links from every report back to the workouts that produced the numbers.",
     icon: Clock3Icon,
-    title: "Workout Drill-Down",
+    title: "Workout drill-down",
   },
 ] as const;
 
@@ -38,53 +35,39 @@ export default function Analytics() {
   return (
     <section className="grid gap-4">
       <Card className="overflow-hidden border-border/70 bg-card/95 shadow-lg shadow-black/10">
-        <CardHeader className="gap-4 border-border/70 border-b bg-linear-to-br from-white/[0.035] via-transparent to-primary/8">
-          <div className="flex flex-wrap items-center gap-2">
+        <CardHeader className="gap-3 border-border/70 border-b bg-white/[0.02]">
+          <div>
             <Badge
               className="border-primary/30 bg-primary/12 text-primary-foreground"
               variant="outline"
             >
               Coming Soon
             </Badge>
-            <span className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
-              Analytics
-            </span>
           </div>
-
-          <div className="flex items-start justify-between gap-4">
-            <div className="max-w-2xl space-y-2">
-              <CardTitle className="text-2xl sm:text-3xl">
-                Reports built for real training decisions.
-              </CardTitle>
-              <CardDescription className="max-w-xl text-base leading-relaxed text-foreground/72">
-                Analytics will turn raw workout history into clear strength, workload, and recency
-                reports so progress can be read in context instead of guessed from memory.
-              </CardDescription>
-            </div>
-
-            <div className="hidden rounded-2xl border border-white/10 bg-black/10 p-3 text-primary md:flex">
-              <ChartColumnBigIcon className="size-6" />
-            </div>
-          </div>
+          <CardTitle className="text-2xl tracking-tight sm:text-3xl">Exercise analytics</CardTitle>
+          <CardDescription className="max-w-2xl text-sm leading-relaxed text-foreground/72 sm:text-base">
+            Track PRs, estimated strength, training volume, and frequency trends, then jump back to
+            the workouts behind each change.
+          </CardDescription>
         </CardHeader>
 
-        <CardContent className="grid gap-3 p-4 md:grid-cols-3">
+        <CardContent className="p-0">
           {ANALYTICS_REPORTS.map((report) => {
             const Icon = report.icon;
 
             return (
-              <article
-                className="rounded-2xl border border-white/8 bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.035]"
+              <div
+                className="grid gap-3 border-border/70 border-t px-4 py-4 first:border-t-0 md:grid-cols-[auto_minmax(0,1fr)] md:items-start md:px-5"
                 key={report.title}
               >
-                <div className="mb-4 flex size-10 items-center justify-center rounded-xl border border-white/10 bg-black/10 text-primary">
+                <div className="flex size-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-primary">
                   <Icon className="size-4" />
                 </div>
-                <h2 className="font-medium text-base tracking-tight">{report.title}</h2>
-                <p className="mt-2 text-foreground/68 text-sm leading-relaxed">
-                  {report.description}
-                </p>
-              </article>
+                <div className="space-y-1">
+                  <h2 className="font-medium text-base tracking-tight">{report.title}</h2>
+                  <p className="text-foreground/68 text-sm leading-relaxed">{report.description}</p>
+                </div>
+              </div>
             );
           })}
         </CardContent>
