@@ -96,10 +96,7 @@ This repo is intentionally single-user for now and assumes perimeter access thro
 
 The default local URL is `http://localhost:43110`.
 
-```
-
 ## Reference Docs
 
 - [docs/spec.md](docs/spec.md) - product and architecture spec
 - [docs/cloudflare-agents.md](docs/cloudflare-agents.md) - Cloudflare architecture guidance for D1, Drizzle, and Agents
-```
