@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { createSettingsService } from "../../app/features/settings/d1-service.server";
 import * as dbSchema from "../../app/lib/.server/db/schema";

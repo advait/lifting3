@@ -1,7 +1,6 @@
 {
   "extends": "./tsconfig.json",
   "include": [
-    "vitest.config.ts",
     "scripts/**/*.ts",
     "app/features/**/*.ts",
     "app/lib/.server/**/*.ts",

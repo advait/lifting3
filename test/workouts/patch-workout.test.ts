@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { EXERCISE_SCHEMA_IDS } from "../../app/features/exercises/schema";
 import {

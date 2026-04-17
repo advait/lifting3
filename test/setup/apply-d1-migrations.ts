@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { applyD1Migrations } from "cloudflare:test";
-import { beforeAll } from "vitest";
+import { beforeAll } from "vite-plus/test";
 import type { D1Migration } from "@cloudflare/vitest-pool-workers";
 
 beforeAll(async () => {
