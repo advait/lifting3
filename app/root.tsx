@@ -245,6 +245,7 @@ function WorkoutsSidebarSection({
             {recentWorkouts.map((workout) => {
               const workoutPath = `/workouts/${workout.id}`;
               const isActive = pathname === workoutPath;
+              const showStatusBadge = workout.status !== "completed";
 
               return (
                 <Link
@@ -257,7 +258,9 @@ function WorkoutsSidebarSection({
                 >
                   <div className="flex min-w-0 items-start justify-between gap-2">
                     <p className="min-w-0 flex-1 truncate font-medium text-sm">{workout.title}</p>
-                    <WorkoutStatusBadge className="shrink-0" size="sm" status={workout.status} />
+                    {showStatusBadge ? (
+                      <WorkoutStatusBadge className="shrink-0" size="sm" status={workout.status} />
+                    ) : null}
                   </div>
                   <p className="mt-1 text-[11px] text-muted-foreground">
                     <LocalDateTime
