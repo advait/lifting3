@@ -21,7 +21,14 @@ import {
   WrenchIcon,
   XIcon,
 } from "lucide-react";
-import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
+import {
+  startTransition,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ComponentPropsWithoutRef,
+} from "react";
 import { Streamdown } from "streamdown";
 
 import { LocalDateTime } from "~/components/local-date-time";
@@ -39,6 +46,7 @@ interface CoachSheetProps {
 }
 
 const SHEET_CLOSE_DRAG_THRESHOLD_PX = 120;
+const SHEET_TRANSITION_MS = 300;
 const TOOL_SUMMARY_LIMIT = 3;
 const historyValueFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
@@ -679,7 +687,12 @@ function renderMessagePart(
   if (text) {
     if (options.role === "assistant") {
       return (
-        <Streamdown className="text-sm leading-relaxed" isAnimating={options.isAnimating} key={key}>
+        <Streamdown
+          className="text-sm leading-relaxed"
+          isAnimating={options.isAnimating}
+          key={key}
+          mode={options.isAnimating ? "streaming" : "static"}
+        >
           {text}
         </Streamdown>
       );
@@ -742,21 +755,131 @@ function getAgentConfig(target: WorkoutAgentTarget) {
   }
 }
 
-export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
-  const [draft, setDraft] = useState("");
-  const [dragOffset, setDragOffset] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
+function CoachSheetHeader({
+  activityStatusLabel,
+  clearDisabled,
+  dragHandleProps,
+  onClear,
+  onClose,
+}: {
+  activityStatusLabel?: string;
+  clearDisabled: boolean;
+  dragHandleProps: ComponentPropsWithoutRef<"button">;
+  onClear?: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="px-4 pb-2 pt-3">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+        <Button
+          className="justify-self-start rounded-full"
+          disabled={clearDisabled}
+          onClick={onClear}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <EraserIcon />
+          Clear
+        </Button>
+
+        <button
+          aria-label="Drag or tap to close coach"
+          className="flex touch-none justify-self-center rounded-full px-4 py-1"
+          {...dragHandleProps}
+        >
+          <div className="h-1.5 w-14 rounded-full bg-foreground/15" />
+        </button>
+
+        <Button
+          aria-label="Close coach"
+          className="justify-self-end rounded-full"
+          onClick={onClose}
+          size="icon-sm"
+          type="button"
+          variant="ghost"
+        >
+          <XIcon />
+        </Button>
+      </div>
+
+      <div className="mt-3 flex min-h-6 items-center justify-center">
+        {activityStatusLabel ? (
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/8 px-3 py-1.5 text-primary text-xs">
+            <LoaderCircleIcon aria-hidden className="size-3.5 animate-spin" />
+            <span>{activityStatusLabel}</span>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function CoachSheetClosedContent({
+  dragHandleProps,
+  onClose,
+  target,
+}: {
+  dragHandleProps: ComponentPropsWithoutRef<"button">;
+  onClose: () => void;
+  target: WorkoutAgentTarget;
+}) {
   const agentConfig = getAgentConfig(target);
-  const threadKey = `${target.kind}:${target.instanceName}`;
-  const dragStartYRef = useRef<number | null>(null);
-  const didDragRef = useRef(false);
+
+  return (
+    <>
+      <CoachSheetHeader clearDisabled dragHandleProps={dragHandleProps} onClose={onClose} />
+
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="grid min-h-full content-start gap-3">
+            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-4 text-muted-foreground text-sm leading-relaxed">
+              {agentConfig.emptyState}
+            </div>
+            <div aria-hidden className="h-px w-full" />
+          </div>
+        </div>
+
+        <form className="grid gap-3 border-border/70 border-t pt-3">
+          <label className="sr-only" htmlFor="coach-sheet-message">
+            Ask the coach
+          </label>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+            <textarea
+              className="min-h-28 resize-y rounded-2xl border border-border/70 bg-background px-4 py-3 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
+              disabled
+              id="coach-sheet-message"
+              placeholder={agentConfig.placeholder}
+              value=""
+            />
+            <Button className="w-full sm:w-auto" disabled size="lg" type="submit">
+              <SendHorizontalIcon />
+              Send
+            </Button>
+          </div>
+        </form>
+      </div>
+    </>
+  );
+}
+
+function CoachSheetSessionContent({
+  dragHandleProps,
+  onClose,
+  target,
+}: {
+  dragHandleProps: ComponentPropsWithoutRef<"button">;
+  onClose: () => void;
+  target: WorkoutAgentTarget;
+}) {
+  const [draft, setDraft] = useState("");
+  const agentConfig = getAgentConfig(target);
   const discussionEndRef = useRef<HTMLDivElement | null>(null);
   const observedToolStatesRef = useRef<Map<string, ReturnType<typeof getToolPartState>>>(new Map());
   const publishedToolEventIdsRef = useRef<Set<string>>(new Set());
   const hasObservedLiveAgentActivityRef = useRef(false);
   const agent = useAgent({
     agent: agentConfig.agent,
-    enabled: isOpen,
     name: target.instanceName,
   });
   const {
@@ -777,12 +900,6 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
   const isSubmitting = status === "submitted";
   const isBusy = isSubmitting || isStreaming;
   const chatErrorMessage = error ? getChatErrorMessage(error) : null;
-  const visibleMessages = isOpen ? messages : [];
-  const visibleChatErrorMessage = isOpen ? chatErrorMessage : null;
-  const resetThreadState = useEffectEvent(() => {
-    setDraft("");
-    clearError();
-  });
   const publishToolMutationEvents = useEffectEvent((nextMessages: readonly UIMessage[]) => {
     const nextObservedToolStates = new Map<string, ReturnType<typeof getToolPartState>>();
 
@@ -828,13 +945,6 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
   };
 
   useEffect(() => {
-    resetThreadState();
-    observedToolStatesRef.current = new Map();
-    publishedToolEventIdsRef.current = new Set();
-    hasObservedLiveAgentActivityRef.current = false;
-  }, [threadKey]);
-
-  useEffect(() => {
     if (isBusy) {
       hasObservedLiveAgentActivityRef.current = true;
     }
@@ -843,10 +953,6 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
   }, [isBusy, messages]);
 
   useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
     const frameId = window.requestAnimationFrame(() => {
       scrollDiscussionToTail();
     });
@@ -854,20 +960,8 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [isOpen, messages, status, threadKey]);
+  }, [messages, status]);
 
-  useEffect(() => {
-    if (isOpen) {
-      return;
-    }
-
-    dragStartYRef.current = null;
-    didDragRef.current = false;
-    setDragOffset(0);
-    setIsDragging(false);
-  }, [isOpen]);
-
-  const sheetTransform = isOpen ? `translateY(${dragOffset}px)` : "translateY(calc(100% + 1.5rem))";
   const handleClearThread = () => {
     void stop();
     clearError();
@@ -903,6 +997,205 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
   };
 
   return (
+    <>
+      <CoachSheetHeader
+        activityStatusLabel={isBusy ? activityStatusLabel : undefined}
+        clearDisabled={false}
+        dragHandleProps={dragHandleProps}
+        onClear={handleClearThread}
+        onClose={onClose}
+      />
+
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="grid min-h-full content-start gap-3">
+            {messages.length === 0 && !chatErrorMessage ? (
+              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-4 text-muted-foreground text-sm leading-relaxed">
+                {agentConfig.emptyState}
+              </div>
+            ) : (
+              messages.map((message) => {
+                const isAnimatingAssistantMessage =
+                  message.role === "assistant" && isStreaming && message.id === messages.at(-1)?.id;
+                const renderedParts = message.parts
+                  .map((part, index) =>
+                    renderMessagePart(
+                      (approvalId, approved) => {
+                        addToolApprovalResponse({ approved, id: approvalId });
+                      },
+                      {
+                        isAnimating: isAnimatingAssistantMessage,
+                        role: message.role,
+                      },
+                      part,
+                      `${message.id}:${part.type}:${index}`,
+                    ),
+                  )
+                  .filter((part) => part !== null);
+
+                if (renderedParts.length === 0) {
+                  return null;
+                }
+
+                return (
+                  <div
+                    className={cn(
+                      "text-sm leading-relaxed",
+                      message.role === "user"
+                        ? "ml-8 rounded-2xl bg-primary px-4 py-3 text-primary-foreground"
+                        : "w-full text-foreground",
+                    )}
+                    key={message.id}
+                  >
+                    <div className="grid gap-3">{renderedParts}</div>
+                  </div>
+                );
+              })
+            )}
+            {chatErrorMessage ? (
+              <CoachErrorCard message={chatErrorMessage} onDismiss={clearError} />
+            ) : null}
+            <div aria-hidden className="h-px w-full" ref={discussionEndRef} />
+          </div>
+        </div>
+
+        <form
+          className="grid gap-3 border-border/70 border-t pt-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitDraft();
+          }}
+        >
+          <label className="sr-only" htmlFor="coach-sheet-message">
+            Ask the coach
+          </label>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+            <textarea
+              className="min-h-28 resize-y rounded-2xl border border-border/70 bg-background px-4 py-3 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
+              disabled={isBusy}
+              id="coach-sheet-message"
+              onChange={(event) => {
+                setDraft(event.currentTarget.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
+                  return;
+                }
+
+                event.preventDefault();
+                submitDraft();
+              }}
+              placeholder={agentConfig.placeholder}
+              value={draft}
+            />
+            <Button
+              className="w-full sm:w-auto"
+              disabled={draft.trim().length === 0 || isBusy}
+              size="lg"
+              type="submit"
+            >
+              <SendHorizontalIcon />
+              Send
+            </Button>
+          </div>
+        </form>
+      </div>
+    </>
+  );
+}
+
+export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [renderedOpen, setRenderedOpen] = useState(isOpen);
+  const dragStartYRef = useRef<number | null>(null);
+  const didDragRef = useRef(false);
+  const threadKey = `${target.kind}:${target.instanceName}`;
+
+  useEffect(() => {
+    if (isOpen) {
+      setRenderedOpen(true);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setRenderedOpen(false);
+    }, SHEET_TRANSITION_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      return;
+    }
+
+    dragStartYRef.current = null;
+    didDragRef.current = false;
+    setDragOffset(0);
+    setIsDragging(false);
+  }, [isOpen]);
+
+  const dragHandleProps: ComponentPropsWithoutRef<"button"> = {
+    onPointerCancel: () => {
+      dragStartYRef.current = null;
+      didDragRef.current = false;
+      setDragOffset(0);
+      setIsDragging(false);
+    },
+    onPointerDown: (event) => {
+      if (!isOpen) {
+        return;
+      }
+
+      dragStartYRef.current = event.clientY;
+      didDragRef.current = false;
+      setDragOffset(0);
+      setIsDragging(true);
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    onPointerMove: (event) => {
+      const dragStartY = dragStartYRef.current;
+
+      if (dragStartY == null) {
+        return;
+      }
+
+      const nextOffset = Math.max(0, event.clientY - dragStartY);
+
+      if (nextOffset > 4) {
+        didDragRef.current = true;
+      }
+
+      setDragOffset(nextOffset);
+    },
+    onPointerUp: (event) => {
+      const dragStartY = dragStartYRef.current;
+
+      if (dragStartY == null) {
+        return;
+      }
+
+      event.currentTarget.releasePointerCapture(event.pointerId);
+      dragStartYRef.current = null;
+      setIsDragging(false);
+
+      const shouldClose = dragOffset >= SHEET_CLOSE_DRAG_THRESHOLD_PX || !didDragRef.current;
+
+      didDragRef.current = false;
+      setDragOffset(0);
+
+      if (shouldClose) {
+        onClose();
+      }
+    },
+    type: "button",
+  };
+  const sheetTransform = isOpen ? `translateY(${dragOffset}px)` : "translateY(calc(100% + 1.5rem))";
+
+  return (
     <div
       className={cn(
         "pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 transition-transform ease-out sm:px-6 lg:px-8",
@@ -911,199 +1204,20 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
       style={{ transform: sheetTransform }}
     >
       <section className="pointer-events-auto flex h-[60dvh] w-full max-w-7xl flex-col overflow-hidden rounded-t-[2rem] border border-border/80 border-b-0 bg-card/95 shadow-[0_-24px_80px_rgba(0,0,0,0.5)] backdrop-blur-xl">
-        <div className="px-4 pb-2 pt-3">
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-            <Button
-              className="justify-self-start rounded-full"
-              disabled={!isOpen}
-              onClick={handleClearThread}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <EraserIcon />
-              Clear
-            </Button>
-
-            <button
-              aria-label="Drag or tap to close coach"
-              className="flex touch-none justify-self-center rounded-full px-4 py-1"
-              onPointerCancel={() => {
-                dragStartYRef.current = null;
-                didDragRef.current = false;
-                setDragOffset(0);
-                setIsDragging(false);
-              }}
-              onPointerDown={(event) => {
-                if (!isOpen) {
-                  return;
-                }
-
-                dragStartYRef.current = event.clientY;
-                didDragRef.current = false;
-                setDragOffset(0);
-                setIsDragging(true);
-                event.currentTarget.setPointerCapture(event.pointerId);
-              }}
-              onPointerMove={(event) => {
-                const dragStartY = dragStartYRef.current;
-
-                if (dragStartY == null) {
-                  return;
-                }
-
-                const nextOffset = Math.max(0, event.clientY - dragStartY);
-
-                if (nextOffset > 4) {
-                  didDragRef.current = true;
-                }
-
-                setDragOffset(nextOffset);
-              }}
-              onPointerUp={(event) => {
-                const dragStartY = dragStartYRef.current;
-
-                if (dragStartY == null) {
-                  return;
-                }
-
-                event.currentTarget.releasePointerCapture(event.pointerId);
-                dragStartYRef.current = null;
-                setIsDragging(false);
-
-                const shouldClose =
-                  dragOffset >= SHEET_CLOSE_DRAG_THRESHOLD_PX || !didDragRef.current;
-
-                didDragRef.current = false;
-                setDragOffset(0);
-
-                if (shouldClose) {
-                  onClose();
-                }
-              }}
-              type="button"
-            >
-              <div className="h-1.5 w-14 rounded-full bg-foreground/15" />
-            </button>
-
-            <Button
-              aria-label="Close coach"
-              className="justify-self-end rounded-full"
-              onClick={onClose}
-              size="icon-sm"
-              type="button"
-              variant="ghost"
-            >
-              <XIcon />
-            </Button>
-          </div>
-
-          <div className="mt-3 flex min-h-6 items-center justify-center">
-            {isBusy ? (
-              <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/8 px-3 py-1.5 text-primary text-xs">
-                <LoaderCircleIcon aria-hidden className="size-3.5 animate-spin" />
-                <span>{activityStatusLabel}</span>
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4">
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="grid min-h-full content-start gap-3">
-              {visibleMessages.length === 0 && !visibleChatErrorMessage ? (
-                <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-4 text-muted-foreground text-sm leading-relaxed">
-                  {agentConfig.emptyState}
-                </div>
-              ) : (
-                visibleMessages.map((message) => {
-                  const isAnimatingAssistantMessage =
-                    message.role === "assistant" &&
-                    isStreaming &&
-                    message.id === visibleMessages.at(-1)?.id;
-                  const renderedParts = message.parts
-                    .map((part, index) =>
-                      renderMessagePart(
-                        (approvalId, approved) => {
-                          addToolApprovalResponse({ approved, id: approvalId });
-                        },
-                        {
-                          isAnimating: isAnimatingAssistantMessage,
-                          role: message.role,
-                        },
-                        part,
-                        `${message.id}:${part.type}:${index}`,
-                      ),
-                    )
-                    .filter((part) => part !== null);
-
-                  if (renderedParts.length === 0) {
-                    return null;
-                  }
-
-                  return (
-                    <div
-                      className={cn(
-                        "text-sm leading-relaxed",
-                        message.role === "user"
-                          ? "ml-8 rounded-2xl bg-primary px-4 py-3 text-primary-foreground"
-                          : "w-full text-foreground",
-                      )}
-                      key={message.id}
-                    >
-                      <div className="grid gap-3">{renderedParts}</div>
-                    </div>
-                  );
-                })
-              )}
-              {visibleChatErrorMessage ? (
-                <CoachErrorCard message={visibleChatErrorMessage} onDismiss={clearError} />
-              ) : null}
-              <div aria-hidden className="h-px w-full" ref={discussionEndRef} />
-            </div>
-          </div>
-
-          <form
-            className="grid gap-3 border-border/70 border-t pt-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              submitDraft();
-            }}
-          >
-            <label className="sr-only" htmlFor="coach-sheet-message">
-              Ask the coach
-            </label>
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-              <textarea
-                className="min-h-28 resize-y rounded-2xl border border-border/70 bg-background px-4 py-3 text-sm outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
-                disabled={!isOpen || isBusy}
-                id="coach-sheet-message"
-                onChange={(event) => {
-                  setDraft(event.currentTarget.value);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
-                    return;
-                  }
-
-                  event.preventDefault();
-                  submitDraft();
-                }}
-                placeholder={agentConfig.placeholder}
-                value={draft}
-              />
-              <Button
-                className="w-full sm:w-auto"
-                disabled={!isOpen || draft.trim().length === 0 || isBusy}
-                size="lg"
-                type="submit"
-              >
-                <SendHorizontalIcon />
-                Send
-              </Button>
-            </div>
-          </form>
-        </div>
+        {renderedOpen ? (
+          <CoachSheetSessionContent
+            dragHandleProps={dragHandleProps}
+            key={threadKey}
+            onClose={onClose}
+            target={target}
+          />
+        ) : (
+          <CoachSheetClosedContent
+            dragHandleProps={dragHandleProps}
+            onClose={onClose}
+            target={target}
+          />
+        )}
       </section>
     </div>
   );
