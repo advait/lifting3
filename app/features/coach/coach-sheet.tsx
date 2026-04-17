@@ -46,7 +46,12 @@ interface CoachSheetProps {
 }
 
 const SHEET_CLOSE_DRAG_THRESHOLD_PX = 120;
+const SHEET_RESIZE_DRAG_THRESHOLD_PX = 72;
 const SHEET_TRANSITION_MS = 300;
+const SHEET_COLLAPSED_HEIGHT = "60dvh";
+const SHEET_EXPANDED_HEIGHT = "92dvh";
+const SHEET_MAX_UPWARD_DRAG_PX = 160;
+const SHEET_MAX_DOWNWARD_DRAG_PX = 160;
 const TOOL_SUMMARY_LIMIT = 3;
 const historyValueFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
@@ -767,12 +772,14 @@ function CoachSheetHeader({
   activityStatusLabel,
   clearDisabled,
   dragHandleProps,
+  isExpanded,
   onClear,
   onClose,
 }: {
   activityStatusLabel?: string;
   clearDisabled: boolean;
   dragHandleProps: ComponentPropsWithoutRef<"button">;
+  isExpanded: boolean;
   onClear?: () => void;
   onClose: () => void;
 }) {
@@ -792,7 +799,8 @@ function CoachSheetHeader({
         </Button>
 
         <button
-          aria-label="Drag or tap to close coach"
+          aria-expanded={isExpanded}
+          aria-label={isExpanded ? "Collapse coach sheet" : "Expand coach sheet"}
           className="flex touch-none justify-self-center rounded-full px-4 py-1"
           {...dragHandleProps}
         >
@@ -825,10 +833,12 @@ function CoachSheetHeader({
 
 function CoachSheetClosedContent({
   dragHandleProps,
+  isExpanded,
   onClose,
   target,
 }: {
   dragHandleProps: ComponentPropsWithoutRef<"button">;
+  isExpanded: boolean;
   onClose: () => void;
   target: WorkoutAgentTarget;
 }) {
@@ -836,7 +846,12 @@ function CoachSheetClosedContent({
 
   return (
     <>
-      <CoachSheetHeader clearDisabled dragHandleProps={dragHandleProps} onClose={onClose} />
+      <CoachSheetHeader
+        clearDisabled
+        dragHandleProps={dragHandleProps}
+        isExpanded={isExpanded}
+        onClose={onClose}
+      />
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4">
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -873,10 +888,12 @@ function CoachSheetClosedContent({
 
 function CoachSheetSessionContent({
   dragHandleProps,
+  isExpanded,
   onClose,
   target,
 }: {
   dragHandleProps: ComponentPropsWithoutRef<"button">;
+  isExpanded: boolean;
   onClose: () => void;
   target: WorkoutAgentTarget;
 }) {
@@ -1010,6 +1027,7 @@ function CoachSheetSessionContent({
         activityStatusLabel={isBusy ? activityStatusLabel : undefined}
         clearDisabled={false}
         dragHandleProps={dragHandleProps}
+        isExpanded={isExpanded}
         onClear={handleClearThread}
         onClose={onClose}
       />
@@ -1115,9 +1133,12 @@ function CoachSheetSessionContent({
 export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [renderedOpen, setRenderedOpen] = useState(isOpen);
   const dragStartYRef = useRef<number | null>(null);
+  const dragOffsetRef = useRef(0);
   const didDragRef = useRef(false);
+  const suppressHandleClickRef = useRef(false);
   const threadKey = `${target.kind}:${target.instanceName}`;
 
   useEffect(() => {
@@ -1128,6 +1149,7 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
 
     const timeoutId = window.setTimeout(() => {
       setRenderedOpen(false);
+      setIsExpanded(false);
     }, SHEET_TRANSITION_MS);
 
     return () => {
@@ -1141,7 +1163,9 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
     }
 
     dragStartYRef.current = null;
+    dragOffsetRef.current = 0;
     didDragRef.current = false;
+    suppressHandleClickRef.current = false;
     setDragOffset(0);
     setIsDragging(false);
   }, [isOpen]);
@@ -1149,9 +1173,24 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
   const dragHandleProps: ComponentPropsWithoutRef<"button"> = {
     onPointerCancel: () => {
       dragStartYRef.current = null;
+      dragOffsetRef.current = 0;
       didDragRef.current = false;
+      suppressHandleClickRef.current = false;
       setDragOffset(0);
       setIsDragging(false);
+    },
+    onClick: (event) => {
+      if (suppressHandleClickRef.current) {
+        suppressHandleClickRef.current = false;
+        event.preventDefault();
+        return;
+      }
+
+      if (!isOpen) {
+        return;
+      }
+
+      setIsExpanded((currentValue) => !currentValue);
     },
     onPointerDown: (event) => {
       if (!isOpen) {
@@ -1159,7 +1198,9 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
       }
 
       dragStartYRef.current = event.clientY;
+      dragOffsetRef.current = 0;
       didDragRef.current = false;
+      suppressHandleClickRef.current = false;
       setDragOffset(0);
       setIsDragging(true);
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -1171,12 +1212,16 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
         return;
       }
 
-      const nextOffset = Math.max(0, event.clientY - dragStartY);
+      const nextOffset = Math.max(
+        -SHEET_MAX_UPWARD_DRAG_PX,
+        Math.min(event.clientY - dragStartY, SHEET_MAX_DOWNWARD_DRAG_PX),
+      );
 
-      if (nextOffset > 4) {
+      if (Math.abs(nextOffset) > 4) {
         didDragRef.current = true;
       }
 
+      dragOffsetRef.current = nextOffset;
       setDragOffset(nextOffset);
     },
     onPointerUp: (event) => {
@@ -1190,18 +1235,33 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
       dragStartYRef.current = null;
       setIsDragging(false);
 
-      const shouldClose = dragOffset >= SHEET_CLOSE_DRAG_THRESHOLD_PX || !didDragRef.current;
+      const nextDragOffset = dragOffsetRef.current;
+      const didDrag = didDragRef.current;
 
+      suppressHandleClickRef.current = didDrag;
+      dragOffsetRef.current = 0;
       didDragRef.current = false;
+
       setDragOffset(0);
 
-      if (shouldClose) {
+      if (nextDragOffset <= -SHEET_RESIZE_DRAG_THRESHOLD_PX && !isExpanded) {
+        setIsExpanded(true);
+        return;
+      }
+
+      if (nextDragOffset >= SHEET_RESIZE_DRAG_THRESHOLD_PX && isExpanded) {
+        setIsExpanded(false);
+        return;
+      }
+
+      if (nextDragOffset >= SHEET_CLOSE_DRAG_THRESHOLD_PX) {
         onClose();
       }
     },
     type: "button",
   };
   const sheetTransform = isOpen ? `translateY(${dragOffset}px)` : "translateY(calc(100% + 1.5rem))";
+  const sheetHeight = isExpanded ? SHEET_EXPANDED_HEIGHT : SHEET_COLLAPSED_HEIGHT;
 
   return (
     <div
@@ -1211,10 +1271,17 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
       )}
       style={{ transform: sheetTransform }}
     >
-      <section className="pointer-events-auto flex h-[60dvh] w-full max-w-7xl flex-col overflow-hidden rounded-t-[2rem] border border-border/80 border-b-0 bg-card/95 shadow-[0_-24px_80px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+      <section
+        className={cn(
+          "pointer-events-auto flex w-full max-w-7xl flex-col overflow-hidden rounded-t-[2rem] border border-border/80 border-b-0 bg-card/95 shadow-[0_-24px_80px_rgba(0,0,0,0.5)] backdrop-blur-xl transition-[height] ease-out",
+          isDragging ? "duration-0" : "duration-300",
+        )}
+        style={{ height: sheetHeight }}
+      >
         {renderedOpen ? (
           <CoachSheetSessionContent
             dragHandleProps={dragHandleProps}
+            isExpanded={isExpanded}
             key={threadKey}
             onClose={onClose}
             target={target}
@@ -1222,6 +1289,7 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
         ) : (
           <CoachSheetClosedContent
             dragHandleProps={dragHandleProps}
+            isExpanded={isExpanded}
             onClose={onClose}
             target={target}
           />
