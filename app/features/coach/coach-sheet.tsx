@@ -720,16 +720,24 @@ function getChatErrorMessage(error: Error | undefined) {
 
 function CoachErrorCard({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
-    <div className="mr-8 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-foreground shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className="rounded-full bg-destructive/10 p-2 text-destructive">
+    <div className="w-full rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-foreground shadow-sm">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="shrink-0 rounded-full bg-destructive/10 p-2 text-destructive">
           <AlertTriangleIcon aria-hidden className="size-4" />
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-48">
           <p className="font-medium text-foreground">Coach unavailable</p>
-          <p className="mt-1 text-muted-foreground">{message}</p>
+          <p className="mt-1 break-words text-muted-foreground [overflow-wrap:anywhere]">
+            {message}
+          </p>
         </div>
-        <Button onClick={onDismiss} size="sm" type="button" variant="outline">
+        <Button
+          className="w-full sm:w-auto sm:shrink-0"
+          onClick={onDismiss}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
           Dismiss
         </Button>
       </div>
