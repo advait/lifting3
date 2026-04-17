@@ -446,7 +446,6 @@ The repo will need at least:
 - `agents`
 - `@cloudflare/ai-chat`
 - `ai`
-- `ai-gateway-provider`
 - `drizzle-orm`
 - `drizzle-kit`
 - `zod`
@@ -458,7 +457,7 @@ Wrangler will need at minimum:
 - Durable Object bindings for `GeneralCoachAgent` and `WorkoutCoachAgent`
 - a Durable Object binding for `AppEvents`
 - migration entries for all three Durable Object classes
-- environment/config for Cloudflare AI Gateway access
+- an `AI` binding plus Cloudflare AI Gateway configuration for provider keys or billing
 
 Illustrative shape:
 
@@ -493,7 +492,7 @@ Illustrative shape:
 }
 ```
 
-Do not require a Workers AI binding for MVP inference.
+Require the shared Workers AI `AI` binding for inference, and keep third-party provider keys in Cloudflare AI Gateway instead of Worker secrets.
 
 ## 15. Final recommendation
 

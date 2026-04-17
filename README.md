@@ -88,7 +88,7 @@ This repo is intentionally single-user for now and assumes perimeter access thro
 ## Local Development
 
 1. Copy `.env.sample` to `.env`.
-2. Set `OPENAI_API_KEY` if you want the coach flow available through Cloudflare AI Gateway's OpenAI provider.
+2. Configure the `default` AI Gateway in Cloudflare with provider keys or billing for the configured coach model.
 3. Run `pnpm install`.
 4. Apply local migrations with `pnpm db:migrate:local`.
 5. Seed sample workouts with `pnpm db:seed:local`.

@@ -5,15 +5,12 @@ import {
   type UIMessageChunk,
   type UIMessage,
 } from "ai";
-import { createAiGateway } from "ai-gateway-provider";
-import { createUnified } from "ai-gateway-provider/providers/unified";
 import { createWorkersAI } from "workers-ai-provider";
 
 import { EXERCISE_SCHEMAS } from "~/features/exercises/schema";
 
 export const HARDCODED_AI_GATEWAY_MODEL_ID = "openai/gpt-5.4";
 export const DEFAULT_AI_GATEWAY_ID = "default";
-export const DEFAULT_AI_GATEWAY_ACCOUNT_ID = "f1158871427aaa3140ffb04c45902b8a";
 const PATCH_WORKOUT_ALLOWED_OPERATION_TYPES = [
   "add_exercise",
   "replace_exercise",
@@ -100,18 +97,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function getOptionalStringEnvValue(env: Env, key: "CF_AIG_TOKEN" | "OPENAI_API_KEY") {
-  const value = (env as unknown as Record<string, unknown>)[key];
-
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const trimmedValue = value.trim();
-
-  return trimmedValue.length > 0 ? trimmedValue : null;
-}
-
 function extractCoachErrorMessage(error: unknown): string | null {
   if (typeof error === "string") {
     return error;
@@ -178,7 +163,7 @@ export function normalizeCoachError(error: unknown) {
   }
 
   if (parsedMessage.toLowerCase().includes("insufficient balance")) {
-    return `AI Gateway "${DEFAULT_AI_GATEWAY_ID}" has insufficient balance. Add funds to the gateway or switch to BYOK.`;
+    return `AI Gateway "${DEFAULT_AI_GATEWAY_ID}" has insufficient balance. Add funds or update the gateway's provider configuration in Cloudflare.`;
   }
 
   return parsedMessage;
@@ -280,36 +265,6 @@ export function createErrorAwareChatResponse({
 }
 
 export function createCoachLanguageModel(env: Env): LanguageModel {
-  const openAiApiKey = getOptionalStringEnvValue(env, "OPENAI_API_KEY");
-
-  if (openAiApiKey) {
-    const cloudflareGatewayToken = getOptionalStringEnvValue(env, "CF_AIG_TOKEN");
-    const gatewayOptions = {
-      collectLog: true,
-    } as const;
-    const unified = createUnified({
-      apiKey: openAiApiKey,
-    });
-
-    if (cloudflareGatewayToken) {
-      const gateway = createAiGateway({
-        accountId: DEFAULT_AI_GATEWAY_ACCOUNT_ID,
-        apiKey: cloudflareGatewayToken,
-        gateway: DEFAULT_AI_GATEWAY_ID,
-        options: gatewayOptions,
-      });
-
-      return gateway(unified(HARDCODED_AI_GATEWAY_MODEL_ID));
-    }
-
-    const gateway = createAiGateway({
-      binding: env.AI.gateway(DEFAULT_AI_GATEWAY_ID),
-      options: gatewayOptions,
-    });
-
-    return gateway(unified(HARDCODED_AI_GATEWAY_MODEL_ID));
-  }
-
   const workersai = createWorkersAI({
     binding: env.AI,
     gateway: {
