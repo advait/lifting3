@@ -19,13 +19,27 @@
           BlinkMacSystemFont,
           "Segoe UI",
           sans-serif;
+        --page-padding-block: max(1rem, env(safe-area-inset-top), env(safe-area-inset-bottom));
+        --page-padding-inline: max(1rem, env(safe-area-inset-left), env(safe-area-inset-right));
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        min-height: 100%;
       }
 
       body {
         margin: 0;
         min-height: 100vh;
-        display: grid;
-        place-items: center;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: auto;
+        padding: var(--page-padding-block) var(--page-padding-inline);
         background:
           radial-gradient(circle at top left, rgba(249, 115, 22, 0.22), transparent 28%),
           radial-gradient(circle at top right, rgba(250, 204, 21, 0.14), transparent 24%), #111317;
@@ -33,7 +47,7 @@
       }
 
       main {
-        width: min(28rem, calc(100vw - 2rem));
+        width: min(28rem, 100%);
         border: 1px solid rgba(255, 255, 255, 0.12);
         border-radius: 1.5rem;
         background: rgba(17, 19, 23, 0.88);
@@ -59,6 +73,17 @@
         margin: 0.75rem 0 0;
         color: rgba(247, 247, 248, 0.75);
         line-height: 1.6;
+      }
+
+      @media (max-width: 30rem) {
+        body {
+          align-items: flex-start;
+        }
+
+        main {
+          border-radius: 1.25rem;
+          padding: 1.25rem;
+        }
       }
     </style>
   </head>
