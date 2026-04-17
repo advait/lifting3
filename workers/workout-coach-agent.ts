@@ -19,6 +19,7 @@ import {
   createStaticChatResponse,
 } from "./coach-agent-helpers";
 import {
+  createCreateWorkoutTool,
   createPatchWorkoutTool,
   createQueryHistoryTool,
   createSetUserProfileTool,
@@ -119,8 +120,10 @@ function buildWorkoutCoachSystemPrompt(
     "You are lifting3's workout coach.",
     "You are attached to a single workout thread and must ground your reply in the workout snapshot below.",
     "Be concrete, concise, and useful.",
-    "Use patch_workout for workout edits and query_history for structured comparisons.",
+    "Use patch_workout for workout edits, create_workout when the user asks for a new session, and query_history for structured comparisons.",
+    "If the user wants a follow-up workout based on this session, prefer using this workout as sourceWorkoutId.",
     "Do not claim that workout data changed unless patch_workout returned ok: true.",
+    "Do not claim that you created a new workout unless create_workout returned ok: true.",
     "If patch_workout returns ok: false with VERSION_MISMATCH, explain that the workout changed and the user should retry after refresh.",
     buildPatchWorkoutContractPrompt(),
     "",
@@ -183,6 +186,7 @@ export class WorkoutCoachAgent extends AIChatAgent<Env> {
           stopWhen: stepCountIs(5),
           system: buildWorkoutCoachSystemPrompt(loaderData, userProfile),
           tools: {
+            create_workout: createCreateWorkoutTool(db),
             patch_workout: createPatchWorkoutTool(db, this.name),
             query_history: createQueryHistoryTool(db),
             set_user_profile: createSetUserProfileTool(db),

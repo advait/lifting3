@@ -223,13 +223,14 @@ Keep the tool surface exactly as narrow as the spec wants:
 
 Recommended ownership:
 
-- `create_workout` -> `GeneralCoachAgent`
+- `create_workout` -> either agent
 - `patch_workout` -> both agents
 - `query_history` -> either agent, backed by D1 reads
 
 Typical usage:
 
 - `WorkoutCoachAgent` usually patches its own workout
+- `WorkoutCoachAgent` may also create a follow-up workout, often adapted from its current workout context
 - `GeneralCoachAgent` may patch any existing workout after loading the latest snapshot
 - cross-workout correction requests from `GeneralCoachAgent` should still decompose into one guarded patch per target workout
 - all persisted mutations, including lightweight set-field updates, should emit the same live invalidation flow

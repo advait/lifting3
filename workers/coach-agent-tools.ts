@@ -52,7 +52,7 @@ export function createCreateWorkoutTool(db: AppDatabase) {
 
   return tool({
     description:
-      "Create a new planned workout. Use this from the general coach when the user asks for a new session or a day adapted from a prior workout. Use historical workouts to pre-fill weights, reps, and sets based on estimated strength.",
+      "Create a new planned workout. Use this when the user asks for a new session or a day adapted from a prior workout. Use historical workouts to pre-fill weights, reps, and sets based on estimated strength.",
     execute: async (input) => workoutToolService.createWorkout(input),
     inputSchema: createWorkoutToolInputSchema,
   });

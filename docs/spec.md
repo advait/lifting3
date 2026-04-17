@@ -428,7 +428,7 @@ In MVP, the canonical workout conversation is the `WorkoutCoachAgent` instance w
 - the general coach screen opens `GeneralCoachAgent/default`
 - `GeneralCoachAgent` may patch any workout, including historical corrections, through the same guarded mutation service layer as the workout-specific agent
 - `WorkoutCoachAgent` remains the canonical in-context conversation for one workout, not the exclusive mutation owner
-- the general coaching thread can create workouts, discuss history, and compare plans across workouts
+- both coach threads can create workouts through the same guarded service layer, while the workout-scoped coach stays grounded in its current workout context
 - workout history and analytics live in D1, not in agent message history
 
 ## 8.4 Why This Model
