@@ -249,13 +249,13 @@ function WorkoutsSidebarSection({
               return (
                 <Link
                   className={cn(
-                    "rounded-xl px-2 py-2 transition-colors",
+                    "block min-w-0 rounded-xl px-2 py-2 transition-colors",
                     isActive ? "bg-background/80" : "hover:bg-background/60",
                   )}
                   key={workout.id}
                   to={workoutPath}
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-start justify-between gap-2">
                     <p className="min-w-0 flex-1 truncate font-medium text-sm">{workout.title}</p>
                     <WorkoutStatusBadge className="shrink-0" size="sm" status={workout.status} />
                   </div>
