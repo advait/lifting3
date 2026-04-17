@@ -135,6 +135,22 @@ const skipRemainingSetsOpSchema = z.strictObject({
   type: z.literal("skip_remaining_sets"),
 });
 
+const updateWorkoutMetadataOpSchema = z
+  .strictObject({
+    date: isoDateSchema.optional(),
+    title: nonEmptyStringSchema.optional(),
+    type: z.literal("update_workout_metadata"),
+  })
+  .superRefine((metadata, context) => {
+    if (metadata.date === undefined && metadata.title === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide at least one metadata field to update.",
+        path: [],
+      });
+    }
+  });
+
 const addNoteOpSchema = z
   .strictObject({
     exerciseId: nonEmptyStringSchema.optional(),
@@ -161,6 +177,7 @@ export const patchWorkoutToolOpSchema = z.discriminatedUnion("type", [
   updateExerciseTargetsOpSchema,
   addSetOpSchema,
   skipRemainingSetsOpSchema,
+  updateWorkoutMetadataOpSchema,
   addNoteOpSchema,
 ]);
 

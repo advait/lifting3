@@ -424,6 +424,52 @@ describe("createWorkoutAgentToolService.patchWorkout", () => {
     expect(detail.workout.version).toBe(2);
     expect(detail.workout.coachNotes).toBeNull();
   });
+
+  it("updates workout title and date through the patch tool", async () => {
+    await insertSeedWorkout({
+      date: "2026-04-16T00:00:00.000Z",
+      exercises: [
+        {
+          exerciseSchemaId: "machine_row",
+          id: "exercise-metadata-row",
+          sets: [{ id: "metadata-row-set-1", planned: { reps: 12, rpe: 8, weightLbs: 110 } }],
+          status: "planned",
+        },
+      ],
+      id: "workout-metadata",
+      status: "planned",
+      title: "Upper A",
+      version: 5,
+    });
+
+    const result = await workoutToolService.patchWorkout({
+      expectedVersion: 5,
+      ops: [
+        {
+          date: "2026-04-18",
+          title: "Upper A - Hotel Gym",
+          type: "update_workout_metadata",
+        },
+      ],
+      reason: "Reschedule for travel and clarify the session title.",
+      workoutId: "workout-metadata",
+    });
+
+    expect(result).toMatchObject({
+      invalidate: ["home", "workouts:list", "analytics", "workout:workout-metadata"],
+      ok: true,
+      version: 6,
+      workoutId: "workout-metadata",
+    });
+
+    const detail = await workoutRouteService.loadWorkoutDetail({ workoutId: "workout-metadata" });
+
+    expect(detail.workout).toMatchObject({
+      date: "2026-04-18T00:00:00.000Z",
+      title: "Upper A - Hotel Gym",
+      version: 6,
+    });
+  });
 });
 
 describe("createWorkoutRouteService.mutateWorkout", () => {

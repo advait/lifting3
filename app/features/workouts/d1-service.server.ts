@@ -243,6 +243,11 @@ type MutationOperation =
       setUpdates: ToolPatchByType<"update_exercise_targets">["setUpdates"];
     }
   | {
+      date?: ToolPatchByType<"update_workout_metadata">["date"];
+      kind: "update_workout_metadata";
+      title?: ToolPatchByType<"update_workout_metadata">["title"];
+    }
+  | {
       kind: "update_workout_notes";
       notes: WorkoutNotesPatch;
     };
@@ -910,6 +915,12 @@ function normalizePatchOperation(op: PatchWorkoutToolOp): MutationOperation {
         kind: "skip_remaining_sets",
         note: op.note,
       };
+    case "update_workout_metadata":
+      return {
+        date: op.date,
+        kind: "update_workout_metadata",
+        title: op.title,
+      };
     case "add_note":
       return {
         exerciseId: op.exerciseId,
@@ -1121,6 +1132,27 @@ function applyMutationOperation(
       return {
         invalidateExerciseSchemaIds: [],
         summary: "Updated workout notes.",
+      };
+    }
+    case "update_workout_metadata": {
+      const updatedFields: string[] = [];
+
+      if (operation.title !== undefined) {
+        record.workout.title = operation.title;
+        updatedFields.push("title");
+      }
+
+      if (operation.date !== undefined) {
+        record.workout.date = buildWorkoutDateTimestamp(operation.date);
+        updatedFields.push("date");
+      }
+
+      return {
+        invalidateExerciseSchemaIds: [],
+        summary:
+          updatedFields.length === 2
+            ? "Updated workout title and date."
+            : `Updated workout ${updatedFields[0]}.`,
       };
     }
     case "update_exercise_notes": {

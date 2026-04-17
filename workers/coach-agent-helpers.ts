@@ -22,6 +22,7 @@ const PATCH_WORKOUT_ALLOWED_OPERATION_TYPES = [
   "update_exercise_targets",
   "add_set",
   "skip_remaining_sets",
+  "update_workout_metadata",
   "add_note",
 ] as const;
 const PATCH_WORKOUT_EXAMPLE_PAYLOAD = JSON.stringify({
@@ -49,6 +50,18 @@ const PATCH_WORKOUT_EXAMPLE_PAYLOAD = JSON.stringify({
     },
   ],
   reason: "Adjust row targets upward based on recent performance.",
+  workoutId: "workout-id",
+});
+const PATCH_WORKOUT_METADATA_EXAMPLE_PAYLOAD = JSON.stringify({
+  expectedVersion: 3,
+  ops: [
+    {
+      date: "2026-04-18",
+      title: "Upper A - Travel Hotel Gym",
+      type: "update_workout_metadata",
+    },
+  ],
+  reason: "Rename and reschedule the workout.",
   workoutId: "workout-id",
 });
 const COACH_ERROR_PREFIX_PATTERN = /^(?:AI_APICallError|Error|InferenceUpstreamError):\s*/i;
@@ -343,8 +356,10 @@ export function buildPatchWorkoutContractPrompt() {
     "For patch_workout, ops[].type must be exactly one of:",
     `- ${PATCH_WORKOUT_ALLOWED_OPERATION_TYPES.join(", ")}`,
     'For planned set retargeting, always use type "update_exercise_targets". Do not invent aliases like "update_sets" or "exercise_update_sets".',
-    "Canonical patch_workout payload example:",
+    'Use type "update_workout_metadata" with title and/or date (YYYY-MM-DD) when the user wants to rename or reschedule a workout.',
+    "Canonical patch_workout payload examples:",
     PATCH_WORKOUT_EXAMPLE_PAYLOAD,
+    PATCH_WORKOUT_METADATA_EXAMPLE_PAYLOAD,
     "Replace workoutId, expectedVersion, exerciseId, and setId values with the real ids from the workout context.",
   ].join("\n");
 }
@@ -354,6 +369,7 @@ export function getPatchWorkoutToolDescription() {
     "Apply one guarded workout patch using the current expected version.",
     `Allowed ops[].type values: ${PATCH_WORKOUT_ALLOWED_OPERATION_TYPES.join(", ")}.`,
     'For planned set retargeting, always use "update_exercise_targets". Never use aliases like "update_sets" or "exercise_update_sets".',
-    `Example payload: ${PATCH_WORKOUT_EXAMPLE_PAYLOAD}`,
+    'Use "update_workout_metadata" with title and/or date (YYYY-MM-DD) to rename or reschedule a workout.',
+    `Example payloads: ${PATCH_WORKOUT_EXAMPLE_PAYLOAD} ${PATCH_WORKOUT_METADATA_EXAMPLE_PAYLOAD}`,
   ].join(" ");
 }
