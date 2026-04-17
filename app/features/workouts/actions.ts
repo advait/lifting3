@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { appInvalidateKeySchema, workoutEventTypeSchema } from "../app-events/schema.ts";
-import { SET_KINDS } from "./interchange.ts";
+import { SET_KINDS } from "./file.ts";
 
 export const WORKOUT_ROUTE_ACTIONS = [
   "delete_workout",

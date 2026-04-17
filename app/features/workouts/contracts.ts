@@ -6,7 +6,7 @@ import {
   EXERCISE_MOVEMENT_PATTERNS,
   EXERCISE_SCHEMA_IDS,
 } from "../exercises/schema.ts";
-import { SET_KINDS, WORKOUT_STATUSES } from "./interchange.ts";
+import { SET_KINDS, WORKOUT_STATUSES } from "./file.ts";
 
 const WORKOUT_SOURCES = ["manual", "imported", "agent"] as const;
 const EXERCISE_STATUSES = ["planned", "active", "completed", "skipped", "replaced"] as const;

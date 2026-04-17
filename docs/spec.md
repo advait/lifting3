@@ -558,13 +558,13 @@ These support fast reads for:
 - estimated 1RM
 - frequency / last performed
 
-## 10. Workout Interchange, Import, and Export
+## 10. Workout JSON, Import, and Export
 
-`lifting3` should define a versioned workout JSON interchange format backed by a shared Zod schema.
+`lifting3` should define a versioned workout JSON format backed by a shared Zod schema.
 
-This interchange format is the only supported import/export boundary in MVP.
+This JSON format is the only supported import/export boundary in MVP.
 
-## 10.1 JSON Interchange Format
+## 10.1 Workout JSON Format
 
 Requirements:
 
@@ -573,7 +573,7 @@ Requirements:
 - versioned so the format can evolve safely
 - includes canonical `exercise_schema_id` values rather than unresolved freeform exercise names
 
-The interchange payload should include at minimum:
+The JSON payload should include at minimum:
 
 - workout metadata
 - top-level `user_notes`
@@ -589,7 +589,7 @@ Locked enum decisions for MVP:
 - set confirmation: `confirmed_at | null`
 - a `completed` workout may still contain unconfirmed sets
 
-The interchange format should be stable enough to support:
+The JSON format should be stable enough to support:
 
 - local export from `lifting3`
 - local import into `lifting3`
@@ -597,7 +597,7 @@ The interchange format should be stable enough to support:
 
 ## 10.2 Export
 
-`lifting3` should support local export of workouts into the interchange JSON format.
+`lifting3` should support local export of workouts into the workout JSON format.
 
 Requirements:
 
@@ -613,7 +613,7 @@ Initial export scope:
 
 ## 10.3 Import
 
-`lifting3` should support local import of workouts from the interchange JSON format.
+`lifting3` should support local import of workouts from the workout JSON format.
 
 Requirements:
 
@@ -621,7 +621,7 @@ Requirements:
 - import consumes a directory of workout JSON files
 - every imported file must pass Zod validation before persistence
 - imported workouts preserve order, notes, and canonical exercise schema IDs
-- imported workouts preserve the supported workout `status` from the interchange file
+- imported workouts preserve the supported workout `status` from the JSON file
 - imported `completed` workouts may retain unconfirmed sets
 
 MVP should not implement direct import from legacy TOML files in application code.

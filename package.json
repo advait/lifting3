@@ -14,12 +14,13 @@
     "deploy": "pnpm build && wrangler deploy",
     "dev": "vp dev",
     "fix": "pnpm cf-typegen && react-router typegen && vp check --fix",
+    "import:workout-json": "node --experimental-strip-types ./scripts/import-workout-json.ts",
     "postinstall": "pnpm cf-typegen",
     "preview": "pnpm build && vp preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "pnpm cf-typegen && react-router typegen && tsc -b",
-    "validate:workout-interchange": "node --experimental-strip-types ./scripts/validate-workout-interchange.ts",
+    "validate:workout-json": "node --experimental-strip-types ./scripts/validate-workout-json.ts",
     "verify:lifting2-exercises": "node --experimental-strip-types ./scripts/verify-lifting2-exercise-compat.ts"
   },
   "dependencies": {

@@ -7,7 +7,7 @@ import {
   createWorkoutAgentToolService,
   createWorkoutRouteService,
 } from "../../app/features/workouts/d1-service.server";
-import type { SetKind, WorkoutStatus } from "../../app/features/workouts/interchange";
+import type { SetKind, WorkoutStatus } from "../../app/features/workouts/file";
 import * as dbSchema from "../../app/lib/.server/db/schema";
 
 const db = drizzle(env.DB, { schema: dbSchema });

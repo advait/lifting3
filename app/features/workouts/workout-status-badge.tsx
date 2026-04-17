@@ -1,7 +1,7 @@
 import { Badge } from "~/components/ui/badge";
 import { cn } from "~/lib/utils";
 
-import type { WorkoutStatus } from "./interchange.ts";
+import type { WorkoutStatus } from "./file.ts";
 
 const workoutStatusLabelMap = {
   active: "Active",

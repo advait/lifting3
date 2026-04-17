@@ -2,8 +2,8 @@ import { z } from "zod";
 
 import { EXERCISE_SCHEMA_IDS } from "../exercises/schema.ts";
 
-export const WORKOUT_INTERCHANGE_FORMAT = "lifting3.workout" as const;
-export const WORKOUT_INTERCHANGE_VERSION = 2 as const;
+export const WORKOUT_FILE_FORMAT = "lifting3.workout" as const;
+export const WORKOUT_FILE_VERSION = 2 as const;
 
 export const WORKOUT_STATUSES = ["planned", "active", "completed", "canceled"] as const;
 
@@ -46,8 +46,8 @@ const halfStepRpeSchema = z
     message: "RPE must be in 0.5 increments.",
   });
 
-/** Defines the portable per-set shape used for import, export, and internal exchange. */
-export const workoutInterchangeSetSchema = z
+/** Defines the portable per-set shape used for workout JSON import and export. */
+export const workoutFileSetSchema = z
   .object({
     id: z.string().trim().min(1),
     confirmed_at: isoDateTimeSchema.nullable().optional(),
@@ -71,18 +71,18 @@ export const workoutInterchangeSetSchema = z
     }
   });
 
-/** Preserves exercise order, notes, and canonical exercise ids at the interchange boundary. */
-export const workoutInterchangeExerciseSchema = z.object({
+/** Preserves exercise order, notes, and canonical exercise ids in workout JSON files. */
+export const workoutFileExerciseSchema = z.object({
   id: z.string().trim().min(1),
   exercise_schema_id: exerciseSchemaIdSchema,
   source_exercise_name: nullableTrimmedStringSchema.optional(),
   user_notes: nullableTrimmedStringSchema.optional(),
   coach_notes: nullableTrimmedStringSchema.optional(),
-  sets: z.array(workoutInterchangeSetSchema),
+  sets: z.array(workoutFileSetSchema),
 });
 
 /** Represents one whole workout file payload apart from format/version wrapper metadata. */
-export const workoutInterchangeWorkoutSchema = z.object({
+export const workoutFileWorkoutSchema = z.object({
   id: z.string().trim().min(1),
   title: z.string().trim().min(1),
   status: z.enum(WORKOUT_STATUSES),
@@ -92,34 +92,34 @@ export const workoutInterchangeWorkoutSchema = z.object({
   user_notes: nullableTrimmedStringSchema.optional(),
   coach_notes: nullableTrimmedStringSchema.optional(),
   source: workoutSourceSchema,
-  exercises: z.array(workoutInterchangeExerciseSchema),
+  exercises: z.array(workoutFileExerciseSchema),
 });
 
-/** Serves as the stable import/export contract for workouts across tooling and environments. */
-export const workoutInterchangeFileSchema = z.object({
-  format: z.literal(WORKOUT_INTERCHANGE_FORMAT),
-  version: z.literal(WORKOUT_INTERCHANGE_VERSION),
+/** Serves as the stable JSON contract for workout import and export. */
+export const workoutFileSchema = z.object({
+  format: z.literal(WORKOUT_FILE_FORMAT),
+  version: z.literal(WORKOUT_FILE_VERSION),
   exported_at: isoDateTimeSchema.optional(),
-  workout: workoutInterchangeWorkoutSchema,
+  workout: workoutFileWorkoutSchema,
 });
 
-export type WorkoutInterchangeSet = z.infer<typeof workoutInterchangeSetSchema>;
-export type WorkoutInterchangeExercise = z.infer<typeof workoutInterchangeExerciseSchema>;
-export type WorkoutInterchangeWorkout = z.infer<typeof workoutInterchangeWorkoutSchema>;
-export type WorkoutInterchangeFile = z.infer<typeof workoutInterchangeFileSchema>;
+export type WorkoutFileSet = z.infer<typeof workoutFileSetSchema>;
+export type WorkoutFileExercise = z.infer<typeof workoutFileExerciseSchema>;
+export type WorkoutFileWorkout = z.infer<typeof workoutFileWorkoutSchema>;
+export type WorkoutFile = z.infer<typeof workoutFileSchema>;
 
-export function parseWorkoutInterchangeFile(value: unknown) {
-  return workoutInterchangeFileSchema.parse(value);
+export function parseWorkoutFile(value: unknown) {
+  return workoutFileSchema.parse(value);
 }
 
-export function safeParseWorkoutInterchangeFile(value: unknown) {
-  return workoutInterchangeFileSchema.safeParse(value);
+export function safeParseWorkoutFile(value: unknown) {
+  return workoutFileSchema.safeParse(value);
 }
 
-export function parseWorkoutInterchangeJson(json: string) {
-  return parseWorkoutInterchangeFile(JSON.parse(json));
+export function parseWorkoutJson(json: string) {
+  return parseWorkoutFile(JSON.parse(json));
 }
 
-export function stringifyWorkoutInterchangeFile(file: WorkoutInterchangeFile) {
+export function stringifyWorkoutFile(file: WorkoutFile) {
   return `${JSON.stringify(file, null, 2)}\n`;
 }

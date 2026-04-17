@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { EXERCISE_SCHEMA_IDS } from "../exercises/schema.ts";
-import { SET_KINDS, WORKOUT_STATUSES } from "./interchange.ts";
+import { SET_KINDS, WORKOUT_STATUSES } from "./file.ts";
 
 const HISTORY_METRICS = [
   "top_set",

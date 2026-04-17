@@ -3,7 +3,7 @@ import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-or
 
 import { APP_SETTING_KEYS } from "../../../features/settings/contracts.ts";
 import { EXERCISE_SCHEMA_IDS } from "../../../features/exercises/schema.ts";
-import { SET_KINDS, WORKOUT_STATUSES } from "../../../features/workouts/interchange.ts";
+import { SET_KINDS, WORKOUT_STATUSES } from "../../../features/workouts/file.ts";
 
 const WORKOUT_SOURCES = ["manual", "imported", "agent"] as const;
 const EXERCISE_STATUSES = ["planned", "active", "completed", "skipped", "replaced"] as const;
@@ -27,6 +27,9 @@ export const workouts = sqliteTable(
     updatedAt: text("updated_at").notNull(),
     userNotes: text("user_notes"),
     coachNotes: text("coach_notes"),
+    importSourceSystem: text("import_source_system"),
+    importSourceWorkoutId: text("import_source_workout_id"),
+    importSourceMetadataJson: text("import_source_metadata_json"),
   },
   (table) => [
     index("workouts_date_idx").on(table.date),
@@ -64,6 +67,7 @@ export const workoutExercises = sqliteTable(
       enum: EXERCISE_SCHEMA_IDS,
     }).notNull(),
     status: text("status", { enum: EXERCISE_STATUSES }).notNull(),
+    sourceExerciseName: text("source_exercise_name"),
     userNotes: text("user_notes"),
     coachNotes: text("coach_notes"),
   },
