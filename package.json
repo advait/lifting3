@@ -5,6 +5,7 @@
   "scripts": {
     "build": "vp build",
     "cf-typegen": "wrangler types",
+    "ci": "pnpm check",
     "check": "pnpm cf-typegen && react-router typegen && vp check",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply lifting3 --local",
