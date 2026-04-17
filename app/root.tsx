@@ -100,7 +100,7 @@ export const links: Route.LinksFunction = () => [
   { href: "/logo.svg", rel: "icon", sizes: "any", type: "image/svg+xml" },
   { href: "/favicon.ico", rel: "icon", type: "image/x-icon" },
   { href: "/apple-touch-icon.png", rel: "apple-touch-icon", sizes: "180x180" },
-  { href: "/manifest.webmanifest", rel: "manifest" },
+  { crossOrigin: "use-credentials", href: "/manifest.webmanifest", rel: "manifest" },
 ];
 
 export const meta: Route.MetaFunction = ({ location, matches }) =>
