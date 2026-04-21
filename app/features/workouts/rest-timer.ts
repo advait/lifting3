@@ -1,6 +1,6 @@
 import type { WorkoutSet } from "./contracts.ts";
 
-export const DEFAULT_EXERCISE_REST_SECONDS = 120;
+export const DEFAULT_EXERCISE_REST_SECONDS = 90;
 export const REST_TIMER_EXTENSION_SECONDS = 30;
 const DIGITS_ONLY_PATTERN = /^\d+$/;
 

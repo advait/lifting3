@@ -30,7 +30,7 @@ const BASE_WORKOUT_DETAIL = {
       },
       movementPattern: "horizontal_push",
       orderIndex: 0,
-      restSeconds: 120,
+      restSeconds: 90,
       sets: [
         {
           actual: {

@@ -58,7 +58,7 @@ describe("ExerciseRestTimer", () => {
     vi.useRealTimers();
   });
 
-  function renderTimer(sets: readonly WorkoutSet[], restSeconds = 120) {
+  function renderTimer(sets: readonly WorkoutSet[], restSeconds = 90) {
     act(() => {
       root.render(<ExerciseRestTimer restSeconds={restSeconds} sets={sets} />);
     });
@@ -99,7 +99,7 @@ describe("ExerciseRestTimer", () => {
 
     expect(getStatus()).toBe("idle");
     expect(getTone()).toBe("idle");
-    expect(getValue()).toBe("2:00");
+    expect(getValue()).toBe("1:30");
     expect(container.querySelector("[aria-label='Start rest timer']")).not.toBeNull();
     expect(container.querySelector("[aria-label='Add 30 seconds']")).toBeNull();
     expect(container.querySelector("[aria-label='Add 30 seconds']")).toBeNull();
@@ -108,26 +108,26 @@ describe("ExerciseRestTimer", () => {
       vi.advanceTimersByTime(5_000);
     });
 
-    expect(getValue()).toBe("2:00");
+    expect(getValue()).toBe("1:30");
   });
 
   it("starts on a newly confirmed set and restarts when the next set is confirmed", () => {
     renderTimer([createSet("set-1", null), createSet("set-2", null)]);
 
     expect(getStatus()).toBe("idle");
-    expect(getValue()).toBe("2:00");
+    expect(getValue()).toBe("1:30");
 
     renderTimer([createSet("set-1", "2026-04-21T10:00:00.000Z"), createSet("set-2", null)]);
 
     expect(getStatus()).toBe("running");
-    expect(getValue()).toBe("2:00");
+    expect(getValue()).toBe("1:30");
     expect(container.querySelector("[aria-label='Add 30 seconds']")).not.toBeNull();
 
     act(() => {
       vi.advanceTimersByTime(31_000);
     });
 
-    expect(getValue()).toBe("1:29");
+    expect(getValue()).toBe("0:59");
 
     renderTimer([
       createSet("set-1", "2026-04-21T10:00:00.000Z"),
@@ -135,7 +135,7 @@ describe("ExerciseRestTimer", () => {
     ]);
 
     expect(getStatus()).toBe("running");
-    expect(getValue()).toBe("2:00");
+    expect(getValue()).toBe("1:30");
   });
 
   it("supports pause, resume, and stop", () => {
@@ -146,7 +146,7 @@ describe("ExerciseRestTimer", () => {
       vi.advanceTimersByTime(5_000);
     });
 
-    expect(getValue()).toBe("1:55");
+    expect(getValue()).toBe("1:25");
 
     click(container.querySelector("[aria-label='Pause rest timer']"));
 
@@ -157,7 +157,7 @@ describe("ExerciseRestTimer", () => {
       vi.advanceTimersByTime(10_000);
     });
 
-    expect(getValue()).toBe("1:55");
+    expect(getValue()).toBe("1:25");
 
     click(container.querySelector("[aria-label='Resume rest timer']"));
 
@@ -168,19 +168,19 @@ describe("ExerciseRestTimer", () => {
       vi.advanceTimersByTime(6_000);
     });
 
-    expect(getValue()).toBe("1:49");
+    expect(getValue()).toBe("1:19");
 
     click(container.querySelector("[aria-label='Stop rest timer']"));
 
     expect(getStatus()).toBe("idle");
     expect(getTone()).toBe("idle");
-    expect(getValue()).toBe("2:00");
+    expect(getValue()).toBe("1:30");
     expect(container.querySelector("[aria-label='Start rest timer']")).not.toBeNull();
 
     click(container.querySelector("[aria-label='Start rest timer']"));
 
     expect(getStatus()).toBe("running");
-    expect(getValue()).toBe("2:00");
+    expect(getValue()).toBe("1:30");
     expect(container.querySelector("[aria-label='Start rest timer']")).not.toBeNull();
   });
 
@@ -189,7 +189,7 @@ describe("ExerciseRestTimer", () => {
     renderTimer([createSet("set-1", "2026-04-21T10:00:00.000Z")]);
 
     act(() => {
-      vi.advanceTimersByTime(121_000);
+      vi.advanceTimersByTime(91_000);
     });
 
     expect(getTone()).toBe("overtime");
