@@ -14,12 +14,7 @@ import {
 import { EXERCISE_SCHEMA_IDS } from "../app/features/exercises/schema.ts";
 import { APP_SETTING_KEYS } from "../app/features/settings/contracts.ts";
 import { SET_KINDS, WORKOUT_STATUSES } from "../app/features/workouts/file.ts";
-import {
-  getD1NamespaceLabel,
-  getD1TableColumnNames,
-  parseD1Namespace,
-  runWranglerJsonQuery,
-} from "./d1-cli.ts";
+import { getD1NamespaceLabel, parseD1Namespace, runWranglerJsonQuery } from "./d1-cli.ts";
 
 const WORKOUT_SOURCES = ["manual", "imported", "agent"] as const;
 const EXERCISE_STATUSES = ["planned", "active", "completed", "skipped", "replaced"] as const;
@@ -94,37 +89,6 @@ function loadRows<T>(schema: z.ZodType<T>, rows: readonly Record<string, unknown
   return z.array(schema).parse(rows);
 }
 
-function buildExerciseSetExportQuery(namespace: ReturnType<typeof parseD1Namespace>) {
-  const columnNames = new Set(getD1TableColumnNames(namespace, "exercise_sets"));
-
-  if (columnNames.has("reps")) {
-    return [
-      "SELECT id, exercise_id AS exerciseId, order_index AS orderIndex, designation,",
-      "  reps AS reps, planned_weight_lbs AS plannedWeightLbs, planned_rpe AS plannedRpe,",
-      "  actual_weight_lbs AS actualWeightLbs, actual_rpe AS actualRpe,",
-      "  confirmed_at AS confirmedAt",
-      "FROM exercise_sets",
-      "ORDER BY exercise_id, order_index, id;",
-    ].join("\n");
-  }
-
-  if (columnNames.has("planned_reps") && columnNames.has("actual_reps")) {
-    return [
-      "SELECT id, exercise_id AS exerciseId, order_index AS orderIndex, designation,",
-      "  COALESCE(actual_reps, planned_reps) AS reps,",
-      "  planned_weight_lbs AS plannedWeightLbs, planned_rpe AS plannedRpe,",
-      "  actual_weight_lbs AS actualWeightLbs, actual_rpe AS actualRpe,",
-      "  confirmed_at AS confirmedAt",
-      "FROM exercise_sets",
-      "ORDER BY exercise_id, order_index, id;",
-    ].join("\n");
-  }
-
-  throw new Error(
-    'Unsupported exercise_sets schema. Expected either "reps" or legacy "planned_reps"/"actual_reps" columns.',
-  );
-}
-
 function loadExportRows(namespace: ReturnType<typeof parseD1Namespace>): AppStateExportRows {
   const settings = loadRows(
     appSettingRowSchema,
@@ -170,7 +134,17 @@ function loadExportRows(namespace: ReturnType<typeof parseD1Namespace>): AppStat
   );
   const exerciseSetRows = loadRows(
     exerciseSetRowSchema,
-    runWranglerJsonQuery(namespace, buildExerciseSetExportQuery(namespace)),
+    runWranglerJsonQuery(
+      namespace,
+      [
+        "SELECT id, exercise_id AS exerciseId, order_index AS orderIndex, designation,",
+        "  reps AS reps, planned_weight_lbs AS plannedWeightLbs, planned_rpe AS plannedRpe,",
+        "  actual_weight_lbs AS actualWeightLbs, actual_rpe AS actualRpe,",
+        "  confirmed_at AS confirmedAt",
+        "FROM exercise_sets",
+        "ORDER BY exercise_id, order_index, id;",
+      ].join("\n"),
+    ),
   );
 
   return {
