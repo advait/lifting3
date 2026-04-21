@@ -117,7 +117,14 @@ type QueryHistoryToolResult =
       metric: QueryHistoryToolInput["metric"];
       ok: true;
       result: {
+        previewSessions: Array<{
+          date: string;
+          title: string;
+          workoutId: string;
+          workoutStatus: WorkoutDetailWorkout["status"];
+        }>;
         sampleSize: number;
+        sessionCount: number;
         sessions: Array<{
           date: string;
           title: string;
@@ -2191,12 +2198,20 @@ function evaluateHistoryWindow(
     return true;
   });
   const { matchedSets, sessions } = summarizeHistorySessions(windowedRecords, input.filters);
+  const previewSessions = sessions.slice(0, 3).map((session) => ({
+    date: session.date,
+    title: session.title,
+    workoutId: session.workoutId,
+    workoutStatus: session.workoutStatus,
+  }));
 
   switch (input.metric) {
     case "frequency":
       return {
         details: undefined,
+        previewSessions,
         sampleSize: sessions.length,
+        sessionCount: sessions.length,
         sessions: sessions.map((session) => ({
           date: session.date,
           title: session.title,
@@ -2210,7 +2225,9 @@ function evaluateHistoryWindow(
     case "volume":
       return {
         details: undefined,
+        previewSessions,
         sampleSize: sessions.length,
+        sessionCount: sessions.length,
         sessions: sessions
           .map((session) => ({
             date: session.date,
@@ -2232,7 +2249,9 @@ function evaluateHistoryWindow(
 
       return {
         details: undefined,
+        previewSessions,
         sampleSize: matchedSets.length,
+        sessionCount: sessions.length,
         sessions: sessions
           .map((session) => ({
             date: session.date,
@@ -2255,7 +2274,9 @@ function evaluateHistoryWindow(
 
       return {
         details: undefined,
+        previewSessions,
         sampleSize: matchedSets.length,
+        sessionCount: sessions.length,
         sessions: sessions
           .map((session) => ({
             date: session.date,
@@ -2281,7 +2302,9 @@ function evaluateHistoryWindow(
         details: {
           loadLbs: input.filters.loadLbs,
         },
+        previewSessions,
         sampleSize: matchedSets.length,
+        sessionCount: sessions.length,
         sessions: sessions
           .map((session) => ({
             date: session.date,
@@ -2328,7 +2351,9 @@ function evaluateHistoryWindow(
                 setId: topSet.set.id,
                 workoutId: topSet.workout.id,
               },
+        previewSessions,
         sampleSize: matchedSets.length,
+        sessionCount: sessions.length,
         sessions: sessions
           .map((session) => ({
             date: session.date,
@@ -2358,7 +2383,9 @@ function evaluateHistoryWindow(
                 metric: "volume",
                 workoutId: bestSession.workoutId,
               },
+        previewSessions,
         sampleSize: sessions.length,
+        sessionCount: sessions.length,
         sessions: sessions
           .map((session) => ({
             date: session.date,
@@ -2535,7 +2562,9 @@ export function createWorkoutAgentToolService(db: AppDatabase) {
         metric: input.metric,
         ok: true,
         result: {
+          previewSessions: baseWindowResult.previewSessions,
           sampleSize: baseWindowResult.sampleSize,
+          sessionCount: baseWindowResult.sessionCount,
           sessions: baseWindowResult.sessions,
           unit: baseWindowResult.unit,
           value: baseWindowResult.value,

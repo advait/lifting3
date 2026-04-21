@@ -55,9 +55,6 @@ const SHEET_MAX_UPWARD_DRAG_PX = 160;
 const SHEET_MAX_DOWNWARD_DRAG_PX = 160;
 const TOOL_SUMMARY_LIMIT = 3;
 const COACH_AGENT_RUNTIME_NAME = "CoachAgent";
-const historyValueFormatter = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 1,
-});
 
 type CoachMessagePart = UIMessage["parts"][number];
 
@@ -224,45 +221,8 @@ function isToolRunningState(state: ReturnType<typeof getToolPartState>) {
   return state === "loading" || state === "streaming";
 }
 
-function formatHistoryValue(value: unknown, unit: unknown) {
-  if (typeof value === "string") {
-    return value;
-  }
-
-  if (typeof value !== "number") {
-    return "No result";
-  }
-
-  const formattedValue = historyValueFormatter.format(value);
-
-  switch (unit) {
-    case "count":
-      return formattedValue;
-    case "e1rm_lbs":
-      return `${formattedValue} lb e1RM`;
-    case "load_lbs":
-      return `${formattedValue} lb`;
-    case "reps":
-      return `${formattedValue} reps`;
-    case "volume_lbs":
-      return `${formattedValue} lb total`;
-    default:
-      return formattedValue;
-  }
-}
-
 function formatToolJson(value: unknown) {
   return JSON.stringify(value, null, 2);
-}
-
-function formatCompareDelta(value: unknown) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return null;
-  }
-
-  const prefix = value > 0 ? "+" : "";
-
-  return `${prefix}${historyValueFormatter.format(value)}`;
 }
 
 function formatHistoryMetric(metric: unknown) {
@@ -467,46 +427,41 @@ function renderQueryHistoryToolBody(
   }
 
   if (output.ok === true && isRecord(output.result)) {
-    const metric = formatHistoryMetric(output.metric);
-    const value = formatHistoryValue(output.result.value, output.result.unit);
-    const sampleSize =
-      typeof output.result.sampleSize === "number" ? output.result.sampleSize : null;
-    const delta = isRecord(output.compare) ? formatCompareDelta(output.compare.delta) : null;
-    const sessions = Array.isArray(output.result.sessions)
-      ? output.result.sessions
-          .flatMap((session) => {
-            if (
-              !isRecord(session) ||
-              typeof session.date !== "string" ||
-              typeof session.title !== "string"
-            ) {
-              return [];
-            }
+    const sessionCount =
+      typeof output.result.sessionCount === "number"
+        ? output.result.sessionCount
+        : Array.isArray(output.result.sessions)
+          ? output.result.sessions.length
+          : null;
+    const sessionsSource = Array.isArray(output.result.previewSessions)
+      ? output.result.previewSessions
+      : Array.isArray(output.result.sessions)
+        ? output.result.sessions
+        : [];
+    const sessions = sessionsSource
+      .flatMap((session) => {
+        if (
+          !isRecord(session) ||
+          typeof session.date !== "string" ||
+          typeof session.title !== "string"
+        ) {
+          return [];
+        }
 
-            return [
-              {
-                date: session.date,
-                title: session.title,
-                value:
-                  typeof session.value === "number"
-                    ? historyValueFormatter.format(session.value)
-                    : null,
-              },
-            ];
-          })
-          .slice(0, TOOL_SUMMARY_LIMIT)
-      : [];
+        return [
+          {
+            date: session.date,
+            title: session.title,
+          },
+        ];
+      })
+      .slice(0, TOOL_SUMMARY_LIMIT);
 
     return (
       <div className="grid gap-2">
-        <div className="grid gap-0.5">
-          <p className="text-muted-foreground text-xs uppercase tracking-[0.12em]">{metric}</p>
-          <p className="font-medium text-base text-foreground">{value}</p>
-        </div>
-        {sampleSize == null ? null : (
-          <p className="text-muted-foreground text-xs">
-            {sampleSize} matching session{sampleSize === 1 ? "" : "s"}
-            {delta ? ` • ${delta} vs comparison window` : ""}
+        {sessionCount == null ? null : (
+          <p className="font-medium text-foreground text-sm">
+            {sessionCount} matching session{sessionCount === 1 ? "" : "s"}
           </p>
         )}
         {sessions.length === 0 ? null : (
@@ -518,7 +473,6 @@ function renderQueryHistoryToolBody(
               >
                 <span className="min-w-0 truncate text-foreground">{session.title}</span>
                 <span className="shrink-0 text-muted-foreground">
-                  {session.value ? `${session.value} • ` : ""}
                   <LocalDateTime
                     formatOptions={{ day: "numeric", month: "short" }}
                     value={session.date}
