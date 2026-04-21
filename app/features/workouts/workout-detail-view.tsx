@@ -227,7 +227,7 @@ function getCarryForwardSetValues(set: WorkoutSet | null | undefined) {
   }
 
   return {
-    reps: set.actual.reps ?? set.planned.reps,
+    reps: set.reps,
     weightLbs: set.actual.weightLbs ?? set.planned.weightLbs,
   };
 }
@@ -580,7 +580,7 @@ function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRo
 
   const submitSetConfirmation = (rpe: number | null) => {
     const formData = new FormData();
-    const reps = set.actual.reps ?? set.planned.reps;
+    const reps = set.reps;
     const weightLbs = set.actual.weightLbs ?? set.planned.weightLbs;
 
     formData.set("action", "confirm_set");
@@ -699,7 +699,8 @@ function EditableSetNumberCell({
   const [isEditing, setIsEditing] = useState(false);
   const [draftValue, setDraftValue] = useState("");
   const [didSubmit, setDidSubmit] = useState(false);
-  const displayValue = set.actual[fieldName] ?? set.planned[fieldName];
+  const displayValue =
+    fieldName === "reps" ? set.reps : (set.actual.weightLbs ?? set.planned.weightLbs);
   const pattern = inputMode === "numeric" ? "[0-9]*" : "[0-9]*[.]?[0-9]*";
 
   useEffect(() => {

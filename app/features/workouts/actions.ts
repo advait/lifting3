@@ -35,24 +35,22 @@ const halfStepRpeSchema = z
     error: "RPE must be in 0.5 increments.",
   });
 
-const setValuesPatchSchema = z.strictObject({
+const setLoadValuesPatchSchema = z.strictObject({
   weightLbs: z.number().nonnegative().nullable().optional(),
-  reps: nonNegativeIntegerSchema.nullable().optional(),
   rpe: halfStepRpeSchema.nullable().optional(),
 });
 
-const nonEmptySetValuesPatchSchema = setValuesPatchSchema.superRefine((values, context) => {
-  const hasDefinedField =
-    values.weightLbs !== undefined || values.reps !== undefined || values.rpe !== undefined;
+function hasDefinedSetLoadValuePatch(values: z.infer<typeof setLoadValuesPatchSchema> | undefined) {
+  return values !== undefined && (values.weightLbs !== undefined || values.rpe !== undefined);
+}
 
-  if (!hasDefinedField) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "At least one set field update is required.",
-      path: [],
-    });
-  }
-});
+function addSetPatchIssue(context: z.RefinementCtx) {
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: "At least one set field update is required.",
+    path: [],
+  });
+}
 
 const notesPatchSchema = z
   .strictObject({
@@ -88,21 +86,35 @@ export const startWorkoutInputSchema = z.strictObject({
   startedAt: isoDateTimeSchema.optional(),
 });
 
-export const updateSetActualsInputSchema = z.strictObject({
-  action: z.literal("update_set_actuals"),
-  ...workoutActionBaseShape,
-  actual: nonEmptySetValuesPatchSchema,
-  exerciseId: nonEmptyStringSchema,
-  setId: nonEmptyStringSchema,
-});
+export const updateSetActualsInputSchema = z
+  .strictObject({
+    action: z.literal("update_set_actuals"),
+    ...workoutActionBaseShape,
+    actual: setLoadValuesPatchSchema.optional(),
+    exerciseId: nonEmptyStringSchema,
+    reps: nonNegativeIntegerSchema.nullable().optional(),
+    setId: nonEmptyStringSchema,
+  })
+  .superRefine((input, context) => {
+    if (input.reps === undefined && !hasDefinedSetLoadValuePatch(input.actual)) {
+      addSetPatchIssue(context);
+    }
+  });
 
-export const updateSetPlannedInputSchema = z.strictObject({
-  action: z.literal("update_set_planned"),
-  ...workoutActionBaseShape,
-  exerciseId: nonEmptyStringSchema,
-  planned: nonEmptySetValuesPatchSchema,
-  setId: nonEmptyStringSchema,
-});
+export const updateSetPlannedInputSchema = z
+  .strictObject({
+    action: z.literal("update_set_planned"),
+    ...workoutActionBaseShape,
+    exerciseId: nonEmptyStringSchema,
+    planned: setLoadValuesPatchSchema.optional(),
+    reps: nonNegativeIntegerSchema.nullable().optional(),
+    setId: nonEmptyStringSchema,
+  })
+  .superRefine((input, context) => {
+    if (input.reps === undefined && !hasDefinedSetLoadValuePatch(input.planned)) {
+      addSetPatchIssue(context);
+    }
+  });
 
 export const updateSetDesignationInputSchema = z.strictObject({
   action: z.literal("update_set_designation"),
@@ -112,17 +124,20 @@ export const updateSetDesignationInputSchema = z.strictObject({
   setId: nonEmptyStringSchema,
 });
 
-export const confirmSetInputSchema = z.strictObject({
-  action: z.literal("confirm_set"),
-  ...workoutActionBaseShape,
-  actual: z.strictObject({
+export const confirmSetInputSchema = z
+  .strictObject({
+    action: z.literal("confirm_set"),
+    ...workoutActionBaseShape,
+    actual: setLoadValuesPatchSchema.optional(),
+    exerciseId: nonEmptyStringSchema,
     reps: nonNegativeIntegerSchema.nullable().optional(),
-    rpe: halfStepRpeSchema.nullable().optional(),
-    weightLbs: z.number().nonnegative().nullable().optional(),
-  }),
-  exerciseId: nonEmptyStringSchema,
-  setId: nonEmptyStringSchema,
-});
+    setId: nonEmptyStringSchema,
+  })
+  .superRefine((input, context) => {
+    if (input.reps === undefined && !hasDefinedSetLoadValuePatch(input.actual)) {
+      addSetPatchIssue(context);
+    }
+  });
 
 export const unconfirmSetInputSchema = z.strictObject({
   action: z.literal("unconfirm_set"),
@@ -137,7 +152,8 @@ export const addSetInputSchema = z.strictObject({
   designation: setKindSchema.default("working"),
   exerciseId: nonEmptyStringSchema,
   insertAfterSetId: nonEmptyStringSchema.nullable().optional(),
-  planned: setValuesPatchSchema.optional(),
+  planned: setLoadValuesPatchSchema.optional(),
+  reps: nonNegativeIntegerSchema.nullable().optional(),
 });
 
 export const removeSetInputSchema = z.strictObject({

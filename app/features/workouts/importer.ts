@@ -13,8 +13,7 @@ import type {
   NewWorkoutRow,
 } from "../../lib/.server/db/schema.ts";
 
-const EMPTY_SET_VALUES = {
-  reps: null,
+const EMPTY_SET_LOAD_VALUES = {
   rpe: null,
   weightLbs: null,
 } as const satisfies WorkoutSet["actual"];
@@ -53,11 +52,10 @@ const IMPORT_SET_COLUMNS = [
   "exercise_id",
   "order_index",
   "designation",
+  "reps",
   "planned_weight_lbs",
-  "planned_reps",
   "planned_rpe",
   "actual_weight_lbs",
-  "actual_reps",
   "actual_rpe",
   "confirmed_at",
 ] as const;
@@ -116,9 +114,8 @@ export function assertUniqueWorkoutIds(files: readonly ValidatedWorkoutFile[]) {
   }
 }
 
-function mapSetValues(set: WorkoutFileSet): WorkoutSet["planned"] {
+function mapSetLoadValues(set: WorkoutFileSet): WorkoutSet["planned"] {
   return {
-    reps: set.reps ?? null,
     rpe: set.rpe ?? null,
     weightLbs: set.weight_lbs ?? null,
   };
@@ -168,16 +165,17 @@ function createImportedSet(
   setOrderIndex: number,
   set: WorkoutFileSet,
 ) {
-  const setValues = mapSetValues(set);
+  const setLoadValues = mapSetLoadValues(set);
 
   return workoutSetSchema.parse({
-    actual: set.confirmed_at != null ? setValues : EMPTY_SET_VALUES,
+    actual: set.confirmed_at != null ? setLoadValues : EMPTY_SET_LOAD_VALUES,
     confirmedAt: set.confirmed_at ?? null,
     designation: set.set_kind,
     id: createImportedSetId(workoutId, exerciseOrderIndex, sourceExerciseId, setOrderIndex, set.id),
     orderIndex: setOrderIndex,
-    planned: setValues,
+    planned: setLoadValues,
     previous: null,
+    reps: set.reps ?? null,
   });
 }
 
@@ -253,7 +251,6 @@ export function toImportedWorkoutRows(record: ImportedWorkoutRecord): ImportedWo
     filePath: record.filePath,
     setRows: record.exercises.flatMap(({ state }) =>
       state.sets.map((set) => ({
-        actualReps: set.actual.reps,
         actualRpe: set.actual.rpe,
         actualWeightLbs: set.actual.weightLbs,
         confirmedAt: set.confirmedAt,
@@ -261,9 +258,9 @@ export function toImportedWorkoutRows(record: ImportedWorkoutRecord): ImportedWo
         exerciseId: state.id,
         id: set.id,
         orderIndex: set.orderIndex,
-        plannedReps: set.planned.reps,
         plannedRpe: set.planned.rpe,
         plannedWeightLbs: set.planned.weightLbs,
+        reps: set.reps,
       })),
     ),
     workoutId: record.workout.id,
@@ -398,11 +395,10 @@ export function buildWorkoutImportSql(rows: readonly ImportedWorkoutRows[]) {
           setRow.exerciseId,
           setRow.orderIndex,
           setRow.designation,
+          setRow.reps ?? null,
           setRow.plannedWeightLbs ?? null,
-          setRow.plannedReps ?? null,
           setRow.plannedRpe ?? null,
           setRow.actualWeightLbs ?? null,
-          setRow.actualReps ?? null,
           setRow.actualRpe ?? null,
           setRow.confirmedAt ?? null,
         ] satisfies ReadonlyArray<number | string | null>,

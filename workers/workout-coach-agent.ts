@@ -32,7 +32,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 
 function formatSetValues(set: WorkoutSet) {
   const weight = set.actual.weightLbs ?? set.planned.weightLbs;
-  const reps = set.actual.reps ?? set.planned.reps;
+  const reps = set.reps;
   const rpe = set.actual.rpe ?? set.planned.rpe;
 
   const segments = [

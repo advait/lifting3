@@ -165,11 +165,13 @@ type MutationOperation =
       insertAfterSetId?: string | null;
       kind: "add_set";
       planned?: SetPlannedPatch;
+      reps?: WorkoutSet["reps"];
     }
   | {
-      actual: SetActualPatch;
+      actual?: SetActualPatch;
       exerciseId: string;
       kind: "confirm_set";
+      reps?: WorkoutSet["reps"];
       setId: string;
     }
   | {
@@ -221,15 +223,17 @@ type MutationOperation =
       setId: string;
     }
   | {
-      actual: SetActualPatch;
+      actual?: SetActualPatch;
       exerciseId: string;
       kind: "update_set_actuals";
+      reps?: WorkoutSet["reps"];
       setId: string;
     }
   | {
       exerciseId: string;
       kind: "update_set_planned";
-      planned: SetPlannedPatch;
+      planned?: SetPlannedPatch;
+      reps?: WorkoutSet["reps"];
       setId: string;
     }
   | {
@@ -270,7 +274,7 @@ type ExecutedMutation = {
 
 const D1_MAX_VARIABLES_PER_STATEMENT = 90;
 const WORKOUT_EXERCISE_INSERT_VARIABLE_COUNT = 7;
-const EXERCISE_SET_INSERT_VARIABLE_COUNT = 11;
+const EXERCISE_SET_INSERT_VARIABLE_COUNT = 10;
 
 class VersionGuardError extends Error {}
 
@@ -294,10 +298,10 @@ function createSet(input: {
   orderIndex: number;
   planned?: Partial<WorkoutSet["planned"]>;
   previous?: WorkoutSet["previous"];
+  reps?: WorkoutSet["reps"];
 }) {
   return workoutSetSchema.parse({
     actual: {
-      reps: input.actual?.reps ?? null,
       rpe: input.actual?.rpe ?? null,
       weightLbs: input.actual?.weightLbs ?? null,
     },
@@ -306,11 +310,11 @@ function createSet(input: {
     id: input.id,
     orderIndex: input.orderIndex,
     planned: {
-      reps: input.planned?.reps ?? null,
       rpe: input.planned?.rpe ?? null,
       weightLbs: input.planned?.weightLbs ?? null,
     },
     previous: input.previous ?? null,
+    reps: input.reps ?? null,
   });
 }
 
@@ -334,16 +338,16 @@ function createExercise(input: {
   });
 }
 
-const SET_VALUE_KEYS = ["reps", "rpe", "weightLbs"] as const;
+const SET_LOAD_VALUE_KEYS = ["rpe", "weightLbs"] as const;
 
-function mergeDefinedSetValues(
+function mergeDefinedSetLoadValues(
   current: WorkoutSet["planned"],
-  patch: Partial<WorkoutSet["planned"]>,
+  patch: Partial<WorkoutSet["planned"]> | undefined,
 ) {
   const next = { ...current };
 
-  for (const key of SET_VALUE_KEYS) {
-    const value = patch[key];
+  for (const key of SET_LOAD_VALUE_KEYS) {
+    const value = patch?.[key];
 
     if (value !== undefined) {
       next[key] = value;
@@ -353,16 +357,30 @@ function mergeDefinedSetValues(
   return next;
 }
 
+function applyDefinedReps(set: WorkoutSet, reps: WorkoutSet["reps"] | undefined) {
+  if (reps !== undefined) {
+    set.reps = reps;
+  }
+}
+
+function assertConfirmedSetHasLoggedValues(set: WorkoutSet) {
+  if (!isSetConfirmed(set) || hasLoggedSetPerformance(set)) {
+    return;
+  }
+
+  throw new WorkoutMutationError("Confirmed sets must include at least one logged value.");
+}
+
 function clonePlannedSetTemplate(orderIndex: number, template: ExerciseSetTemplateInput) {
   return createSet({
     designation: template.designation,
     id: crypto.randomUUID(),
     orderIndex,
     planned: {
-      reps: template.planned?.reps ?? null,
       rpe: template.planned?.rpe ?? null,
       weightLbs: template.planned?.weightLbs ?? null,
     },
+    reps: template.reps ?? null,
   });
 }
 
@@ -438,7 +456,7 @@ function syncExerciseStatus(exercise: WorkoutExerciseState) {
 }
 
 function hasLoggedSetPerformance(set: WorkoutSet) {
-  return set.actual.weightLbs != null || set.actual.reps != null || set.actual.rpe != null;
+  return set.actual.weightLbs != null || set.reps != null || set.actual.rpe != null;
 }
 
 function hasLoggedExercisePerformance(exercise: WorkoutExerciseState) {
@@ -451,7 +469,7 @@ function getPreviousSetValues(set: WorkoutSet): WorkoutSet["previous"] {
   }
 
   return {
-    reps: set.actual.reps,
+    reps: set.reps,
     rpe: set.actual.rpe,
     weightLbs: set.actual.weightLbs,
   };
@@ -768,6 +786,7 @@ function normalizeRouteMutation(input: NonDeleteWorkoutMutationInput): RouteMuta
           exerciseId: input.exerciseId,
           kind: "update_set_planned",
           planned: input.planned,
+          reps: input.reps,
           setId: input.setId,
         },
       };
@@ -779,6 +798,7 @@ function normalizeRouteMutation(input: NonDeleteWorkoutMutationInput): RouteMuta
           actual: input.actual,
           exerciseId: input.exerciseId,
           kind: "update_set_actuals",
+          reps: input.reps,
           setId: input.setId,
         },
       };
@@ -801,6 +821,7 @@ function normalizeRouteMutation(input: NonDeleteWorkoutMutationInput): RouteMuta
           actual: input.actual,
           exerciseId: input.exerciseId,
           kind: "confirm_set",
+          reps: input.reps,
           setId: input.setId,
         },
       };
@@ -825,6 +846,7 @@ function normalizeRouteMutation(input: NonDeleteWorkoutMutationInput): RouteMuta
           insertAfterSetId: input.insertAfterSetId,
           kind: "add_set",
           planned: input.planned,
+          reps: input.reps,
         },
       };
     case "remove_set":
@@ -927,6 +949,7 @@ function normalizePatchOperation(op: PatchWorkoutToolOp): MutationOperation {
         insertAfterSetId: op.insertAfterSetId,
         kind: "add_set",
         planned: op.template.planned,
+        reps: op.template.reps,
       };
     case "skip_remaining_sets":
       return {
@@ -977,7 +1000,8 @@ function applyMutationOperation(
       const exercise = findExercise(record, operation.exerciseId);
       const set = findSet(exercise, operation.setId);
 
-      set.planned = mergeDefinedSetValues(set.planned, operation.planned);
+      set.planned = mergeDefinedSetLoadValues(set.planned, operation.planned);
+      applyDefinedReps(set, operation.reps);
 
       return {
         invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
@@ -988,7 +1012,9 @@ function applyMutationOperation(
       const exercise = findExercise(record, operation.exerciseId);
       const set = findSet(exercise, operation.setId);
 
-      set.actual = mergeDefinedSetValues(set.actual, operation.actual);
+      set.actual = mergeDefinedSetLoadValues(set.actual, operation.actual);
+      applyDefinedReps(set, operation.reps);
+      assertConfirmedSetHasLoggedValues(set);
 
       return {
         invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
@@ -1010,8 +1036,10 @@ function applyMutationOperation(
       const exercise = findExercise(record, operation.exerciseId);
       const set = findSet(exercise, operation.setId);
 
-      set.actual = mergeDefinedSetValues(set.actual, operation.actual);
+      set.actual = mergeDefinedSetLoadValues(set.actual, operation.actual);
+      applyDefinedReps(set, operation.reps);
       set.confirmedAt = updatedAt;
+      assertConfirmedSetHasLoggedValues(set);
       syncExerciseStatus(exercise);
 
       return {
@@ -1048,10 +1076,10 @@ function applyMutationOperation(
             id: crypto.randomUUID(),
             orderIndex: insertAt + index,
             planned: {
-              reps: operation.planned?.reps ?? null,
               rpe: operation.planned?.rpe ?? null,
               weightLbs: operation.planned?.weightLbs ?? null,
             },
+            reps: operation.reps ?? null,
           }),
         );
       }
@@ -1274,8 +1302,10 @@ function applyMutationOperation(
         }
 
         if (setUpdate.planned !== undefined) {
-          set.planned = mergeDefinedSetValues(set.planned, setUpdate.planned);
+          set.planned = mergeDefinedSetLoadValues(set.planned, setUpdate.planned);
         }
+
+        applyDefinedReps(set, setUpdate.reps);
       }
 
       syncExerciseStatus(exercise);
@@ -1395,7 +1425,6 @@ function buildStoredWorkoutRecords(
     const sets = (setRowsByExerciseId.get(exerciseRow.id) ?? []).map((setRow) =>
       createSet({
         actual: {
-          reps: setRow.actualReps,
           rpe: setRow.actualRpe,
           weightLbs: setRow.actualWeightLbs,
         },
@@ -1404,10 +1433,10 @@ function buildStoredWorkoutRecords(
         id: setRow.id,
         orderIndex: setRow.orderIndex,
         planned: {
-          reps: setRow.plannedReps,
           rpe: setRow.plannedRpe,
           weightLbs: setRow.plannedWeightLbs,
         },
+        reps: setRow.reps,
       }),
     );
 
@@ -1570,7 +1599,6 @@ function toWorkoutExerciseInsertRows(record: StoredWorkoutRecord): NewWorkoutExe
 function toExerciseSetInsertRows(record: StoredWorkoutRecord): NewExerciseSetRow[] {
   return record.exercises.flatMap((exercise) =>
     exercise.sets.map((set) => ({
-      actualReps: set.actual.reps,
       actualRpe: set.actual.rpe,
       actualWeightLbs: set.actual.weightLbs,
       confirmedAt: set.confirmedAt,
@@ -1578,9 +1606,9 @@ function toExerciseSetInsertRows(record: StoredWorkoutRecord): NewExerciseSetRow
       exerciseId: exercise.id,
       id: set.id,
       orderIndex: set.orderIndex,
-      plannedReps: set.planned.reps,
       plannedRpe: set.planned.rpe,
       plannedWeightLbs: set.planned.weightLbs,
+      reps: set.reps,
     })),
   );
 }
@@ -1740,10 +1768,10 @@ function cloneExerciseForPlannedWorkout(
         id: crypto.randomUUID(),
         orderIndex: setIndex,
         planned: {
-          reps: set.planned.reps,
           rpe: set.planned.rpe,
           weightLbs: set.planned.weightLbs,
         },
+        reps: set.reps,
       }),
     ),
     status: "planned",
@@ -1831,7 +1859,6 @@ function clearUnconfirmedSets(exercise: WorkoutExerciseState, note: string | und
 
     clearedCount += 1;
     set.actual = {
-      reps: null,
       rpe: null,
       weightLbs: null,
     };
@@ -1864,7 +1891,7 @@ type HistorySessionSummary = {
 
 function getEstimatedE1rm(set: WorkoutSet) {
   const weight = set.actual.weightLbs;
-  const reps = set.actual.reps;
+  const reps = set.reps;
 
   if (weight == null || reps == null || reps <= 0) {
     return null;
@@ -1878,7 +1905,7 @@ function loadFilterMatchesSet(set: WorkoutSet, filters: QueryHistoryToolInput["f
     return false;
   }
 
-  const reps = set.actual.reps;
+  const reps = set.reps;
   const weight = set.actual.weightLbs;
 
   if (filters.minReps !== undefined && (reps == null || reps < filters.minReps)) {
@@ -1929,7 +1956,7 @@ function summarizeHistorySessions(
 
   for (const matchedSet of matchedSets) {
     const weight = matchedSet.set.actual.weightLbs ?? 0;
-    const reps = matchedSet.set.actual.reps ?? 0;
+    const reps = matchedSet.set.reps ?? 0;
     const volume = weight * reps;
     const e1rm = getEstimatedE1rm(matchedSet.set) ?? 0;
     const session =
@@ -1951,7 +1978,7 @@ function summarizeHistorySessions(
 
     const currentTopSet = session.topSet;
     const currentTopSetWeight = currentTopSet?.set.actual.weightLbs ?? -1;
-    const currentTopSetReps = currentTopSet?.set.actual.reps ?? -1;
+    const currentTopSetReps = currentTopSet?.set.reps ?? -1;
 
     if (
       session.topSet === null ||
@@ -2111,10 +2138,7 @@ function evaluateHistoryWindow(
         return null;
       }
 
-      const totalReps = matchedSets.reduce(
-        (total, entry) => total + (entry.set.actual.reps ?? 0),
-        0,
-      );
+      const totalReps = matchedSets.reduce((total, entry) => total + (entry.set.reps ?? 0), 0);
 
       return {
         details: {
@@ -2127,7 +2151,7 @@ function evaluateHistoryWindow(
             title: session.title,
             value: matchedSets
               .filter((entry) => entry.workout.id === session.workoutId)
-              .reduce((total, entry) => total + (entry.set.actual.reps ?? 0), 0),
+              .reduce((total, entry) => total + (entry.set.reps ?? 0), 0),
             workoutId: session.workoutId,
             workoutStatus: session.workoutStatus,
           }))
@@ -2154,9 +2178,7 @@ function evaluateHistoryWindow(
           return currentTopSet;
         }
 
-        return (entry.set.actual.reps ?? -1) > (currentTopSet.set.actual.reps ?? -1)
-          ? entry
-          : currentTopSet;
+        return (entry.set.reps ?? -1) > (currentTopSet.set.reps ?? -1) ? entry : currentTopSet;
       }, null);
 
       return {
@@ -2164,7 +2186,7 @@ function evaluateHistoryWindow(
           topSet === null
             ? undefined
             : {
-                reps: topSet.set.actual.reps,
+                reps: topSet.set.reps,
                 rpe: topSet.set.actual.rpe,
                 setId: topSet.set.id,
                 workoutId: topSet.workout.id,
@@ -2184,7 +2206,7 @@ function evaluateHistoryWindow(
         value:
           topSet === null
             ? null
-            : `${topSet.set.actual.weightLbs ?? 0} lb x ${topSet.set.actual.reps ?? 0}`,
+            : `${topSet.set.actual.weightLbs ?? 0} lb x ${topSet.set.reps ?? 0}`,
       };
     }
     case "best_session": {

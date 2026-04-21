@@ -48,7 +48,7 @@ function hasLoggedSetPerformance(set: ExerciseSetRow) {
   return (
     set.confirmedAt != null ||
     set.actualWeightLbs != null ||
-    set.actualReps != null ||
+    set.reps != null ||
     set.actualRpe != null
   );
 }

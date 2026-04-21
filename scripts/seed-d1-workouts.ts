@@ -2,7 +2,6 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
 import {
   workoutDetailWorkoutSchema,
   workoutExerciseStateSchema,
@@ -11,24 +10,25 @@ import {
   type WorkoutExerciseState,
   type WorkoutSet,
 } from "../app/features/workouts/contracts.ts";
-
 type SeedMode = "local" | "remote";
 type LegacySeedSetStatus = "done" | "skipped" | "tbd";
-
 interface SeedWorkoutRecord {
   readonly exercises: readonly WorkoutExerciseState[];
   readonly workout: WorkoutDetailWorkout;
 }
-
+type SeedSetValuesInput = {
+  readonly rpe?: WorkoutSet["actual"]["rpe"];
+  readonly weightLbs?: WorkoutSet["actual"]["weightLbs"];
+};
 interface SeedSetInput {
-  readonly actual?: Partial<WorkoutSet["actual"]>;
+  readonly actual?: SeedSetValuesInput;
   readonly completedAt?: string | null;
   readonly confirmedAt?: string | null;
   readonly designation: WorkoutSet["designation"];
-  readonly planned?: Partial<WorkoutSet["planned"]>;
+  readonly planned?: SeedSetValuesInput;
+  readonly reps?: WorkoutSet["reps"];
   readonly status?: LegacySeedSetStatus;
 }
-
 interface SeedExerciseInput {
   readonly coachNotes?: WorkoutExerciseState["coachNotes"];
   readonly exerciseSchemaId: WorkoutExerciseState["exerciseSchemaId"];
@@ -36,7 +36,6 @@ interface SeedExerciseInput {
   readonly status?: WorkoutExerciseState["status"];
   readonly userNotes?: WorkoutExerciseState["userNotes"];
 }
-
 interface SeedWorkoutInput {
   readonly coachNotes?: WorkoutDetailWorkout["coachNotes"];
   readonly completedAt?: WorkoutDetailWorkout["completedAt"];
@@ -52,15 +51,12 @@ interface SeedWorkoutInput {
   readonly userNotes?: WorkoutDetailWorkout["userNotes"];
   readonly version: WorkoutDetailWorkout["version"];
 }
-
 function at(day: string, time: string) {
   return `${day}T${time}.000Z`;
 }
-
 function createSet(exerciseId: string, orderIndex: number, input: SeedSetInput) {
   return workoutSetSchema.parse({
     actual: {
-      reps: input.actual?.reps ?? null,
       rpe: input.actual?.rpe ?? null,
       weightLbs: input.actual?.weightLbs ?? null,
     },
@@ -69,17 +65,15 @@ function createSet(exerciseId: string, orderIndex: number, input: SeedSetInput) 
     id: `set-${exerciseId}-${orderIndex + 1}`,
     orderIndex,
     planned: {
-      reps: input.planned?.reps ?? null,
       rpe: input.planned?.rpe ?? null,
       weightLbs: input.planned?.weightLbs ?? null,
     },
     previous: null,
+    reps: input.reps ?? null,
   });
 }
-
 function createExercise(workoutId: string, orderIndex: number, input: SeedExerciseInput) {
   const exerciseId = `exercise-${workoutId}-${orderIndex + 1}`;
-
   return workoutExerciseStateSchema.parse({
     coachNotes: input.coachNotes ?? null,
     exerciseSchemaId: input.exerciseSchemaId,
@@ -90,7 +84,6 @@ function createExercise(workoutId: string, orderIndex: number, input: SeedExerci
     userNotes: input.userNotes ?? null,
   });
 }
-
 function createWorkoutRecord(input: SeedWorkoutInput): SeedWorkoutRecord {
   return {
     exercises: input.exercises.map((exercise, orderIndex) =>
@@ -112,7 +105,6 @@ function createWorkoutRecord(input: SeedWorkoutInput): SeedWorkoutRecord {
     }),
   };
 }
-
 function createSeedWorkouts() {
   return [
     createWorkoutRecord({
@@ -124,22 +116,25 @@ function createSeedWorkouts() {
           exerciseSchemaId: "deadlift_barbell",
           sets: [
             {
-              actual: { reps: 5, rpe: 6.5, weightLbs: 225 },
+              actual: { rpe: 6.5, weightLbs: 225 },
               completedAt: at("2026-04-16", "00:09:00"),
               designation: "warmup",
-              planned: { reps: 5, weightLbs: 225 },
+              reps: 5,
+              planned: { weightLbs: 225 },
               status: "done",
             },
             {
-              actual: { reps: 5, rpe: 8, weightLbs: 275 },
+              actual: { rpe: 8, weightLbs: 275 },
               completedAt: at("2026-04-16", "00:13:00"),
               designation: "working",
-              planned: { reps: 5, weightLbs: 275 },
+              reps: 5,
+              planned: { weightLbs: 275 },
               status: "done",
             },
             {
               designation: "working",
-              planned: { reps: 5, weightLbs: 295 },
+              reps: 5,
+              planned: { weightLbs: 295 },
               status: "tbd",
             },
           ],
@@ -151,12 +146,14 @@ function createSeedWorkouts() {
           sets: [
             {
               designation: "working",
-              planned: { reps: 10, weightLbs: 40 },
+              reps: 10,
+              planned: { weightLbs: 40 },
               status: "tbd",
             },
             {
               designation: "working",
-              planned: { reps: 10, weightLbs: 40 },
+              reps: 10,
+              planned: { weightLbs: 40 },
               status: "tbd",
             },
           ],
@@ -167,12 +164,14 @@ function createSeedWorkouts() {
           sets: [
             {
               designation: "working",
-              planned: { reps: 20 },
+              reps: 20,
+              planned: {},
               status: "tbd",
             },
             {
               designation: "working",
-              planned: { reps: 20 },
+              reps: 20,
+              planned: {},
               status: "tbd",
             },
           ],
@@ -196,24 +195,24 @@ function createSeedWorkouts() {
         {
           exerciseSchemaId: "bench_press_barbell",
           sets: [
-            { designation: "working", planned: { reps: 8, weightLbs: 175 } },
-            { designation: "working", planned: { reps: 8, weightLbs: 175 } },
-            { designation: "working", planned: { reps: 8, weightLbs: 180 } },
+            { designation: "working", reps: 8, planned: { weightLbs: 175 } },
+            { designation: "working", reps: 8, planned: { weightLbs: 175 } },
+            { designation: "working", reps: 8, planned: { weightLbs: 180 } },
           ],
         },
         {
           exerciseSchemaId: "machine_row",
           sets: [
-            { designation: "working", planned: { reps: 12, weightLbs: 110 } },
-            { designation: "working", planned: { reps: 12, weightLbs: 110 } },
-            { designation: "working", planned: { reps: 12, weightLbs: 120 } },
+            { designation: "working", reps: 12, planned: { weightLbs: 110 } },
+            { designation: "working", reps: 12, planned: { weightLbs: 110 } },
+            { designation: "working", reps: 12, planned: { weightLbs: 120 } },
           ],
         },
         {
           exerciseSchemaId: "push_ups",
           sets: [
-            { designation: "working", planned: { reps: 15 } },
-            { designation: "working", planned: { reps: 15 } },
+            { designation: "working", reps: 15, planned: {} },
+            { designation: "working", reps: 15, planned: {} },
           ],
         },
       ],
@@ -232,24 +231,24 @@ function createSeedWorkouts() {
         {
           exerciseSchemaId: "front_squat",
           sets: [
-            { designation: "working", planned: { reps: 6, weightLbs: 205 } },
-            { designation: "working", planned: { reps: 6, weightLbs: 205 } },
-            { designation: "working", planned: { reps: 6, weightLbs: 215 } },
+            { designation: "working", reps: 6, planned: { weightLbs: 205 } },
+            { designation: "working", reps: 6, planned: { weightLbs: 205 } },
+            { designation: "working", reps: 6, planned: { weightLbs: 215 } },
           ],
         },
         {
           exerciseSchemaId: "goblet_squat",
           sets: [
-            { designation: "working", planned: { reps: 12, weightLbs: 70 } },
-            { designation: "working", planned: { reps: 12, weightLbs: 70 } },
+            { designation: "working", reps: 12, planned: { weightLbs: 70 } },
+            { designation: "working", reps: 12, planned: { weightLbs: 70 } },
           ],
         },
         {
           exerciseSchemaId: "dead_bug",
           sets: [
-            { designation: "working", planned: { reps: 10 } },
-            { designation: "working", planned: { reps: 10 } },
-            { designation: "working", planned: { reps: 10 } },
+            { designation: "working", reps: 10, planned: {} },
+            { designation: "working", reps: 10, planned: {} },
+            { designation: "working", reps: 10, planned: {} },
           ],
         },
       ],
@@ -269,24 +268,24 @@ function createSeedWorkouts() {
         {
           exerciseSchemaId: "push_ups",
           sets: [
-            { designation: "working", planned: { reps: 18 } },
-            { designation: "working", planned: { reps: 18 } },
-            { designation: "working", planned: { reps: 15 } },
+            { designation: "working", reps: 18, planned: {} },
+            { designation: "working", reps: 18, planned: {} },
+            { designation: "working", reps: 15, planned: {} },
           ],
         },
         {
           exerciseSchemaId: "chest_supported_incline_row_dumbbell",
           sets: [
-            { designation: "working", planned: { reps: 12, weightLbs: 45 } },
-            { designation: "working", planned: { reps: 12, weightLbs: 45 } },
-            { designation: "working", planned: { reps: 12, weightLbs: 50 } },
+            { designation: "working", reps: 12, planned: { weightLbs: 45 } },
+            { designation: "working", reps: 12, planned: { weightLbs: 45 } },
+            { designation: "working", reps: 12, planned: { weightLbs: 50 } },
           ],
         },
         {
           exerciseSchemaId: "bicycle_crunch",
           sets: [
-            { designation: "working", planned: { reps: 24 } },
-            { designation: "working", planned: { reps: 24 } },
+            { designation: "working", reps: 24, planned: {} },
+            { designation: "working", reps: 24, planned: {} },
           ],
         },
       ],
@@ -307,17 +306,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "bench_press_barbell",
           sets: [
             {
-              actual: { reps: 8, rpe: 8.5, weightLbs: 175 },
+              actual: { rpe: 8.5, weightLbs: 175 },
               completedAt: at("2026-04-14", "18:10:00"),
               designation: "working",
-              planned: { reps: 8, weightLbs: 175 },
+              reps: 8,
+              planned: { weightLbs: 175 },
               status: "done",
             },
             {
-              actual: { reps: 8, rpe: 9, weightLbs: 175 },
+              actual: { rpe: 9, weightLbs: 175 },
               completedAt: at("2026-04-14", "18:16:00"),
               designation: "working",
-              planned: { reps: 8, weightLbs: 175 },
+              reps: 8,
+              planned: { weightLbs: 175 },
               status: "done",
             },
           ],
@@ -327,17 +328,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "machine_row",
           sets: [
             {
-              actual: { reps: 12, rpe: 8, weightLbs: 110 },
+              actual: { rpe: 8, weightLbs: 110 },
               completedAt: at("2026-04-14", "18:25:00"),
               designation: "working",
-              planned: { reps: 12, weightLbs: 110 },
+              reps: 12,
+              planned: { weightLbs: 110 },
               status: "done",
             },
             {
-              actual: { reps: 12, rpe: 8.5, weightLbs: 110 },
+              actual: { rpe: 8.5, weightLbs: 110 },
               completedAt: at("2026-04-14", "18:30:00"),
               designation: "working",
-              planned: { reps: 12, weightLbs: 110 },
+              reps: 12,
+              planned: { weightLbs: 110 },
               status: "done",
             },
           ],
@@ -348,17 +351,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "bicycle_crunch",
           sets: [
             {
-              actual: { reps: 20, rpe: 7.5 },
+              actual: { rpe: 7.5 },
               completedAt: at("2026-04-14", "18:34:00"),
               designation: "working",
-              planned: { reps: 20 },
+              reps: 20,
+              planned: {},
               status: "done",
             },
             {
-              actual: { reps: 20, rpe: 8 },
+              actual: { rpe: 8 },
               completedAt: at("2026-04-14", "18:36:00"),
               designation: "working",
-              planned: { reps: 20 },
+              reps: 20,
+              planned: {},
               status: "done",
             },
           ],
@@ -384,24 +389,27 @@ function createSeedWorkouts() {
           exerciseSchemaId: "front_squat",
           sets: [
             {
-              actual: { reps: 6, rpe: 7.5, weightLbs: 205 },
+              actual: { rpe: 7.5, weightLbs: 205 },
               completedAt: at("2026-04-12", "10:18:00"),
               designation: "working",
-              planned: { reps: 6, weightLbs: 205 },
+              reps: 6,
+              planned: { weightLbs: 205 },
               status: "done",
             },
             {
-              actual: { reps: 6, rpe: 8.5, weightLbs: 215 },
+              actual: { rpe: 8.5, weightLbs: 215 },
               completedAt: at("2026-04-12", "10:26:00"),
               designation: "working",
-              planned: { reps: 6, weightLbs: 215 },
+              reps: 6,
+              planned: { weightLbs: 215 },
               status: "done",
             },
             {
-              actual: { reps: 6, rpe: 9, weightLbs: 215 },
+              actual: { rpe: 9, weightLbs: 215 },
               completedAt: at("2026-04-12", "10:34:00"),
               designation: "working",
-              planned: { reps: 6, weightLbs: 215 },
+              reps: 6,
+              planned: { weightLbs: 215 },
               status: "done",
             },
           ],
@@ -411,17 +419,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "split_squat_dumbbell",
           sets: [
             {
-              actual: { reps: 10, rpe: 8, weightLbs: 40 },
+              actual: { rpe: 8, weightLbs: 40 },
               completedAt: at("2026-04-12", "10:45:00"),
               designation: "working",
-              planned: { reps: 10, weightLbs: 40 },
+              reps: 10,
+              planned: { weightLbs: 40 },
               status: "done",
             },
             {
-              actual: { reps: 10, rpe: 8.5, weightLbs: 40 },
+              actual: { rpe: 8.5, weightLbs: 40 },
               completedAt: at("2026-04-12", "10:53:00"),
               designation: "working",
-              planned: { reps: 10, weightLbs: 40 },
+              reps: 10,
+              planned: { weightLbs: 40 },
               status: "done",
             },
           ],
@@ -431,17 +441,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "bicycle_crunch",
           sets: [
             {
-              actual: { reps: 24, rpe: 7.5 },
+              actual: { rpe: 7.5 },
               completedAt: at("2026-04-12", "11:02:00"),
               designation: "working",
-              planned: { reps: 24 },
+              reps: 24,
+              planned: {},
               status: "done",
             },
             {
-              actual: { reps: 20, rpe: 8 },
+              actual: { rpe: 8 },
               completedAt: at("2026-04-12", "11:05:00"),
               designation: "working",
-              planned: { reps: 24 },
+              reps: 20,
+              planned: {},
               status: "done",
             },
           ],
@@ -467,24 +479,27 @@ function createSeedWorkouts() {
           exerciseSchemaId: "seated_overhead_press_dumbbell",
           sets: [
             {
-              actual: { reps: 10, rpe: 8, weightLbs: 45 },
+              actual: { rpe: 8, weightLbs: 45 },
               completedAt: at("2026-04-10", "08:12:00"),
               designation: "working",
-              planned: { reps: 10, weightLbs: 45 },
+              reps: 10,
+              planned: { weightLbs: 45 },
               status: "done",
             },
             {
-              actual: { reps: 10, rpe: 8.5, weightLbs: 45 },
+              actual: { rpe: 8.5, weightLbs: 45 },
               completedAt: at("2026-04-10", "08:18:00"),
               designation: "working",
-              planned: { reps: 10, weightLbs: 45 },
+              reps: 10,
+              planned: { weightLbs: 45 },
               status: "done",
             },
             {
-              actual: { reps: 9, rpe: 9, weightLbs: 45 },
+              actual: { rpe: 9, weightLbs: 45 },
               completedAt: at("2026-04-10", "08:24:00"),
               designation: "working",
-              planned: { reps: 10, weightLbs: 45 },
+              reps: 9,
+              planned: { weightLbs: 45 },
               status: "done",
             },
           ],
@@ -494,24 +509,27 @@ function createSeedWorkouts() {
           exerciseSchemaId: "chest_supported_incline_row_dumbbell",
           sets: [
             {
-              actual: { reps: 12, rpe: 8, weightLbs: 50 },
+              actual: { rpe: 8, weightLbs: 50 },
               completedAt: at("2026-04-10", "08:32:00"),
               designation: "working",
-              planned: { reps: 12, weightLbs: 50 },
+              reps: 12,
+              planned: { weightLbs: 50 },
               status: "done",
             },
             {
-              actual: { reps: 12, rpe: 8.5, weightLbs: 50 },
+              actual: { rpe: 8.5, weightLbs: 50 },
               completedAt: at("2026-04-10", "08:38:00"),
               designation: "working",
-              planned: { reps: 12, weightLbs: 50 },
+              reps: 12,
+              planned: { weightLbs: 50 },
               status: "done",
             },
             {
-              actual: { reps: 12, rpe: 9, weightLbs: 55 },
+              actual: { rpe: 9, weightLbs: 55 },
               completedAt: at("2026-04-10", "08:43:00"),
               designation: "working",
-              planned: { reps: 12, weightLbs: 55 },
+              reps: 12,
+              planned: { weightLbs: 55 },
               status: "done",
             },
           ],
@@ -521,17 +539,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "push_ups",
           sets: [
             {
-              actual: { reps: 18, rpe: 8 },
+              actual: { rpe: 8 },
               completedAt: at("2026-04-10", "08:46:00"),
               designation: "working",
-              planned: { reps: 18 },
+              reps: 18,
+              planned: {},
               status: "done",
             },
             {
-              actual: { reps: 16, rpe: 9 },
+              actual: { rpe: 9 },
               completedAt: at("2026-04-10", "08:48:00"),
               designation: "working",
-              planned: { reps: 18 },
+              reps: 16,
+              planned: {},
               status: "done",
             },
           ],
@@ -556,24 +576,27 @@ function createSeedWorkouts() {
           exerciseSchemaId: "deadlift_barbell",
           sets: [
             {
-              actual: { reps: 5, rpe: 6.5, weightLbs: 225 },
+              actual: { rpe: 6.5, weightLbs: 225 },
               completedAt: at("2026-04-08", "18:25:00"),
               designation: "warmup",
-              planned: { reps: 5, weightLbs: 225 },
+              reps: 5,
+              planned: { weightLbs: 225 },
               status: "done",
             },
             {
-              actual: { reps: 5, rpe: 8, weightLbs: 285 },
+              actual: { rpe: 8, weightLbs: 285 },
               completedAt: at("2026-04-08", "18:35:00"),
               designation: "working",
-              planned: { reps: 5, weightLbs: 285 },
+              reps: 5,
+              planned: { weightLbs: 285 },
               status: "done",
             },
             {
-              actual: { reps: 4, rpe: 9, weightLbs: 305 },
+              actual: { rpe: 9, weightLbs: 305 },
               completedAt: at("2026-04-08", "18:44:00"),
               designation: "working",
-              planned: { reps: 5, weightLbs: 305 },
+              reps: 4,
+              planned: { weightLbs: 305 },
               status: "done",
             },
           ],
@@ -583,17 +606,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "goblet_squat",
           sets: [
             {
-              actual: { reps: 12, rpe: 8, weightLbs: 70 },
+              actual: { rpe: 8, weightLbs: 70 },
               completedAt: at("2026-04-08", "18:56:00"),
               designation: "working",
-              planned: { reps: 12, weightLbs: 70 },
+              reps: 12,
+              planned: { weightLbs: 70 },
               status: "done",
             },
             {
-              actual: { reps: 12, rpe: 8.5, weightLbs: 70 },
+              actual: { rpe: 8.5, weightLbs: 70 },
               completedAt: at("2026-04-08", "19:02:00"),
               designation: "working",
-              planned: { reps: 12, weightLbs: 70 },
+              reps: 12,
+              planned: { weightLbs: 70 },
               status: "done",
             },
           ],
@@ -603,17 +628,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "dead_bug",
           sets: [
             {
-              actual: { reps: 10, rpe: 7 },
+              actual: { rpe: 7 },
               completedAt: at("2026-04-08", "19:10:00"),
               designation: "working",
-              planned: { reps: 10 },
+              reps: 10,
+              planned: {},
               status: "done",
             },
             {
-              actual: { reps: 10, rpe: 7.5 },
+              actual: { rpe: 7.5 },
               completedAt: at("2026-04-08", "19:14:00"),
               designation: "working",
-              planned: { reps: 10 },
+              reps: 10,
+              planned: {},
               status: "done",
             },
           ],
@@ -639,24 +666,27 @@ function createSeedWorkouts() {
           exerciseSchemaId: "bench_press_dumbbell",
           sets: [
             {
-              actual: { reps: 10, rpe: 8, weightLbs: 60 },
+              actual: { rpe: 8, weightLbs: 60 },
               completedAt: at("2026-04-06", "11:55:00"),
               designation: "working",
-              planned: { reps: 10, weightLbs: 60 },
+              reps: 10,
+              planned: { weightLbs: 60 },
               status: "done",
             },
             {
-              actual: { reps: 10, rpe: 8.5, weightLbs: 60 },
+              actual: { rpe: 8.5, weightLbs: 60 },
               completedAt: at("2026-04-06", "12:02:00"),
               designation: "working",
-              planned: { reps: 10, weightLbs: 60 },
+              reps: 10,
+              planned: { weightLbs: 60 },
               status: "done",
             },
             {
-              actual: { reps: 8, rpe: 9, weightLbs: 65 },
+              actual: { rpe: 9, weightLbs: 65 },
               completedAt: at("2026-04-06", "12:09:00"),
               designation: "working",
-              planned: { reps: 8, weightLbs: 65 },
+              reps: 8,
+              planned: { weightLbs: 65 },
               status: "done",
             },
           ],
@@ -666,17 +696,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "band_pullaparts",
           sets: [
             {
-              actual: { reps: 25, rpe: 7 },
+              actual: { rpe: 7 },
               completedAt: at("2026-04-06", "12:15:00"),
               designation: "working",
-              planned: { reps: 25 },
+              reps: 25,
+              planned: {},
               status: "done",
             },
             {
-              actual: { reps: 25, rpe: 7.5 },
+              actual: { rpe: 7.5 },
               completedAt: at("2026-04-06", "12:18:00"),
               designation: "working",
-              planned: { reps: 25 },
+              reps: 25,
+              planned: {},
               status: "done",
             },
           ],
@@ -686,17 +718,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "bicycle_crunch",
           sets: [
             {
-              actual: { reps: 20, rpe: 7.5 },
+              actual: { rpe: 7.5 },
               completedAt: at("2026-04-06", "12:24:00"),
               designation: "working",
-              planned: { reps: 20 },
+              reps: 20,
+              planned: {},
               status: "done",
             },
             {
-              actual: { reps: 20, rpe: 8 },
+              actual: { rpe: 8 },
               completedAt: at("2026-04-06", "12:28:00"),
               designation: "working",
-              planned: { reps: 20 },
+              reps: 20,
+              planned: {},
               status: "done",
             },
           ],
@@ -721,24 +755,27 @@ function createSeedWorkouts() {
           exerciseSchemaId: "push_ups",
           sets: [
             {
-              actual: { reps: 20, rpe: 8 },
+              actual: { rpe: 8 },
               completedAt: at("2026-04-04", "07:18:00"),
               designation: "working",
-              planned: { reps: 20 },
+              reps: 20,
+              planned: {},
               status: "done",
             },
             {
-              actual: { reps: 18, rpe: 8.5 },
+              actual: { rpe: 8.5 },
               completedAt: at("2026-04-04", "07:22:00"),
               designation: "working",
-              planned: { reps: 18 },
+              reps: 18,
+              planned: {},
               status: "done",
             },
             {
-              actual: { reps: 16, rpe: 9 },
+              actual: { rpe: 9 },
               completedAt: at("2026-04-04", "07:26:00"),
               designation: "working",
-              planned: { reps: 16 },
+              reps: 16,
+              planned: {},
               status: "done",
             },
           ],
@@ -748,17 +785,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "split_squat_dumbbell",
           sets: [
             {
-              actual: { reps: 12, rpe: 8, weightLbs: 25 },
+              actual: { rpe: 8, weightLbs: 25 },
               completedAt: at("2026-04-04", "07:36:00"),
               designation: "working",
-              planned: { reps: 12, weightLbs: 25 },
+              reps: 12,
+              planned: { weightLbs: 25 },
               status: "done",
             },
             {
-              actual: { reps: 12, rpe: 8.5, weightLbs: 25 },
+              actual: { rpe: 8.5, weightLbs: 25 },
               completedAt: at("2026-04-04", "07:42:00"),
               designation: "working",
-              planned: { reps: 12, weightLbs: 25 },
+              reps: 12,
+              planned: { weightLbs: 25 },
               status: "done",
             },
           ],
@@ -768,17 +807,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "dead_bug",
           sets: [
             {
-              actual: { reps: 10, rpe: 7 },
+              actual: { rpe: 7 },
               completedAt: at("2026-04-04", "07:48:00"),
               designation: "working",
-              planned: { reps: 10 },
+              reps: 10,
+              planned: {},
               status: "done",
             },
             {
-              actual: { reps: 10, rpe: 7.5 },
+              actual: { rpe: 7.5 },
               completedAt: at("2026-04-04", "07:51:00"),
               designation: "working",
-              planned: { reps: 10 },
+              reps: 10,
+              planned: {},
               status: "done",
             },
           ],
@@ -803,10 +844,11 @@ function createSeedWorkouts() {
           exerciseSchemaId: "warm_up",
           sets: [
             {
-              actual: { reps: 8 },
+              actual: {},
               completedAt: at("2026-04-02", "08:28:00"),
               designation: "warmup",
-              planned: { reps: 8 },
+              reps: 8,
+              planned: {},
               status: "done",
             },
           ],
@@ -816,24 +858,27 @@ function createSeedWorkouts() {
           exerciseSchemaId: "dead_bug",
           sets: [
             {
-              actual: { reps: 8, rpe: 6.5 },
+              actual: { rpe: 6.5 },
               completedAt: at("2026-04-02", "08:40:00"),
               designation: "working",
-              planned: { reps: 8 },
+              reps: 8,
+              planned: {},
               status: "done",
             },
             {
-              actual: { reps: 10, rpe: 7 },
+              actual: { rpe: 7 },
               completedAt: at("2026-04-02", "08:45:00"),
               designation: "working",
-              planned: { reps: 10 },
+              reps: 10,
+              planned: {},
               status: "done",
             },
             {
-              actual: { reps: 10, rpe: 7.5 },
+              actual: { rpe: 7.5 },
               completedAt: at("2026-04-02", "08:49:00"),
               designation: "working",
-              planned: { reps: 10 },
+              reps: 10,
+              planned: {},
               status: "done",
             },
           ],
@@ -843,16 +888,18 @@ function createSeedWorkouts() {
           exerciseSchemaId: "bicycle_crunch",
           sets: [
             {
-              actual: { reps: 18, rpe: 7 },
+              actual: { rpe: 7 },
               completedAt: at("2026-04-02", "08:56:00"),
               designation: "working",
-              planned: { reps: 20 },
+              reps: 18,
+              planned: {},
               status: "done",
             },
             {
               completedAt: null,
               designation: "working",
-              planned: { reps: 20 },
+              reps: 20,
+              planned: {},
               status: "skipped",
             },
           ],
@@ -862,17 +909,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "band_pullaparts",
           sets: [
             {
-              actual: { reps: 20, rpe: 6.5 },
+              actual: { rpe: 6.5 },
               completedAt: at("2026-04-02", "09:00:00"),
               designation: "working",
-              planned: { reps: 20 },
+              reps: 20,
+              planned: {},
               status: "done",
             },
             {
-              actual: { reps: 20, rpe: 7 },
+              actual: { rpe: 7 },
               completedAt: at("2026-04-02", "09:03:00"),
               designation: "working",
-              planned: { reps: 20 },
+              reps: 20,
+              planned: {},
               status: "done",
             },
           ],
@@ -897,24 +946,27 @@ function createSeedWorkouts() {
           exerciseSchemaId: "bench_press_barbell",
           sets: [
             {
-              actual: { reps: 8, rpe: 6.5, weightLbs: 135 },
+              actual: { rpe: 6.5, weightLbs: 135 },
               completedAt: at("2026-03-31", "17:18:00"),
               designation: "warmup",
-              planned: { reps: 8, weightLbs: 135 },
+              reps: 8,
+              planned: { weightLbs: 135 },
               status: "done",
             },
             {
-              actual: { reps: 6, rpe: 8, weightLbs: 185 },
+              actual: { rpe: 8, weightLbs: 185 },
               completedAt: at("2026-03-31", "17:29:00"),
               designation: "working",
-              planned: { reps: 6, weightLbs: 185 },
+              reps: 6,
+              planned: { weightLbs: 185 },
               status: "done",
             },
             {
-              actual: { reps: 6, rpe: 8.5, weightLbs: 190 },
+              actual: { rpe: 8.5, weightLbs: 190 },
               completedAt: at("2026-03-31", "17:38:00"),
               designation: "working",
-              planned: { reps: 6, weightLbs: 190 },
+              reps: 6,
+              planned: { weightLbs: 190 },
               status: "done",
             },
           ],
@@ -924,17 +976,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "machine_row",
           sets: [
             {
-              actual: { reps: 12, rpe: 8, weightLbs: 120 },
+              actual: { rpe: 8, weightLbs: 120 },
               completedAt: at("2026-03-31", "17:47:00"),
               designation: "working",
-              planned: { reps: 12, weightLbs: 120 },
+              reps: 12,
+              planned: { weightLbs: 120 },
               status: "done",
             },
             {
-              actual: { reps: 12, rpe: 8.5, weightLbs: 120 },
+              actual: { rpe: 8.5, weightLbs: 120 },
               completedAt: at("2026-03-31", "17:52:00"),
               designation: "working",
-              planned: { reps: 12, weightLbs: 120 },
+              reps: 12,
+              planned: { weightLbs: 120 },
               status: "done",
             },
           ],
@@ -944,17 +998,19 @@ function createSeedWorkouts() {
           exerciseSchemaId: "bicycle_crunch",
           sets: [
             {
-              actual: { reps: 20, rpe: 7.5 },
+              actual: { rpe: 7.5 },
               completedAt: at("2026-03-31", "17:58:00"),
               designation: "working",
-              planned: { reps: 20 },
+              reps: 20,
+              planned: {},
               status: "done",
             },
             {
-              actual: { reps: 20, rpe: 8 },
+              actual: { rpe: 8 },
               completedAt: at("2026-03-31", "18:01:00"),
               designation: "working",
-              planned: { reps: 20 },
+              reps: 20,
+              planned: {},
               status: "done",
             },
           ],
@@ -971,34 +1027,26 @@ function createSeedWorkouts() {
     }),
   ] as const;
 }
-
 function parseSeedMode(argv: readonly string[]): SeedMode {
   const hasLocal = argv.includes("--local");
   const hasRemote = argv.includes("--remote");
-
   if (hasLocal === hasRemote) {
     throw new Error("Pass exactly one of --local or --remote.");
   }
-
   return hasLocal ? "local" : "remote";
 }
-
 function sqlValue(value: number | string | null) {
   if (value === null) {
     return "NULL";
   }
-
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
       throw new Error(`Cannot serialize non-finite number: ${value}`);
     }
-
     return String(value);
   }
-
   return `'${value.replaceAll("'", "''")}'`;
 }
-
 function createInsertStatement(
   tableName: string,
   columns: readonly string[],
@@ -1007,9 +1055,7 @@ function createInsertStatement(
   if (rows.length === 0) {
     return "";
   }
-
   const renderedRows = rows.map((row) => `  (${row.map((value) => sqlValue(value)).join(", ")})`);
-
   return [
     `INSERT INTO ${tableName} (${columns.join(", ")})`,
     "VALUES",
@@ -1017,7 +1063,6 @@ function createInsertStatement(
     ";",
   ].join("\n");
 }
-
 function buildSeedSql(records: readonly SeedWorkoutRecord[]) {
   const workoutRows = records.map(
     ({ workout }) =>
@@ -1036,7 +1081,6 @@ function buildSeedSql(records: readonly SeedWorkoutRecord[]) {
         workout.coachNotes,
       ] satisfies ReadonlyArray<number | string | null>,
   );
-
   const exerciseRows = records.flatMap(({ exercises, workout }) =>
     exercises.map(
       (exercise) =>
@@ -1051,7 +1095,6 @@ function buildSeedSql(records: readonly SeedWorkoutRecord[]) {
         ] satisfies ReadonlyArray<number | string | null>,
     ),
   );
-
   const setRows = records.flatMap(({ exercises }) =>
     exercises.flatMap((exercise) =>
       exercise.sets.map(
@@ -1061,18 +1104,16 @@ function buildSeedSql(records: readonly SeedWorkoutRecord[]) {
             exercise.id,
             set.orderIndex,
             set.designation,
+            set.reps,
             set.planned.weightLbs,
-            set.planned.reps,
             set.planned.rpe,
             set.actual.weightLbs,
-            set.actual.reps,
             set.actual.rpe,
             set.confirmedAt,
           ] satisfies ReadonlyArray<number | string | null>,
       ),
     ),
   );
-
   const statements = [
     "PRAGMA foreign_keys = ON;",
     "BEGIN TRANSACTION;",
@@ -1117,11 +1158,10 @@ function buildSeedSql(records: readonly SeedWorkoutRecord[]) {
         "exercise_id",
         "order_index",
         "designation",
+        "reps",
         "planned_weight_lbs",
-        "planned_reps",
         "planned_rpe",
         "actual_weight_lbs",
-        "actual_reps",
         "actual_rpe",
         "confirmed_at",
       ],
@@ -1130,10 +1170,8 @@ function buildSeedSql(records: readonly SeedWorkoutRecord[]) {
     "COMMIT;",
     "",
   ];
-
   return statements.filter(Boolean).join("\n\n");
 }
-
 function runWranglerSeed(mode: SeedMode, sqlFilePath: string) {
   const packageManagerExecutable = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
   const modeFlag = mode === "local" ? "--local" : "--remote";
@@ -1145,21 +1183,17 @@ function runWranglerSeed(mode: SeedMode, sqlFilePath: string) {
       stdio: "inherit",
     },
   );
-
   if (result.status !== 0) {
     throw new Error(`Wrangler D1 seed failed with exit code ${result.status ?? "unknown"}.`);
   }
 }
-
 function main() {
   const mode = parseSeedMode(process.argv.slice(2));
   const records = createSeedWorkouts();
   const sql = buildSeedSql(records);
   const tempDirectory = mkdtempSync(join(tmpdir(), "lifting3-seed-"));
   const sqlFilePath = join(tempDirectory, "seed-workouts.sql");
-
   writeFileSync(sqlFilePath, sql, "utf8");
-
   try {
     runWranglerSeed(mode, sqlFilePath);
     process.stdout.write(
@@ -1169,5 +1203,4 @@ function main() {
     rmSync(tempDirectory, { force: true, recursive: true });
   }
 }
-
 main();

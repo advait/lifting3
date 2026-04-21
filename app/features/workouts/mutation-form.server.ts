@@ -78,10 +78,10 @@ export function safeParseWorkoutMutationFormData(formData: FormData) {
         action,
         ...base,
         actual: {
-          reps: getOptionalNullableNumber(formData, "reps"),
           weightLbs: getOptionalNullableNumber(formData, "weightLbs"),
         },
         exerciseId: getFormValue(formData, "exerciseId"),
+        reps: getOptionalNullableNumber(formData, "reps"),
         setId: getFormValue(formData, "setId"),
       });
     case "update_set_planned":
@@ -90,9 +90,9 @@ export function safeParseWorkoutMutationFormData(formData: FormData) {
         ...base,
         exerciseId: getFormValue(formData, "exerciseId"),
         planned: {
-          reps: getOptionalNullableNumber(formData, "reps"),
           weightLbs: getOptionalNullableNumber(formData, "weightLbs"),
         },
+        reps: getOptionalNullableNumber(formData, "reps"),
         setId: getFormValue(formData, "setId"),
       });
     case "update_set_designation":
@@ -108,11 +108,11 @@ export function safeParseWorkoutMutationFormData(formData: FormData) {
         action,
         ...base,
         actual: {
-          reps: getOptionalNullableNumber(formData, "reps"),
           rpe: getOptionalNullableNumber(formData, "rpe"),
           weightLbs: getOptionalNullableNumber(formData, "weightLbs"),
         },
         exerciseId: getFormValue(formData, "exerciseId"),
+        reps: getOptionalNullableNumber(formData, "reps"),
         setId: getFormValue(formData, "setId"),
       });
     case "unconfirm_set":
@@ -130,9 +130,9 @@ export function safeParseWorkoutMutationFormData(formData: FormData) {
         exerciseId: getFormValue(formData, "exerciseId"),
         insertAfterSetId: getOptionalString(formData, "insertAfterSetId"),
         planned: {
-          reps: getOptionalNullableNumber(formData, "reps"),
           weightLbs: getOptionalNullableNumber(formData, "weightLbs"),
         },
+        reps: getOptionalNullableNumber(formData, "reps"),
       });
     case "remove_set":
       return removeSetInputSchema.safeParse({

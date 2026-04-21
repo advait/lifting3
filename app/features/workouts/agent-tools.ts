@@ -33,15 +33,13 @@ const halfStepRpeSchema = z
     error: "RPE must be in 0.5 increments.",
   });
 
-const setValuesSchema = z.strictObject({
+const setLoadValuesSchema = z.strictObject({
   weightLbs: z.number().nonnegative().nullable().optional(),
-  reps: nonNegativeIntegerSchema.nullable().optional(),
   rpe: halfStepRpeSchema.nullable().optional(),
 });
 
-const setValuesPatchSchema = setValuesSchema.superRefine((values, context) => {
-  const hasDefinedField =
-    values.weightLbs !== undefined || values.reps !== undefined || values.rpe !== undefined;
+const setLoadValuesPatchSchema = setLoadValuesSchema.superRefine((values, context) => {
+  const hasDefinedField = values.weightLbs !== undefined || values.rpe !== undefined;
 
   if (!hasDefinedField) {
     context.addIssue({
@@ -55,7 +53,8 @@ const setValuesPatchSchema = setValuesSchema.superRefine((values, context) => {
 export const exerciseSetTemplateSchema = z.strictObject({
   count: positiveIntegerSchema.default(1),
   designation: setKindSchema,
-  planned: setValuesSchema.optional(),
+  planned: setLoadValuesSchema.optional(),
+  reps: nonNegativeIntegerSchema.nullable().optional(),
 });
 
 export const workoutExercisePlanSchema = z.strictObject({
@@ -103,14 +102,19 @@ const reorderExerciseOpSchema = z.strictObject({
 const updateExerciseTargetSchema = z
   .strictObject({
     designation: setKindSchema.optional(),
-    planned: setValuesPatchSchema.optional(),
+    planned: setLoadValuesPatchSchema.optional(),
+    reps: nonNegativeIntegerSchema.nullable().optional(),
     setId: nonEmptyStringSchema,
   })
   .superRefine((target, context) => {
-    if (target.designation === undefined && target.planned === undefined) {
+    if (
+      target.designation === undefined &&
+      target.planned === undefined &&
+      target.reps === undefined
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Each set update requires a designation or planned-value change.",
+        message: "Each set update requires a designation or target change.",
         path: [],
       });
     }

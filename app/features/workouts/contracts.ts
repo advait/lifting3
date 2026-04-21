@@ -39,7 +39,12 @@ const exerciseLoggingSchema = z.strictObject({
   supportsRpe: z.boolean(),
 });
 
-const setValuesSchema = z.strictObject({
+const setLoadValuesSchema = z.strictObject({
+  weightLbs: z.number().nonnegative().nullable(),
+  rpe: halfStepRpeSchema.nullable(),
+});
+
+const setPerformanceSnapshotSchema = z.strictObject({
   weightLbs: z.number().nonnegative().nullable(),
   reps: nonNegativeIntegerSchema.nullable(),
   rpe: halfStepRpeSchema.nullable(),
@@ -68,20 +73,21 @@ export const workoutSetSchema = z
     id: nonEmptyStringSchema,
     orderIndex: nonNegativeIntegerSchema,
     designation: setKindSchema,
-    planned: setValuesSchema,
-    actual: setValuesSchema,
-    previous: setValuesSchema.nullable(),
+    reps: nonNegativeIntegerSchema.nullable(),
+    planned: setLoadValuesSchema,
+    actual: setLoadValuesSchema,
+    previous: setPerformanceSnapshotSchema.nullable(),
     confirmedAt: isoDateTimeSchema.nullable(),
   })
   .superRefine((set, context) => {
     const hasActualValue =
-      set.actual.weightLbs != null || set.actual.reps != null || set.actual.rpe != null;
+      set.reps != null || set.actual.weightLbs != null || set.actual.rpe != null;
 
     if (set.confirmedAt != null && !hasActualValue) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "A confirmed set must include at least one actual value.",
-        path: ["actual"],
+        message: "A confirmed set must include at least one logged value.",
+        path: ["confirmedAt"],
       });
     }
   });

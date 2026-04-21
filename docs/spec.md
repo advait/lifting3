@@ -312,11 +312,10 @@ Fields:
 - `exercise_id`
 - `order_index`
 - `designation`: `warmup | working`
+- `reps` nullable
 - `planned_weight_lbs` nullable
-- `planned_reps` nullable
 - `planned_rpe` nullable
 - `actual_weight_lbs` nullable
-- `actual_reps` nullable
 - `actual_rpe` nullable
 - `confirmed_at` nullable
 
@@ -328,12 +327,13 @@ Set semantics:
 Critical product rules:
 
 - Setting `actual_rpe` is the default confirmation action for a live set.
-- The user may enter actual weight/reps while `confirmed_at` remains null.
+- The user may enter weight or reps while `confirmed_at` remains null.
 - A workout may be completed even if some sets still have `confirmed_at = null`.
 
 Implications:
 
-- Weight and reps may be prefilled from plan or entered before confirmation.
+- Reps are canonical for both planning and logging.
+- Weight may be prefilled from plan or entered before confirmation.
 - The act of assigning RPE is usually the fastest way to commit "this set happened."
 - Completed workouts may preserve leftover planned work as unconfirmed when the session ends early.
 
@@ -1257,11 +1257,10 @@ exercise_sets
   exercise_id
   order_index
   designation
+  reps
   planned_weight_lbs
-  planned_reps
   planned_rpe
   actual_weight_lbs
-  actual_reps
   actual_rpe
   confirmed_at
 ```

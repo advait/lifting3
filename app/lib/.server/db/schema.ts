@@ -78,8 +78,8 @@ export const workoutExercises = sqliteTable(
 );
 
 /**
- * Persisted sets for one workout exercise. Planned and actual values are split
- * into explicit columns so reducers and queries can stay straightforward.
+ * Persisted sets for one workout exercise. Reps are canonical while planned and
+ * actual columns remain only for load-specific fields.
  */
 export const exerciseSets = sqliteTable(
   "exercise_sets",
@@ -90,11 +90,10 @@ export const exerciseSets = sqliteTable(
       .references(() => workoutExercises.id, { onDelete: "cascade" }),
     orderIndex: integer("order_index").notNull(),
     designation: text("designation", { enum: SET_KINDS }).notNull(),
+    reps: integer("reps"),
     plannedWeightLbs: real("planned_weight_lbs"),
-    plannedReps: integer("planned_reps"),
     plannedRpe: real("planned_rpe"),
     actualWeightLbs: real("actual_weight_lbs"),
-    actualReps: integer("actual_reps"),
     actualRpe: real("actual_rpe"),
     confirmedAt: text("confirmed_at"),
   },
