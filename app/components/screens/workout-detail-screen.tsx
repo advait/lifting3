@@ -119,6 +119,7 @@ interface SessionSummarySectionProps {
   exercisesCount: number;
   personalRecords: number;
   progress: WorkoutDetailLoaderData["progress"];
+  totalWeightLbs: number;
   workout: WorkoutDetailWorkout;
 }
 
@@ -222,6 +223,38 @@ function formatDuration(durationMs: number) {
 
 function formatOptionalValue(value: number | null) {
   return value == null ? "\u2014" : String(value);
+}
+
+const workoutSummaryWeightFormatter = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 1,
+});
+
+const summaryPersonalRecordBadge: NonNullable<WorkoutSet["personalRecord"]> = {
+  kind: "weight",
+  previousMaxWeightLbs: null,
+};
+
+function getWorkoutSetVolumeLbs(set: WorkoutSet) {
+  if (set.confirmedAt == null || set.actual.weightLbs == null || set.reps == null) {
+    return 0;
+  }
+
+  return set.actual.weightLbs * set.reps;
+}
+
+function getWorkoutTotalWeightLbs<TExercise extends { sets: readonly WorkoutSet[] }>(
+  exercises: readonly TExercise[],
+) {
+  return exercises.reduce(
+    (sessionTotal, exercise) =>
+      sessionTotal +
+      exercise.sets.reduce((exerciseTotal, set) => exerciseTotal + getWorkoutSetVolumeLbs(set), 0),
+    0,
+  );
+}
+
+function formatWorkoutSummaryWeight(value: number) {
+  return `${workoutSummaryWeightFormatter.format(value)} lb`;
 }
 
 function formatSetPerformance(values: WorkoutSet["previous"]) {
@@ -1579,27 +1612,42 @@ function SessionSummarySection({
   exercisesCount,
   personalRecords,
   progress,
+  totalWeightLbs,
   workout,
 }: SessionSummarySectionProps) {
+  const hasPersonalRecords = personalRecords > 0;
+
   return (
     <section className="grid gap-3 text-sm">
       <h2 className="font-semibold text-sm tracking-tight">Session Summary</h2>
 
-      <div className="mx-auto grid w-full max-w-xs grid-cols-3 gap-3 text-center">
+      <div
+        className={cn(
+          "mx-auto grid w-full gap-3 text-center",
+          hasPersonalRecords ? "max-w-sm grid-cols-3" : "max-w-xs grid-cols-2",
+        )}
+      >
         <div className="grid justify-items-center gap-1">
-          <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">Total</p>
-          <p className="font-medium">{progress.total}</p>
-        </div>
-        <div className="grid justify-items-center gap-1">
-          <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">Confirmed</p>
-          <p className="font-medium">{progress.confirmed}</p>
+          <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">Sets</p>
+          <p className="font-medium tabular-nums">
+            {progress.confirmed}/{progress.total}
+          </p>
         </div>
         <div className="grid justify-items-center gap-1">
           <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">
-            Unconfirmed
+            Total Weight
           </p>
-          <p className="font-medium">{progress.unconfirmed}</p>
+          <p className="font-medium tabular-nums">{formatWorkoutSummaryWeight(totalWeightLbs)}</p>
         </div>
+        {hasPersonalRecords ? (
+          <div className="grid justify-items-center gap-1">
+            <p className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">PRs</p>
+            <div className="inline-flex items-center gap-1.5">
+              <span className="font-medium tabular-nums">{personalRecords}</span>
+              <PersonalRecordBadge personalRecord={summaryPersonalRecordBadge} />
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <dl className="grid gap-2 text-muted-foreground">
@@ -1637,13 +1685,6 @@ function SessionSummarySection({
             )}
           </dd>
         </div>
-        <div className="flex items-center justify-between gap-3 border-border/60 border-t pt-2 text-foreground">
-          <dt className="inline-flex items-center gap-1.5 font-medium">
-            <SparklesIcon aria-hidden className="size-3.5 text-primary" />
-            PRs
-          </dt>
-          <dd className="font-semibold tabular-nums">{personalRecords}</dd>
-        </div>
       </dl>
     </section>
   );
@@ -1676,6 +1717,7 @@ export function WorkoutDetailScreen({ actionData, loaderData }: WorkoutDetailScr
   );
   const optimisticLoaderData = applyOptimisticWorkoutDetail(loaderData, pendingMutations);
   const personalRecords = countWorkoutPersonalRecords(optimisticLoaderData.exercises);
+  const totalWeightLbs = getWorkoutTotalWeightLbs(optimisticLoaderData.exercises);
   const isMutationPending = pendingMutations.length > 0;
   const availableActions = getAvailableActions(optimisticLoaderData.workout.status, {
     historicalEditMode: isHistoricalEditMode,
@@ -1753,6 +1795,7 @@ export function WorkoutDetailScreen({ actionData, loaderData }: WorkoutDetailScr
           exercisesCount={optimisticLoaderData.exercises.length}
           personalRecords={personalRecords}
           progress={optimisticLoaderData.progress}
+          totalWeightLbs={totalWeightLbs}
           workout={optimisticLoaderData.workout}
         />
       </aside>
