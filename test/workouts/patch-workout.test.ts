@@ -703,6 +703,119 @@ describe("createWorkoutRouteService.mutateWorkout", () => {
       55, 55, 135, 135,
     ]);
   });
+  it("cascades logged reps updates across matching unconfirmed working sets", async () => {
+    await insertSeedWorkout({
+      date: "2026-04-16T00:00:00.000Z",
+      exercises: [
+        {
+          exerciseSchemaId: "bench_press_barbell",
+          id: "route-exercise-actual-reps-cascade",
+          sets: [
+            {
+              actual: { weightLbs: 225 },
+              confirmedAt: "2026-04-16T09:05:00.000Z",
+              id: "route-actual-reps-cascade-set-1",
+              planned: { weightLbs: 225 },
+              reps: 5,
+            },
+            {
+              id: "route-actual-reps-cascade-set-2",
+              planned: { weightLbs: 225 },
+              reps: 5,
+            },
+            {
+              id: "route-actual-reps-cascade-set-3",
+              planned: { weightLbs: 225 },
+              reps: 5,
+            },
+            {
+              actual: { weightLbs: 225 },
+              confirmedAt: "2026-04-16T09:14:00.000Z",
+              id: "route-actual-reps-cascade-set-4",
+              planned: { weightLbs: 225 },
+              reps: 5,
+            },
+            {
+              id: "route-actual-reps-cascade-set-5",
+              planned: { weightLbs: 225 },
+              reps: 5,
+            },
+          ],
+          status: "active",
+        },
+      ],
+      id: "route-workout-actual-reps-cascade",
+      status: "active",
+      title: "Route Actual Reps Cascade",
+      version: 1,
+    });
+    await workoutRouteService.mutateWorkout({
+      action: "update_set_actuals",
+      exerciseId: "route-exercise-actual-reps-cascade",
+      expectedVersion: 1,
+      reps: 6,
+      setId: "route-actual-reps-cascade-set-2",
+      workoutId: "route-workout-actual-reps-cascade",
+    });
+    const detail = await workoutRouteService.loadWorkoutDetail({
+      workoutId: "route-workout-actual-reps-cascade",
+    });
+    expect(detail.exercises[0]?.sets.map((set) => set.reps)).toEqual([5, 6, 6, 5, 5]);
+  });
+  it("cascades planned warmup reps updates without touching working sets", async () => {
+    await insertSeedWorkout({
+      date: "2026-04-16T00:00:00.000Z",
+      exercises: [
+        {
+          exerciseSchemaId: "front_squat",
+          id: "route-exercise-planned-reps-cascade",
+          sets: [
+            {
+              designation: "warmup",
+              id: "route-planned-reps-cascade-set-1",
+              planned: { weightLbs: 45 },
+              reps: 5,
+            },
+            {
+              designation: "warmup",
+              id: "route-planned-reps-cascade-set-2",
+              planned: { weightLbs: 45 },
+              reps: 5,
+            },
+            {
+              designation: "working",
+              id: "route-planned-reps-cascade-set-3",
+              planned: { weightLbs: 135 },
+              reps: 4,
+            },
+            {
+              designation: "working",
+              id: "route-planned-reps-cascade-set-4",
+              planned: { weightLbs: 135 },
+              reps: 4,
+            },
+          ],
+          status: "planned",
+        },
+      ],
+      id: "route-workout-planned-reps-cascade",
+      status: "planned",
+      title: "Route Planned Reps Cascade",
+      version: 1,
+    });
+    await workoutRouteService.mutateWorkout({
+      action: "update_set_planned",
+      exerciseId: "route-exercise-planned-reps-cascade",
+      expectedVersion: 1,
+      reps: 6,
+      setId: "route-planned-reps-cascade-set-1",
+      workoutId: "route-workout-planned-reps-cascade",
+    });
+    const detail = await workoutRouteService.loadWorkoutDetail({
+      workoutId: "route-workout-planned-reps-cascade",
+    });
+    expect(detail.exercises[0]?.sets.map((set) => set.reps)).toEqual([6, 6, 4, 4]);
+  });
   it("uses the shared engine for reorder_exercise without adding exercise invalidations", async () => {
     await insertSeedWorkout({
       date: "2026-04-16T00:00:00.000Z",

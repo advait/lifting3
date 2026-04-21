@@ -2,7 +2,7 @@ import type { WorkoutMutationInput } from "./actions.ts";
 import type { WorkoutDetailLoaderData, WorkoutExercise, WorkoutSet } from "./contracts.ts";
 import { workoutSetSchema } from "./contracts.ts";
 import { safeParseWorkoutMutationFormData } from "./mutation-form.ts";
-import { cascadeSetWeightLbs } from "./set-weight-cascade.ts";
+import { cascadeSetReps, cascadeSetWeightLbs } from "./set-weight-cascade.ts";
 
 const SET_LOAD_VALUE_KEYS = ["rpe", "weightLbs"] as const;
 
@@ -236,6 +236,10 @@ function applyPendingMutation(
         nextWeightLbs: mutation.planned?.weightLbs,
         setId: mutation.setId,
       });
+      cascadeSetReps(exercise.sets, {
+        nextValue: mutation.reps,
+        setId: mutation.setId,
+      });
       set.planned = mergeDefinedSetLoadValues(set.planned, mutation.planned);
       applyDefinedReps(set, mutation.reps);
       return true;
@@ -251,6 +255,10 @@ function applyPendingMutation(
       cascadeSetWeightLbs(exercise.sets, {
         mode: "actual",
         nextWeightLbs: mutation.actual?.weightLbs,
+        setId: mutation.setId,
+      });
+      cascadeSetReps(exercise.sets, {
+        nextValue: mutation.reps,
         setId: mutation.setId,
       });
       const nextActual = mergeDefinedSetLoadValues(set.actual, mutation.actual);

@@ -47,7 +47,7 @@ import {
   workoutSetCountsSchema,
   workoutSetSchema,
 } from "./contracts.ts";
-import { cascadeSetWeightLbs } from "./set-weight-cascade.ts";
+import { cascadeSetReps, cascadeSetWeightLbs } from "./set-weight-cascade.ts";
 import type { WorkoutRouteService } from "./service.ts";
 import { WorkoutConflictError, WorkoutMutationError, WorkoutNotFoundError } from "./service.ts";
 
@@ -1004,6 +1004,10 @@ function applyMutationOperation(
         nextWeightLbs: operation.planned?.weightLbs,
         setId: operation.setId,
       });
+      cascadeSetReps(exercise.sets, {
+        nextValue: operation.reps,
+        setId: operation.setId,
+      });
       set.planned = mergeDefinedSetLoadValues(set.planned, operation.planned);
       applyDefinedReps(set, operation.reps);
 
@@ -1019,6 +1023,10 @@ function applyMutationOperation(
       cascadeSetWeightLbs(exercise.sets, {
         mode: "actual",
         nextWeightLbs: operation.actual?.weightLbs,
+        setId: operation.setId,
+      });
+      cascadeSetReps(exercise.sets, {
+        nextValue: operation.reps,
         setId: operation.setId,
       });
       set.actual = mergeDefinedSetLoadValues(set.actual, operation.actual);

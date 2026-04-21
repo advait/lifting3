@@ -1,6 +1,10 @@
 import type { WorkoutSet } from "./contracts.ts";
 
 type EditableSetWeightMode = "actual" | "planned";
+type EditableSetCascadeInput = {
+  nextValue: number | null | undefined;
+  setId: string;
+};
 
 function getEditableSetWeightLbs(set: WorkoutSet, mode: EditableSetWeightMode) {
   if (mode === "planned") {
@@ -14,15 +18,15 @@ function isSetConfirmed(set: WorkoutSet) {
   return set.confirmedAt != null;
 }
 
-export function cascadeSetWeightLbs(
+function cascadeMatchingSetValues(
   sets: WorkoutSet[],
-  input: {
-    mode: EditableSetWeightMode;
-    nextWeightLbs: number | null | undefined;
-    setId: string;
+  input: EditableSetCascadeInput,
+  options: {
+    getValue: (set: WorkoutSet) => number | null;
+    setValue: (set: WorkoutSet, value: number) => void;
   },
 ) {
-  if (input.nextWeightLbs == null) {
+  if (input.nextValue == null) {
     return;
   }
 
@@ -33,9 +37,9 @@ export function cascadeSetWeightLbs(
     return;
   }
 
-  const previousWeightLbs = getEditableSetWeightLbs(editedSet, input.mode);
+  const previousValue = options.getValue(editedSet);
 
-  if (Object.is(previousWeightLbs, input.nextWeightLbs)) {
+  if (Object.is(previousValue, input.nextValue)) {
     return;
   }
 
@@ -48,15 +52,47 @@ export function cascadeSetWeightLbs(
       break;
     }
 
-    if (!Object.is(getEditableSetWeightLbs(set, input.mode), previousWeightLbs)) {
+    if (!Object.is(options.getValue(set), previousValue)) {
       break;
     }
 
-    if (input.mode === "planned") {
-      set.planned.weightLbs = input.nextWeightLbs;
-      continue;
-    }
-
-    set.actual.weightLbs = input.nextWeightLbs;
+    options.setValue(set, input.nextValue);
   }
+}
+
+export function cascadeSetWeightLbs(
+  sets: WorkoutSet[],
+  input: {
+    mode: EditableSetWeightMode;
+    nextWeightLbs: number | null | undefined;
+    setId: string;
+  },
+) {
+  cascadeMatchingSetValues(
+    sets,
+    {
+      nextValue: input.nextWeightLbs,
+      setId: input.setId,
+    },
+    {
+      getValue: (set) => getEditableSetWeightLbs(set, input.mode),
+      setValue: (set, value) => {
+        if (input.mode === "planned") {
+          set.planned.weightLbs = value;
+          return;
+        }
+
+        set.actual.weightLbs = value;
+      },
+    },
+  );
+}
+
+export function cascadeSetReps(sets: WorkoutSet[], input: EditableSetCascadeInput) {
+  cascadeMatchingSetValues(sets, input, {
+    getValue: (set) => set.reps,
+    setValue: (set, value) => {
+      set.reps = value;
+    },
+  });
 }
