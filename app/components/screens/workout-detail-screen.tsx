@@ -257,7 +257,7 @@ function PersonalRecordBadge({
   return (
     <Badge
       aria-label={accessibleLabel}
-      className="border-amber-300/30 bg-linear-to-r from-amber-400/24 via-orange-300/18 to-yellow-200/22 text-[10px] text-amber-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_10px_18px_-16px_rgba(251,191,36,0.95)]"
+      className="border-yellow-200/40 bg-linear-to-r from-yellow-300/30 via-amber-200/24 to-yellow-100/34 text-[10px] text-yellow-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_12px_20px_-16px_rgba(250,204,21,0.82)]"
       title={accessibleLabel}
       variant="outline"
     >

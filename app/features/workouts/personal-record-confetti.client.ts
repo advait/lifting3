@@ -4,9 +4,15 @@ export async function fireWeightPersonalRecordConfetti() {
   }
 
   const { default: confetti } = await import("canvas-confetti");
-  const orangePalette = ["#b85a18", "#cf6a1c", "#e57b1f", "#f08f24", "#f59e0b"] as const;
+  const yellowPalette = [
+    "hsl(43 96% 58%)",
+    "hsl(46 100% 64%)",
+    "hsl(49 100% 70%)",
+    "hsl(52 100% 76%)",
+    "hsl(55 100% 82%)",
+  ] as const;
   const sharedOptions = {
-    colors: orangePalette,
+    colors: yellowPalette,
     decay: 0.92,
     disableForReducedMotion: true,
     gravity: 1.08,
