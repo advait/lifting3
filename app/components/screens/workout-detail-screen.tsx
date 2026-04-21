@@ -7,7 +7,14 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Form, useFetcher, useLocation, useNavigate } from "react-router";
+import {
+  Form,
+  useFetcher,
+  useFetchers,
+  useLocation,
+  useNavigate,
+  useNavigation,
+} from "react-router";
 
 import {
   AlertDialog,
@@ -20,6 +27,7 @@ import {
   AlertDialogMedia,
   AlertDialogTitle,
 } from "~/components/atoms/alert-dialog";
+import { Badge } from "~/components/atoms/badge";
 import { Button } from "~/components/atoms/button";
 import {
   Dialog,
@@ -47,6 +55,10 @@ import type {
   WorkoutExercise,
   WorkoutSet,
 } from "~/features/workouts/contracts";
+import {
+  applyOptimisticWorkoutDetail,
+  getPendingWorkoutMutations,
+} from "~/features/workouts/optimistic-detail";
 import { cn } from "~/lib/utils";
 
 const REST_TIMER_PLACEHOLDER = "02:00";
@@ -86,6 +98,7 @@ interface MutationFieldsProps {
 interface ExerciseCardProps {
   availableActions: readonly WorkoutRouteAction[];
   exercise: WorkoutExercise;
+  isMutationPending: boolean;
   workout: WorkoutDetailWorkout;
 }
 
@@ -93,6 +106,7 @@ interface WorkoutOverviewCardProps {
   availableActions: readonly WorkoutRouteAction[];
   initialNowMs: number;
   isHistoricalEditMode: boolean;
+  isMutationPending: boolean;
   onEnterHistoricalEditMode: () => void;
   workout: WorkoutDetailWorkout;
 }
@@ -275,6 +289,7 @@ function WorkoutOverviewCard({
   availableActions,
   initialNowMs,
   isHistoricalEditMode,
+  isMutationPending,
   onEnterHistoricalEditMode,
   workout,
 }: WorkoutOverviewCardProps) {
@@ -290,6 +305,7 @@ function WorkoutOverviewCard({
   const canFinishWorkout = hasAction(availableActions, "finish_workout");
   const canEnterHistoricalEditMode =
     (workout.status === "completed" || workout.status === "canceled") && !isHistoricalEditMode;
+  const controlsDisabled = isMutationPending;
   const deleteWorkoutFormId = `delete-workout-${workout.id}`;
 
   useEffect(() => {
@@ -365,7 +381,13 @@ function WorkoutOverviewCard({
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button aria-label="Open workout actions" size="icon" type="button" variant="ghost">
+                <Button
+                  aria-label="Open workout actions"
+                  disabled={controlsDisabled}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
                   <MoreHorizontalIcon />
                 </Button>
               </DropdownMenuTrigger>
@@ -373,6 +395,7 @@ function WorkoutOverviewCard({
                 <DropdownMenuGroup>
                   {canEnterHistoricalEditMode ? (
                     <DropdownMenuItem
+                      disabled={controlsDisabled}
                       onSelect={() => {
                         onEnterHistoricalEditMode();
                       }}
@@ -382,6 +405,7 @@ function WorkoutOverviewCard({
                   ) : null}
                   {canEditWorkoutNotes ? (
                     <DropdownMenuItem
+                      disabled={controlsDisabled}
                       onSelect={() => {
                         setIsNotesDialogOpen(true);
                       }}
@@ -391,6 +415,7 @@ function WorkoutOverviewCard({
                   ) : null}
                   <DropdownMenuItem
                     className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                    disabled={controlsDisabled}
                     onSelect={() => {
                       setIsDeleteDialogOpen(true);
                     }}
@@ -401,6 +426,12 @@ function WorkoutOverviewCard({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+
+          {controlsDisabled ? (
+            <Badge className="justify-self-start" variant="secondary">
+              Saving changes...
+            </Badge>
+          ) : null}
 
           {getExerciseNotes(workout.coachNotes) || getExerciseNotes(workout.userNotes) ? (
             <div className="grid gap-2 pt-1">
@@ -425,7 +456,7 @@ function WorkoutOverviewCard({
                 workoutId={workout.id}
                 workoutVersion={workout.version}
               />
-              <Button className="w-full" type="submit">
+              <Button className="w-full" disabled={controlsDisabled} type="submit">
                 Start workout
               </Button>
             </Form>
@@ -438,7 +469,12 @@ function WorkoutOverviewCard({
                 workoutId={workout.id}
                 workoutVersion={workout.version}
               />
-              <Button className="w-full" type="submit" variant="secondary">
+              <Button
+                className="w-full"
+                disabled={controlsDisabled}
+                type="submit"
+                variant="secondary"
+              >
                 Finish workout
               </Button>
             </Form>
@@ -473,6 +509,7 @@ function WorkoutOverviewCard({
               workoutVersion={workout.version}
             />
             <Textarea
+              disabled={controlsDisabled}
               name="userNotes"
               onChange={(event) => {
                 setDraftWorkoutNotes(event.target.value);
@@ -482,6 +519,7 @@ function WorkoutOverviewCard({
             />
             <DialogFooter>
               <Button
+                disabled={controlsDisabled}
                 onClick={() => {
                   setIsNotesDialogOpen(false);
                 }}
@@ -490,7 +528,7 @@ function WorkoutOverviewCard({
               >
                 Cancel
               </Button>
-              <Button disabled={notesFetcher.state !== "idle"} type="submit">
+              <Button disabled={controlsDisabled || notesFetcher.state !== "idle"} type="submit">
                 Save notes
               </Button>
             </DialogFooter>
@@ -511,7 +549,12 @@ function WorkoutOverviewCard({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel variant="ghost">Cancel</AlertDialogCancel>
-            <AlertDialogAction form={deleteWorkoutFormId} type="submit" variant="destructive">
+            <AlertDialogAction
+              disabled={controlsDisabled}
+              form={deleteWorkoutFormId}
+              type="submit"
+              variant="destructive"
+            >
               Delete workout
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -559,14 +602,22 @@ function SetRpeButton({
 
 interface SetRpeChooserRowProps {
   exerciseId: string;
+  isMutationPending: boolean;
   onClose: () => void;
   set: WorkoutSet;
   workout: WorkoutDetailWorkout;
 }
 
-function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRowProps) {
+function SetRpeChooserRow({
+  exerciseId,
+  isMutationPending,
+  onClose,
+  set,
+  workout,
+}: SetRpeChooserRowProps) {
   const fetcher = useFetcher();
   const [didSubmit, setDidSubmit] = useState(false);
+  const controlsDisabled = isMutationPending || fetcher.state !== "idle";
 
   useEffect(() => {
     if (fetcher.state !== "idle" || !didSubmit) {
@@ -626,7 +677,7 @@ function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRo
                 set.actual.rpe == null &&
                 "bg-emerald-600 text-white hover:bg-emerald-500",
             )}
-            disabled={fetcher.state !== "idle"}
+            disabled={controlsDisabled}
             onClick={() => {
               if (isSetConfirmed(set) && set.actual.rpe == null) {
                 submitSetUnconfirmation();
@@ -650,7 +701,7 @@ function SetRpeChooserRow({ exerciseId, onClose, set, workout }: SetRpeChooserRo
                   "min-w-10 rounded-full",
                   isSelected && "bg-emerald-600 text-white hover:bg-emerald-500",
                 )}
-                disabled={fetcher.state !== "idle"}
+                disabled={controlsDisabled}
                 key={value}
                 onClick={() => {
                   if (isSelected) {
@@ -679,6 +730,7 @@ interface EditableSetNumberCellProps {
   fieldName: "reps" | "weightLbs";
   inputMode: "decimal" | "numeric";
   exerciseId: string;
+  isMutationPending: boolean;
   set: WorkoutSet;
   step?: "0.5" | "1";
   workout: WorkoutDetailWorkout;
@@ -689,6 +741,7 @@ function EditableSetNumberCell({
   exerciseId,
   fieldName,
   inputMode,
+  isMutationPending,
   set,
   step = "1",
   workout,
@@ -700,6 +753,7 @@ function EditableSetNumberCell({
   const [didSubmit, setDidSubmit] = useState(false);
   const displayValue =
     fieldName === "reps" ? set.reps : (set.actual.weightLbs ?? set.planned.weightLbs);
+  const controlsDisabled = isMutationPending || fetcher.state !== "idle";
   const pattern = inputMode === "numeric" ? "[0-9]*" : "[0-9]*[.]?[0-9]*";
 
   useEffect(() => {
@@ -721,7 +775,7 @@ function EditableSetNumberCell({
   }, [didSubmit, fetcher.state]);
 
   const startEditing = () => {
-    if (!editAction) {
+    if (!editAction || isMutationPending) {
       return;
     }
 
@@ -755,7 +809,8 @@ function EditableSetNumberCell({
   if (!isEditing) {
     return (
       <button
-        className="w-full rounded-md px-1 py-1 text-center"
+        className="w-full rounded-md px-1 py-1 text-center disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={controlsDisabled}
         onClick={startEditing}
         type="button"
       >
@@ -782,6 +837,7 @@ function EditableSetNumberCell({
       <input
         autoComplete="off"
         className="h-8 w-full rounded-md border border-border/70 bg-background px-1 text-center outline-none"
+        disabled={controlsDisabled}
         enterKeyHint="done"
         inputMode={inputMode}
         name={fieldName}
@@ -814,6 +870,7 @@ function EditableSetNumberCell({
 interface SetPickerModalProps {
   availableActions: readonly WorkoutRouteAction[];
   exerciseId: string;
+  isMutationPending: boolean;
   onClose: () => void;
   set: WorkoutSet;
   setLabel: string;
@@ -823,6 +880,7 @@ interface SetPickerModalProps {
 function SetPickerModal({
   availableActions,
   exerciseId,
+  isMutationPending,
   onClose,
   set,
   setLabel,
@@ -832,6 +890,7 @@ function SetPickerModal({
   const canRemoveSet = hasAction(availableActions, "remove_set") && !isSetConfirmed(set);
   const canSwitchToWarmup = canUpdateSetDesignation && set.designation !== "warmup";
   const canSwitchToWorking = canUpdateSetDesignation && set.designation !== "working";
+  const controlsDisabled = isMutationPending;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -873,7 +932,7 @@ function SetPickerModal({
             <input name="designation" type="hidden" value="warmup" />
             <Button
               className="w-full justify-start"
-              disabled={!canSwitchToWarmup}
+              disabled={controlsDisabled || !canSwitchToWarmup}
               type="submit"
               variant="outline"
             >
@@ -892,7 +951,7 @@ function SetPickerModal({
             <input name="designation" type="hidden" value="working" />
             <Button
               className="w-full justify-start"
-              disabled={!canSwitchToWorking}
+              disabled={controlsDisabled || !canSwitchToWorking}
               type="submit"
               variant="outline"
             >
@@ -910,7 +969,7 @@ function SetPickerModal({
             />
             <Button
               className="w-full justify-start"
-              disabled={!canRemoveSet}
+              disabled={controlsDisabled || !canRemoveSet}
               type="submit"
               variant="destructive"
             >
@@ -919,7 +978,13 @@ function SetPickerModal({
           </Form>
         </div>
 
-        <Button className="mt-3 w-full" onClick={onClose} type="button" variant="ghost">
+        <Button
+          className="mt-3 w-full"
+          disabled={controlsDisabled}
+          onClick={onClose}
+          type="button"
+          variant="ghost"
+        >
           Cancel
         </Button>
       </section>
@@ -927,7 +992,12 @@ function SetPickerModal({
   );
 }
 
-function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps) {
+function ExerciseCard({
+  availableActions,
+  exercise,
+  isMutationPending,
+  workout,
+}: ExerciseCardProps) {
   const canAddSet = hasAction(availableActions, "add_set");
   const canConfirmSet = hasAction(availableActions, "confirm_set");
   const canEditExerciseNotes = hasAction(availableActions, "update_exercise_notes");
@@ -941,6 +1011,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
     : hasAction(availableActions, "update_set_planned")
       ? "update_set_planned"
       : null;
+  const controlsDisabled = isMutationPending;
   const lastSet = exercise.sets.at(-1);
   const carryForwardValues = getCarryForwardSetValues(lastSet);
   const removeExerciseFormId = `remove-exercise-${exercise.id}`;
@@ -994,6 +1065,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
             <DropdownMenuTrigger asChild>
               <Button
                 aria-label={`Open exercise actions for ${exercise.displayName}`}
+                disabled={controlsDisabled}
                 size="icon"
                 type="button"
                 variant="ghost"
@@ -1013,6 +1085,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
               <DropdownMenuGroup>
                 {canEditExerciseNotes ? (
                   <DropdownMenuItem
+                    disabled={controlsDisabled}
                     onSelect={() => {
                       setIsNotesDialogOpen(true);
                     }}
@@ -1022,7 +1095,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
                 ) : null}
                 <DropdownMenuItem
                   className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                  disabled={!canRemoveExerciseNow}
+                  disabled={controlsDisabled || !canRemoveExerciseNow}
                   onSelect={() => {
                     const form = document.getElementById(removeExerciseFormId);
 
@@ -1090,7 +1163,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
                       <td className="px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
                         <Button
                           className="h-auto min-w-8 rounded-full px-2 py-1 font-medium"
-                          disabled={!canOpenSetPicker}
+                          disabled={controlsDisabled || !canOpenSetPicker}
                           onClick={() => {
                             setSelectedSetIdForRpe(null);
                             setSelectedSetForPicker({
@@ -1114,6 +1187,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
                           exerciseId={exercise.id}
                           fieldName="weightLbs"
                           inputMode="decimal"
+                          isMutationPending={controlsDisabled}
                           set={set}
                           step="0.5"
                           workout={workout}
@@ -1125,6 +1199,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
                           exerciseId={exercise.id}
                           fieldName="reps"
                           inputMode="numeric"
+                          isMutationPending={controlsDisabled}
                           set={set}
                           step="1"
                           workout={workout}
@@ -1132,7 +1207,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
                       </td>
                       <td className="px-2 py-2 text-center pr-4 sm:px-2 sm:pr-2">
                         <SetRpeButton
-                          canChoose={canConfirmSet}
+                          canChoose={canConfirmSet && !controlsDisabled}
                           isOpen={selectedSetIdForRpe === set.id}
                           onToggle={() => {
                             if (!canConfirmSet) {
@@ -1151,6 +1226,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
                     {selectedSetIdForRpe === set.id ? (
                       <SetRpeChooserRow
                         exerciseId={exercise.id}
+                        isMutationPending={controlsDisabled}
                         onClose={() => {
                           setSelectedSetIdForRpe(null);
                         }}
@@ -1180,7 +1256,13 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
             {carryForwardValues?.reps != null ? (
               <input name="reps" type="hidden" value={carryForwardValues.reps} />
             ) : null}
-            <Button className="w-full" size="sm" type="submit" variant="outline">
+            <Button
+              className="w-full"
+              disabled={controlsDisabled}
+              size="sm"
+              type="submit"
+              variant="outline"
+            >
               <PlusIcon />
               Add Set
             </Button>
@@ -1198,6 +1280,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
           <SetPickerModal
             availableActions={availableActions}
             exerciseId={exercise.id}
+            isMutationPending={controlsDisabled}
             onClose={() => {
               setSelectedSetForPicker(null);
             }}
@@ -1230,6 +1313,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
             workoutVersion={workout.version}
           />
           <Textarea
+            disabled={controlsDisabled}
             name="userNotes"
             onChange={(event) => {
               setDraftExerciseNotes(event.target.value);
@@ -1239,6 +1323,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
           />
           <DialogFooter>
             <Button
+              disabled={controlsDisabled}
               onClick={() => {
                 setIsNotesDialogOpen(false);
               }}
@@ -1247,7 +1332,7 @@ function ExerciseCard({ availableActions, exercise, workout }: ExerciseCardProps
             >
               Cancel
             </Button>
-            <Button disabled={notesFetcher.state !== "idle"} type="submit">
+            <Button disabled={controlsDisabled || notesFetcher.state !== "idle"} type="submit">
               Save notes
             </Button>
           </DialogFooter>
@@ -1320,12 +1405,33 @@ function SessionSummarySection({ exercisesCount, progress, workout }: SessionSum
 }
 
 export function WorkoutDetailScreen({ actionData, loaderData }: WorkoutDetailScreenProps) {
+  const fetchers = useFetchers();
   const location = useLocation();
   const navigate = useNavigate();
+  const navigation = useNavigation();
   const [isHistoricalEditMode, setIsHistoricalEditMode] = useState(false);
   usePublishAppEvent(actionData);
 
-  const availableActions = getAvailableActions(loaderData.workout.status, {
+  const pendingMutations = getPendingWorkoutMutations(
+    [
+      ...fetchers.map((fetcher) => ({
+        formData: fetcher.formData,
+        key: fetcher.key,
+      })),
+      ...(navigation.formData
+        ? [
+            {
+              formData: navigation.formData,
+              key: "navigation",
+            },
+          ]
+        : []),
+    ],
+    loaderData.workout.id,
+  );
+  const optimisticLoaderData = applyOptimisticWorkoutDetail(loaderData, pendingMutations);
+  const isMutationPending = pendingMutations.length > 0;
+  const availableActions = getAvailableActions(optimisticLoaderData.workout.status, {
     historicalEditMode: isHistoricalEditMode,
   });
 
@@ -1360,16 +1466,23 @@ export function WorkoutDetailScreen({ actionData, loaderData }: WorkoutDetailScr
   }, []);
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(240px,0.7fr)] lg:gap-8">
+    <section
+      aria-busy={isMutationPending}
+      className={cn(
+        "grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(240px,0.7fr)] lg:gap-8",
+        isMutationPending && "opacity-95",
+      )}
+    >
       <div className="grid gap-0">
         <WorkoutOverviewCard
           availableActions={availableActions}
-          initialNowMs={Date.parse(loaderData.loadedAt)}
+          initialNowMs={Date.parse(optimisticLoaderData.loadedAt)}
           isHistoricalEditMode={isHistoricalEditMode}
+          isMutationPending={isMutationPending}
           onEnterHistoricalEditMode={() => {
             setIsHistoricalEditMode(true);
           }}
-          workout={loaderData.workout}
+          workout={optimisticLoaderData.workout}
         />
         <div
           aria-hidden="true"
@@ -1377,12 +1490,13 @@ export function WorkoutDetailScreen({ actionData, loaderData }: WorkoutDetailScr
         />
 
         <div>
-          {loaderData.exercises.map((exercise) => (
+          {optimisticLoaderData.exercises.map((exercise) => (
             <ExerciseCard
               availableActions={availableActions}
               exercise={exercise}
+              isMutationPending={isMutationPending}
               key={exercise.id}
-              workout={loaderData.workout}
+              workout={optimisticLoaderData.workout}
             />
           ))}
         </div>
@@ -1390,9 +1504,9 @@ export function WorkoutDetailScreen({ actionData, loaderData }: WorkoutDetailScr
 
       <aside className="grid content-start gap-4 lg:border-border/70 lg:border-l lg:pl-6">
         <SessionSummarySection
-          exercisesCount={loaderData.exercises.length}
-          progress={loaderData.progress}
-          workout={loaderData.workout}
+          exercisesCount={optimisticLoaderData.exercises.length}
+          progress={optimisticLoaderData.progress}
+          workout={optimisticLoaderData.workout}
         />
       </aside>
     </section>
