@@ -1,5 +1,6 @@
 import { data, type ShouldRevalidateFunctionArgs } from "react-router";
 
+import { WorkoutDetailScreen } from "~/components/screens/workout-detail-screen";
 import { defineAppEventRouteHandle } from "~/features/app-events/client";
 import {
   createExerciseInvalidateKey,
@@ -13,7 +14,6 @@ import {
 import { createWorkoutRouteService } from "~/features/workouts/d1-service.server";
 import { handleWorkoutPostAction } from "~/features/workouts/workout-action.server";
 import { WorkoutNotFoundError } from "~/features/workouts/service";
-import { WorkoutDetailView } from "~/features/workouts/workout-detail-view";
 import { createPageMeta } from "~/lib/meta";
 import { getAppDatabase } from "~/lib/.server/router-context";
 
@@ -105,5 +105,5 @@ export async function action({ context, request }: Route.ActionArgs) {
 }
 
 export default function WorkoutDetail({ actionData, loaderData }: Route.ComponentProps) {
-  return <WorkoutDetailView actionData={actionData} loaderData={loaderData} />;
+  return <WorkoutDetailScreen actionData={actionData} loaderData={loaderData} />;
 }

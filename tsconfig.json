@@ -4,6 +4,9 @@
   "compilerOptions": {
     "allowImportingTsExtensions": true,
     "checkJs": true,
+    "paths": {
+      "~/*": ["./app/*"]
+    },
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "strict": true,
