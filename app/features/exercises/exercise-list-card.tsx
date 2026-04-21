@@ -1,5 +1,5 @@
-import { Badge } from "~/components/ui/badge";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "~/components/ui/card";
+import { Badge } from "~/components/atoms/badge";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "~/components/atoms/card";
 
 import type { ExerciseListItem } from "./contracts";
 

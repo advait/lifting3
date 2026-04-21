@@ -1,7 +1,7 @@
 import { DownloadIcon, ShareIcon } from "lucide-react";
 import { startTransition, useState } from "react";
 
-import { Button } from "~/components/ui/button";
+import { Button } from "~/components/atoms/button";
 
 import { usePwaInstall } from "./install";
 

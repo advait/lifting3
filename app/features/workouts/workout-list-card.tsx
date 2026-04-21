@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 
-import { LocalDateTime } from "~/components/local-date-time";
+import { LocalDateTime } from "~/components/atoms/local-date-time";
 import {
   Card,
   CardAction,
@@ -8,7 +8,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "~/components/ui/card";
+} from "~/components/atoms/card";
 
 import type { WorkoutListExerciseSummary, WorkoutListItem } from "./contracts";
 import { WorkoutStatusBadge } from "./workout-status-badge";

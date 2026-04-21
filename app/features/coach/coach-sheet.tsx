@@ -31,9 +31,9 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 
-import { LocalDateTime } from "~/components/local-date-time";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { LocalDateTime } from "~/components/atoms/local-date-time";
+import { Badge } from "~/components/atoms/badge";
+import { Button } from "~/components/atoms/button";
 import { publishAppEvent } from "~/features/app-events/client";
 import { type AppEventEnvelope, appInvalidateKeySchema } from "~/features/app-events/schema";
 import type { WorkoutAgentTarget } from "~/features/workouts/contracts";
