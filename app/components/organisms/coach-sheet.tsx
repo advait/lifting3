@@ -10,6 +10,7 @@ import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { useAgent } from "agents/react";
 import {
   AlertTriangleIcon,
+  ArrowDownIcon,
   CalendarIcon,
   CheckCircle2Icon,
   DumbbellIcon,
@@ -899,8 +900,12 @@ function CoachSheetSessionContent({
   target: WorkoutAgentTarget;
 }) {
   const [draft, setDraft] = useState("");
+  const [isBottomLocked, setIsBottomLocked] = useState(true);
   const agentConfig = getAgentConfig(target);
+  const discussionScrollRef = useRef<HTMLDivElement | null>(null);
   const discussionEndRef = useRef<HTMLDivElement | null>(null);
+  const programmaticScrollFrameRef = useRef<number | null>(null);
+  const isProgrammaticScrollRef = useRef(false);
   const observedToolStatesRef = useRef<Map<string, ReturnType<typeof getToolPartState>>>(new Map());
   const publishedToolEventIdsRef = useRef<Set<string>>(new Set());
   const hasObservedLiveAgentActivityRef = useRef(false);
@@ -964,11 +969,55 @@ function CoachSheetSessionContent({
     observedToolStatesRef.current = nextObservedToolStates;
   });
 
-  const scrollDiscussionToTail = () => {
-    discussionEndRef.current?.scrollIntoView({
+  const syncBottomLock = useEffectEvent((nextValue: boolean) => {
+    setIsBottomLocked((currentValue) => (currentValue === nextValue ? currentValue : nextValue));
+  });
+
+  const isDiscussionTailVisible = useEffectEvent(() => {
+    const discussionScroll = discussionScrollRef.current;
+    const discussionEnd = discussionEndRef.current;
+
+    if (!discussionScroll || !discussionEnd) {
+      return true;
+    }
+
+    const scrollBounds = discussionScroll.getBoundingClientRect();
+    const endBounds = discussionEnd.getBoundingClientRect();
+
+    return endBounds.top <= scrollBounds.bottom && endBounds.bottom >= scrollBounds.top;
+  });
+
+  const releaseProgrammaticScrollLock = useEffectEvent(() => {
+    if (programmaticScrollFrameRef.current != null) {
+      window.cancelAnimationFrame(programmaticScrollFrameRef.current);
+    }
+
+    programmaticScrollFrameRef.current = window.requestAnimationFrame(() => {
+      isProgrammaticScrollRef.current = false;
+      syncBottomLock(isDiscussionTailVisible());
+    });
+  });
+
+  const scrollDiscussionToTail = useEffectEvent((behavior: ScrollBehavior = "auto") => {
+    if (!discussionEndRef.current) {
+      return;
+    }
+
+    isProgrammaticScrollRef.current = true;
+    discussionEndRef.current.scrollIntoView({
+      behavior,
       block: "end",
     });
-  };
+    releaseProgrammaticScrollLock();
+  });
+
+  const handleDiscussionScroll = useEffectEvent(() => {
+    if (isProgrammaticScrollRef.current) {
+      return;
+    }
+
+    syncBottomLock(isDiscussionTailVisible());
+  });
 
   useEffect(() => {
     if (isBusy) {
@@ -979,6 +1028,45 @@ function CoachSheetSessionContent({
   }, [isBusy, messages]);
 
   useEffect(() => {
+    const discussionScroll = discussionScrollRef.current;
+    const discussionEnd = discussionEndRef.current;
+
+    if (!discussionScroll || !discussionEnd) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          syncBottomLock(true);
+        }
+      },
+      {
+        root: discussionScroll,
+        threshold: 0.5,
+      },
+    );
+
+    observer.observe(discussionEnd);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (programmaticScrollFrameRef.current != null) {
+        window.cancelAnimationFrame(programmaticScrollFrameRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isBottomLocked) {
+      return;
+    }
+
     const frameId = window.requestAnimationFrame(() => {
       scrollDiscussionToTail();
     });
@@ -986,7 +1074,7 @@ function CoachSheetSessionContent({
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [messages, status]);
+  }, [isBottomLocked, messages, status]);
 
   const handleClearThread = () => {
     void stop();
@@ -995,6 +1083,7 @@ function CoachSheetSessionContent({
     observedToolStatesRef.current = new Map();
     publishedToolEventIdsRef.current = new Set();
     hasObservedLiveAgentActivityRef.current = false;
+    setIsBottomLocked(true);
     setDraft("");
   };
   const activityStatusLabel = isSubmitting
@@ -1011,6 +1100,7 @@ function CoachSheetSessionContent({
     }
 
     clearError();
+    setIsBottomLocked(true);
     setDraft("");
     startTransition(() => {
       void sendMessage({
@@ -1021,6 +1111,11 @@ function CoachSheetSessionContent({
       });
     });
   };
+  const jumpToBottom = () => {
+    setIsBottomLocked(true);
+    scrollDiscussionToTail();
+  };
+  const showJumpToBottomButton = messages.length > 0 && !isBottomLocked;
 
   return (
     <>
@@ -1034,56 +1129,78 @@ function CoachSheetSessionContent({
       />
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4">
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="grid min-h-full content-start gap-3">
-            {messages.length === 0 && !chatErrorMessage ? (
-              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-4 text-muted-foreground text-sm leading-relaxed">
-                {agentConfig.emptyState}
-              </div>
-            ) : (
-              messages.map((message) => {
-                const isAnimatingAssistantMessage =
-                  message.role === "assistant" && isStreaming && message.id === messages.at(-1)?.id;
-                const renderedParts = message.parts
-                  .map((part, index) =>
-                    renderMessagePart(
-                      (approvalId, approved) => {
-                        addToolApprovalResponse({ approved, id: approvalId });
-                      },
-                      {
-                        isAnimating: isAnimatingAssistantMessage,
-                        role: message.role,
-                      },
-                      part,
-                      `${message.id}:${part.type}:${index}`,
-                    ),
-                  )
-                  .filter((part) => part !== null);
+        <div className="relative min-h-0 flex-1">
+          <div
+            className="min-h-0 h-full overflow-y-auto"
+            onScroll={handleDiscussionScroll}
+            ref={discussionScrollRef}
+          >
+            <div className="grid min-h-full content-start gap-3">
+              {messages.length === 0 && !chatErrorMessage ? (
+                <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-4 text-muted-foreground text-sm leading-relaxed">
+                  {agentConfig.emptyState}
+                </div>
+              ) : (
+                messages.map((message) => {
+                  const isAnimatingAssistantMessage =
+                    message.role === "assistant" &&
+                    isStreaming &&
+                    message.id === messages.at(-1)?.id;
+                  const renderedParts = message.parts
+                    .map((part, index) =>
+                      renderMessagePart(
+                        (approvalId, approved) => {
+                          addToolApprovalResponse({ approved, id: approvalId });
+                        },
+                        {
+                          isAnimating: isAnimatingAssistantMessage,
+                          role: message.role,
+                        },
+                        part,
+                        `${message.id}:${part.type}:${index}`,
+                      ),
+                    )
+                    .filter((part) => part !== null);
 
-                if (renderedParts.length === 0) {
-                  return null;
-                }
+                  if (renderedParts.length === 0) {
+                    return null;
+                  }
 
-                return (
-                  <div
-                    className={cn(
-                      "text-sm leading-relaxed",
-                      message.role === "user"
-                        ? "ml-8 rounded-2xl bg-primary px-4 py-3 text-primary-foreground"
-                        : "w-full text-foreground",
-                    )}
-                    key={message.id}
-                  >
-                    <div className="grid gap-3">{renderedParts}</div>
-                  </div>
-                );
-              })
-            )}
-            {chatErrorMessage ? (
-              <CoachErrorCard message={chatErrorMessage} onDismiss={clearError} />
-            ) : null}
-            <div aria-hidden className="h-px w-full" ref={discussionEndRef} />
+                  return (
+                    <div
+                      className={cn(
+                        "text-sm leading-relaxed",
+                        message.role === "user"
+                          ? "ml-8 rounded-2xl bg-primary px-4 py-3 text-primary-foreground"
+                          : "w-full text-foreground",
+                      )}
+                      key={message.id}
+                    >
+                      <div className="grid gap-3">{renderedParts}</div>
+                    </div>
+                  );
+                })
+              )}
+              {chatErrorMessage ? (
+                <CoachErrorCard message={chatErrorMessage} onDismiss={clearError} />
+              ) : null}
+              <div aria-hidden className="h-4 w-full" ref={discussionEndRef} />
+            </div>
           </div>
+          {showJumpToBottomButton ? (
+            <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center px-4">
+              <Button
+                aria-label="Jump to latest coach messages"
+                className="pointer-events-auto size-11 rounded-full border-border/70 bg-background/55 text-foreground shadow-[0_18px_36px_rgba(0,0,0,0.24)] backdrop-blur-xl hover:bg-background/72"
+                onClick={jumpToBottom}
+                size="icon-lg"
+                type="button"
+                variant="outline"
+              >
+                <ArrowDownIcon />
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         <form
