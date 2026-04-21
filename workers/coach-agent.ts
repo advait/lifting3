@@ -1,12 +1,13 @@
-import { AIChatAgent } from "@cloudflare/ai-chat";
-import { convertToModelMessages, stepCountIs, streamText } from "ai";
+import { Think } from "@cloudflare/think";
 import { createSettingsService } from "~/features/settings/d1-service.server";
-import { createWorkoutRouteService } from "~/features/workouts/d1-service.server";
-import type {
-  WorkoutDetailLoaderData,
-  WorkoutExercise,
-  WorkoutSet,
+import {
+  parseCoachInstanceName,
+  type WorkoutDetailLoaderData,
+  type WorkoutExercise,
+  type WorkoutSet,
+  workoutListSearchSchema,
 } from "~/features/workouts/contracts";
+import { createWorkoutRouteService } from "~/features/workouts/d1-service.server";
 import { WorkoutNotFoundError } from "~/features/workouts/service";
 import { createAppDatabase } from "~/lib/.server/db";
 import {
@@ -14,9 +15,7 @@ import {
   buildPatchWorkoutContractPrompt,
   buildUserProfilePrompt,
   createCoachLanguageModel,
-  createErrorAwareChatResponse,
-  createErrorChatResponse,
-  createStaticChatResponse,
+  normalizeCoachError,
 } from "./coach-agent-helpers";
 import {
   createCreateWorkoutTool,
@@ -25,10 +24,52 @@ import {
   createSetUserProfileTool,
 } from "./coach-agent-tools";
 
+const ACTIVE_COACH_TOOL_NAMES = [
+  "create_workout",
+  "patch_workout",
+  "query_history",
+  "set_user_profile",
+] as const;
 const EXERCISE_SUMMARY_LIMIT = 6;
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
 });
+
+function buildGeneralCoachSystemPrompt(
+  userProfile: string | null,
+  recentWorkouts: ReadonlyArray<{
+    date: string;
+    id: string;
+    status: string;
+    title: string;
+    version: number;
+  }>,
+) {
+  const recentWorkoutLines = recentWorkouts.map(
+    (workout) =>
+      `- ${workout.id}: ${workout.title} on ${workout.date.slice(0, 10)} (${workout.status}, version ${workout.version})`,
+  );
+
+  return [
+    "You are lifting3's general coach.",
+    "You help with workout planning, training structure, and broad coaching discussion.",
+    "Be concrete and concise.",
+    "Use tools when the user asks to create a workout, patch workout data, or inspect structured history.",
+    "Do not claim that you completed a mutation unless the tool returned ok: true.",
+    "If patch_workout returns ok: false with VERSION_MISMATCH, explain the conflict and ask the user to retry after refresh.",
+    buildPatchWorkoutContractPrompt(),
+    "When you need a workout id or version for a historical edit, get it from the recent-workout context below or query_history first.",
+    "If the user is on a workout detail page, the workout-scoped coach may have more context for that single workout.",
+    "",
+    buildUserProfilePrompt(userProfile),
+    "",
+    "Available exercise ids:",
+    buildExerciseCatalogPrompt(),
+    "",
+    "Recent workouts:",
+    ...(recentWorkoutLines.length > 0 ? recentWorkoutLines : ["- No workouts found."]),
+  ].join("\n");
+}
 
 function formatSetValues(set: WorkoutSet) {
   const weight = set.actual.weightLbs ?? set.planned.weightLbs;
@@ -155,66 +196,82 @@ function buildWorkoutCoachSystemPrompt(
     .join("\n");
 }
 
-export class WorkoutCoachAgent extends AIChatAgent<Env> {
-  maxPersistedMessages = 40;
+function parseCoachThread(instanceName: string) {
+  const parsedInstance = parseCoachInstanceName(instanceName);
 
-  async onChatMessage(
-    onFinish: Parameters<AIChatAgent<Env>["onChatMessage"]>[0],
-    options: Parameters<AIChatAgent<Env>["onChatMessage"]>[1],
-  ) {
-    return this.createCoachResponse(onFinish, options);
+  if (parsedInstance) {
+    return parsedInstance;
   }
 
-  private async createCoachResponse(
-    onFinish: Parameters<AIChatAgent<Env>["onChatMessage"]>[0],
-    options: Parameters<AIChatAgent<Env>["onChatMessage"]>[1],
-  ) {
-    try {
-      const db = createAppDatabase(this.env);
-      const settingsService = createSettingsService(db);
-      const [loaderData, userProfile] = await Promise.all([
-        createWorkoutRouteService(db).loadWorkoutDetail({ workoutId: this.name }),
+  throw new Error(`Unknown coach thread "${instanceName}".`);
+}
+
+export class CoachAgent extends Think<Env> {
+  override chatRecovery = false;
+  override maxSteps = 5;
+  override messageConcurrency = "queue" as const;
+
+  override getModel() {
+    return createCoachLanguageModel(this.env);
+  }
+
+  override getSystemPrompt() {
+    return "You are lifting3's coach.";
+  }
+
+  override getTools() {
+    const db = createAppDatabase(this.env);
+    const thread = parseCoachThread(this.name);
+
+    return {
+      create_workout: createCreateWorkoutTool(db),
+      patch_workout: createPatchWorkoutTool(
+        db,
+        thread.kind === "workout" ? thread.workoutId : undefined,
+      ),
+      query_history: createQueryHistoryTool(db),
+      set_user_profile: createSetUserProfileTool(db),
+    };
+  }
+
+  override async beforeTurn() {
+    const db = createAppDatabase(this.env);
+    const settingsService = createSettingsService(db);
+    const workoutRouteService = createWorkoutRouteService(db);
+    const thread = parseCoachThread(this.name);
+
+    if (thread.kind === "general") {
+      const [recentWorkouts, userProfile] = await Promise.all([
+        workoutRouteService.loadWorkoutList(workoutListSearchSchema.parse({})),
         settingsService.loadUserProfile(),
       ]);
 
-      try {
-        const result = streamText({
-          abortSignal: options?.abortSignal,
-          messages: await convertToModelMessages(this.messages),
-          model: createCoachLanguageModel(this.env),
-          onFinish,
-          stopWhen: stepCountIs(5),
-          system: buildWorkoutCoachSystemPrompt(loaderData, userProfile),
-          tools: {
-            create_workout: createCreateWorkoutTool(db),
-            patch_workout: createPatchWorkoutTool(db, this.name),
-            query_history: createQueryHistoryTool(db),
-            set_user_profile: createSetUserProfileTool(db),
-          },
-        });
+      return {
+        activeTools: [...ACTIVE_COACH_TOOL_NAMES],
+        system: buildGeneralCoachSystemPrompt(userProfile, recentWorkouts.items.slice(0, 8)),
+      };
+    }
 
-        return createErrorAwareChatResponse({
-          logPrefix: "[WorkoutCoachAgent] Streaming inference failed:",
-          messages: this.messages,
-          stream: result.toUIMessageStream(),
-        });
-      } catch (error) {
-        return createErrorChatResponse({
-          error,
-          logPrefix: "[WorkoutCoachAgent] Streaming inference failed:",
-          messages: this.messages,
-        });
-      }
+    try {
+      const [loaderData, userProfile] = await Promise.all([
+        workoutRouteService.loadWorkoutDetail({ workoutId: thread.workoutId }),
+        settingsService.loadUserProfile(),
+      ]);
+
+      return {
+        activeTools: [...ACTIVE_COACH_TOOL_NAMES],
+        system: buildWorkoutCoachSystemPrompt(loaderData, userProfile),
+      };
     } catch (error) {
       if (error instanceof WorkoutNotFoundError) {
-        return createStaticChatResponse(this.messages, `I could not find workout "${this.name}".`);
+        throw new Error(`I could not find workout "${thread.workoutId}".`);
       }
 
-      return createErrorChatResponse({
-        error,
-        logPrefix: "[WorkoutCoachAgent] Failed to prepare workout context:",
-        messages: this.messages,
-      });
+      throw error;
     }
+  }
+
+  override onChatError(error: unknown) {
+    return new Error(normalizeCoachError(error));
   }
 }

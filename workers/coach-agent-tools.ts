@@ -14,7 +14,7 @@ import { getPatchWorkoutToolDescription } from "./coach-agent-helpers";
 function buildWorkoutScopeError(currentWorkoutId: string, requestedWorkoutId: string) {
   return {
     code: "WRONG_WORKOUT_THREAD",
-    message: `This workout coach thread is bound to ${currentWorkoutId}, not ${requestedWorkoutId}.`,
+    message: `This coach thread is bound to ${currentWorkoutId}, not ${requestedWorkoutId}.`,
     ok: false as const,
     workoutId: requestedWorkoutId,
   };

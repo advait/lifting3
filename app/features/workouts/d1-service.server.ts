@@ -36,6 +36,7 @@ import type {
   WorkoutSet,
 } from "./contracts.ts";
 import {
+  createWorkoutCoachTarget,
   workoutDetailLoaderDataSchema,
   workoutDetailWorkoutSchema,
   workoutExerciseSchema,
@@ -629,10 +630,7 @@ function buildWorkoutDetail(
   >,
 ) {
   return workoutDetailLoaderDataSchema.parse({
-    agentTarget: {
-      instanceName: record.workout.id,
-      kind: "workout",
-    },
+    agentTarget: createWorkoutCoachTarget(record.workout.id),
     exercises: record.exercises.map((exercise) =>
       decorateExercise(
         exercise,

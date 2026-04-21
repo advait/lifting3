@@ -1,8 +1,8 @@
 import { createRequestHandler } from "react-router";
 import { createAppRouterContext } from "~/lib/.server/router-context";
+import { CoachAgent } from "./coach-agent";
 
-export { GeneralCoachAgent } from "./general-coach-agent";
-export { WorkoutCoachAgent } from "./workout-coach-agent";
+export { CoachAgent };
 
 const requestHandler = createRequestHandler(
   () => import("virtual:react-router/server-build"),

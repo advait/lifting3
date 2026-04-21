@@ -8,6 +8,7 @@ import {
 } from "~/features/app-events/schema";
 import { workoutMutationResultSchema } from "~/features/workouts/actions";
 import {
+  createWorkoutCoachTarget,
   workoutDetailLoaderDataSchema,
   workoutDetailParamsSchema,
 } from "~/features/workouts/contracts";
@@ -27,12 +28,7 @@ export const handle = defineAppEventRouteHandle({
       return parsedLoaderData.data.agentTarget;
     }
 
-    return params.workoutId
-      ? {
-          instanceName: params.workoutId,
-          kind: "workout",
-        }
-      : null;
+    return params.workoutId ? createWorkoutCoachTarget(params.workoutId) : null;
   },
   invalidateKeys: ({ loaderData, params }) => {
     if (!params.workoutId) {

@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "lifting3",
   "compatibility_date": "2026-04-16",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "experimental"],
   "main": "./workers/app.ts",
   "ai": {
     "binding": "AI",
@@ -10,12 +10,8 @@
   "durable_objects": {
     "bindings": [
       {
-        "name": "GeneralCoachAgent",
-        "class_name": "GeneralCoachAgent",
-      },
-      {
-        "name": "WorkoutCoachAgent",
-        "class_name": "WorkoutCoachAgent",
+        "name": "CoachAgent",
+        "class_name": "CoachAgent",
       },
     ],
   },
@@ -27,6 +23,14 @@
     {
       "tag": "v2",
       "new_sqlite_classes": ["GeneralCoachAgent"],
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": ["CoachAgent"],
+    },
+    {
+      "tag": "v4",
+      "deleted_classes": ["WorkoutCoachAgent", "GeneralCoachAgent"],
     },
   ],
   "d1_databases": [

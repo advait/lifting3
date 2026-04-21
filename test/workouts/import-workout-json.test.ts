@@ -107,16 +107,18 @@ describe("workout JSON import helpers", () => {
       },
     });
     expect(record.exercises[0]?.state.sets[0]).toMatchObject({
-      actual: { reps: 10, rpe: 8, weightLbs: 60 },
+      actual: { rpe: 8, weightLbs: 60 },
       confirmedAt: "2026-04-04T07:18:00.000Z",
       id: "legacy-upper-a::set:0:0:exercise-1:set-1",
-      planned: { reps: 10, rpe: 8, weightLbs: 60 },
+      planned: { rpe: 8, weightLbs: 60 },
+      reps: 10,
     });
     expect(record.exercises[0]?.state.sets[1]).toMatchObject({
-      actual: { reps: null, rpe: null, weightLbs: null },
+      actual: { rpe: null, weightLbs: null },
       confirmedAt: null,
       id: "legacy-upper-a::set:0:1:exercise-1:set-2",
-      planned: { reps: 12, rpe: null, weightLbs: 55 },
+      planned: { rpe: null, weightLbs: 55 },
+      reps: 12,
     });
     expect(record.exercises[1]?.state.status).toBe("planned");
 

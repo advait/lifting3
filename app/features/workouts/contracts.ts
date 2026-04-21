@@ -11,6 +11,8 @@ import { SET_KINDS, WORKOUT_STATUSES } from "./file.ts";
 const WORKOUT_SOURCES = ["manual", "imported", "agent"] as const;
 const EXERCISE_STATUSES = ["planned", "active", "completed", "skipped", "replaced"] as const;
 const AGENT_KINDS = ["general", "workout"] as const;
+export const GENERAL_COACH_INSTANCE_NAME = "general";
+export const WORKOUT_COACH_INSTANCE_PREFIX = "workout:";
 
 const nonEmptyStringSchema = z.string().trim().min(1);
 const nullableTrimmedStringSchema = z.string().trim().min(1).nullable();
@@ -245,3 +247,38 @@ export type WorkoutExercise = z.infer<typeof workoutExerciseSchema>;
 export type WorkoutAgentTarget = z.infer<typeof workoutAgentTargetSchema>;
 export type WorkoutDetailWorkout = z.infer<typeof workoutDetailWorkoutSchema>;
 export type WorkoutDetailLoaderData = z.infer<typeof workoutDetailLoaderDataSchema>;
+
+export function createGeneralCoachTarget(): WorkoutAgentTarget {
+  return {
+    instanceName: GENERAL_COACH_INSTANCE_NAME,
+    kind: "general",
+  };
+}
+
+export function createWorkoutCoachTarget(workoutId: string): WorkoutAgentTarget {
+  return {
+    instanceName: `${WORKOUT_COACH_INSTANCE_PREFIX}${workoutId}`,
+    kind: "workout",
+  };
+}
+
+export function parseCoachInstanceName(instanceName: string) {
+  if (instanceName === GENERAL_COACH_INSTANCE_NAME) {
+    return {
+      kind: "general" as const,
+    };
+  }
+
+  if (instanceName.startsWith(WORKOUT_COACH_INSTANCE_PREFIX)) {
+    const workoutId = instanceName.slice(WORKOUT_COACH_INSTANCE_PREFIX.length).trim();
+
+    if (workoutId.length > 0) {
+      return {
+        kind: "workout" as const,
+        workoutId,
+      };
+    }
+  }
+
+  return null;
+}

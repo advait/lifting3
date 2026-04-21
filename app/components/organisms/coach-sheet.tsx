@@ -53,6 +53,7 @@ const SHEET_EXPANDED_HEIGHT = "92dvh";
 const SHEET_MAX_UPWARD_DRAG_PX = 160;
 const SHEET_MAX_DOWNWARD_DRAG_PX = 160;
 const TOOL_SUMMARY_LIMIT = 3;
+const COACH_AGENT_RUNTIME_NAME = "CoachAgent";
 const historyValueFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
 });
@@ -754,14 +755,14 @@ function getAgentConfig(target: WorkoutAgentTarget) {
   switch (target.kind) {
     case "workout":
       return {
-        agent: "WorkoutCoachAgent",
+        agent: COACH_AGENT_RUNTIME_NAME,
         emptyState: "Ask about this workout. The discussion stays attached to the current session.",
         placeholder: "Ask about progress, next sets, or exercise context",
       } as const;
     case "general":
     default:
       return {
-        agent: "GeneralCoachAgent",
+        agent: COACH_AGENT_RUNTIME_NAME,
         emptyState: "Ask for planning or general coaching guidance.",
         placeholder: "Ask about planning, structure, or next steps",
       } as const;
