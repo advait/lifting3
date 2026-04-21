@@ -1,86 +1,64 @@
 # lifting3
 
-**An AI-native workout app for planning sessions, logging sets fast, and keeping training history useful.**
+**A workout app with an embedded coach, not a chat demo with workouts bolted on.**
 
-Ask for tomorrow's leg day, get a real structured workout, then move straight into a focused logging flow with previous-performance context, quick RPE entry, and workout-specific coaching.
+`lifting3` is a single-user training app for planning sessions, logging sets quickly, and keeping workout history structured enough to query, edit, and learn from.
 
-`lifting3` is not a chatbot wrapped around fitness prompts. It is a workout product first: planning, session execution, history, and coaching are all tied to the same training system.
+Today the app is strongest in three places:
 
-## Preview
+- planning a workout from the coach into a real stored workout
+- running that workout with fast set logging and quick RPE confirmation
+- browsing workouts and exercises as first-class product surfaces
 
-<table>
-  <tr>
-    <td width="50%" align="center">
-      <img src="screenshots/home-coach-create-workout.png" alt="Home screen with recent workouts and the coach creating a new leg day workout" width="300" />
-    </td>
-    <td width="50%" align="center">
-      <img src="screenshots/active-set-logging.png" alt="Active workout logging screen with previous performance, weight, reps, and quick RPE controls" width="300" />
-    </td>
-  </tr>
-  <tr>
-    <td valign="top">
-      <strong>Coach-driven planning</strong><br />
-      The app can turn a natural-language request into a planned workout instead of dumping back generic advice.
-    </td>
-    <td valign="top">
-      <strong>Fast live logging</strong><br />
-      Active sessions keep the important controls on-screen: previous set context, current load and reps, and one-tap RPE selection.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <img src="screenshots/workout-plan-detail.png" alt="Planned workout detail screen with exercise order, notes, rest timers, and start workout action" width="300" />
-    </td>
-    <td width="50%" align="center">
-      <img src="screenshots/nav-drawer.png" alt="Navigation drawer showing recent workouts and primary sections of the app" width="300" />
-    </td>
-  </tr>
-  <tr>
-    <td valign="top">
-      <strong>Structured workout detail</strong><br />
-      Planned sessions already look like something you can train from: notes, constraints, exercise order, set targets, and a clean path into the live workout.
-    </td>
-    <td valign="top">
-      <strong>Built like a product</strong><br />
-      Navigation, recent sessions, and route structure are already shaped like a real app, not a one-screen prototype.
-    </td>
-  </tr>
-</table>
+The coach is already integrated into the app shell, but the docs had drifted. The current implementation uses a single Cloudflare `CoachAgent` built on `Think`, not separate `AIChatAgent` classes, and there is not yet a dedicated post-workout review or follow-up agent flow.
 
-## Why This Project Is Interesting
+## What Is Shipped
 
-- The coach can create and modify workouts, but the result is always a proper workout model you can browse, edit, and log against.
-- The workout screen is optimized for the main loop: start the session, record the set, assign RPE, move on.
-- History is first-class. Workouts and exercises are browsable on their own instead of being buried inside chat transcripts.
-- The architecture keeps the product honest: chat is useful, but it does not replace structured state.
+- `Home` shows recent workouts.
+- `Workouts` lists planned, active, and completed sessions.
+- `Workout detail` supports start/finish, set edits, set confirmation, notes, add/remove set, remove/reorder exercise, rest timer edits, and historical edit mode for completed sessions.
+- `Exercises` provides a filterable catalog with history-aware summaries.
+- `Coach` is a sheet in the app shell, not a standalone route.
+- `Analytics` and `Settings` routes exist, but their UI is still marked coming soon.
 
-## What It Does Today
+## Coach Architecture Today
 
-- `Home` surfaces recent workouts and acts as the daily landing page.
-- `Workouts` lists planned, active, and completed sessions and links into full workout detail pages.
-- `Workout detail` supports notes, set edits, set confirmation, add/remove set actions, carry-forward values, and workout completion.
-- `Exercises` provides a filterable exercise catalog with history-aware summary cards.
-- `Coach` is available from a floating sheet and can create workouts, patch workouts, query history, and save durable profile context.
-- `Analytics` and `Settings` are present in the app shell but still intentionally marked coming soon.
+- The worker exports one `CoachAgent` class from [workers/coach-agent.ts](/home/advait/l3-root/l3/workers/coach-agent.ts).
+- `CoachAgent` extends `@cloudflare/think`'s `Think`.
+- Thread identity is encoded in the agent instance name:
+  - `general`
+  - `workout:{workoutId}`
+- The coach tool surface is:
+  - `create_workout`
+  - `patch_workout`
+  - `query_history`
+  - `set_user_profile`
+- Workout data lives in D1 and flows through shared route/service code. Chat does not own workout state.
+- The current model is hardcoded to `openai/gpt-5.4` through Cloudflare AI Gateway `default`.
+- The only persisted app setting today is `user_profile`.
 
-## Product Shape
+## Important Gap
 
-The current build is strongest in four areas:
+There is no dedicated post-workout agent flow yet.
 
-- **Plan a workout** with the embedded coach or from structured data.
-- **Run the workout** with a UI built around quick set logging.
-- **Browse history** through workouts and exercises, not just messages.
-- **Keep coaching attached** to the workout flow instead of splitting it into a separate tool.
+What exists today:
 
-This repo is intentionally single-user for now and assumes perimeter access through Cloudflare Access rather than an in-app auth flow.
+- a workout-scoped coach thread can discuss the current workout
+- it can create a follow-up planned workout by calling `create_workout` with `sourceWorkoutId`
+
+What does not exist yet:
+
+- an automatic review flow after workout completion
+- a separate post-workout summary/reflection agent mode
+- a specialized tool or route just for post-session analysis
 
 ## Stack
 
 - React 19
 - React Router 7
 - Cloudflare Workers
-- Cloudflare D1 + Drizzle
 - Cloudflare Agents
+- Cloudflare D1 + Drizzle
 - Tailwind CSS v4
 - shadcn/ui
 - Vite+
@@ -88,15 +66,15 @@ This repo is intentionally single-user for now and assumes perimeter access thro
 ## Local Development
 
 1. Copy `.env.sample` to `.env`.
-2. Configure the `default` AI Gateway in Cloudflare with provider keys or billing for the configured coach model.
+2. Configure the Cloudflare AI Gateway named `default` with provider keys or billing.
 3. Run `pnpm install`.
 4. Apply local migrations with `pnpm db:migrate:local`.
 5. Seed sample workouts with `pnpm db:seed:local`.
 6. Start the app with `pnpm dev`.
 
-The default local URL is `http://localhost:43110`.
+Default local URL: `http://localhost:43110`
 
 ## Reference Docs
 
-- [docs/spec.md](docs/spec.md) - product and architecture spec
-- [docs/cloudflare-agents.md](docs/cloudflare-agents.md) - Cloudflare architecture guidance for D1, Drizzle, and Agents
+- [docs/spec.md](docs/spec.md) - current implementation status and product shape
+- [docs/cloudflare-agents.md](docs/cloudflare-agents.md) - current agent/runtime architecture in this repo

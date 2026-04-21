@@ -1,535 +1,225 @@
-# Cloudflare Agents Guidance for `lifting3`
+# Cloudflare Agent Architecture in `lifting3`
 
-Reviewed: 2026-04-16
+Reviewed: 2026-04-21
 
-This document explains the Cloudflare architecture that best matches `lifting3` while staying on Cloudflare's path of least resistance.
+This document describes the agent architecture that is actually implemented in the repo today.
 
-The core decision is:
+The previous version of this doc described a target design built around separate `GeneralCoachAgent` and `WorkoutCoachAgent` `AIChatAgent` classes plus an `AppEvents/default` Durable Object. That is not what the code does right now.
 
-- use D1 as the authoritative store for structured workout data
-- use Drizzle for D1 schema, migrations, and queries
-- use Cloudflare `AIChatAgent` for canonical conversation threads
-- use one global AI Gateway model ID from a singleton `settings` row, defaulting to `openai/gpt-5.4`
-- use a singleton `AppEvents/default` Durable Object for best-effort live fanout
-- keep agent tools narrow and server-side
+## Current Runtime
 
-This document intentionally omits features we do not plan to use in MVP:
+`lifting3` currently uses one exported agent class:
 
-- Browser Run / browser tools
-- Dynamic Workers / codemode / sandboxed execution
-- Think as the primary base class
-- Session API / `SessionManager` as the default chat model
-- sub-agents
-- MCP servers
-- voice
+- `CoachAgent` in [workers/coach-agent.ts](/home/advait/l3-root/l3/workers/coach-agent.ts)
 
-## 1. Recommended architecture
+Implementation details:
 
-Use four major pieces:
+- base class: `Think<Env>`
+- worker entrypoint: [workers/app.ts](/home/advait/l3-root/l3/workers/app.ts)
+- agent routing: `routeAgentRequest(request, env)`
+- chat recovery: disabled via `chatRecovery = false`
+- max steps: `5`
+- message concurrency: `"queue"`
 
-1. one shared D1 database
-2. one `GeneralCoachAgent` instance
-3. one `WorkoutCoachAgent` instance per workout
-4. one singleton `AppEvents/default` Durable Object
+There is no separate `GeneralCoachAgent` class, no separate `WorkoutCoachAgent` class, and no app-defined session manager layer.
 
-Recommended mapping:
+## Thread Model
 
-- structured workout state -> D1
-- workout list/history/analytics -> D1
-- general coaching thread -> `GeneralCoachAgent/default`
-- canonical workout thread -> `WorkoutCoachAgent/{workoutId}`
-- global live mutation fanout -> `AppEvents/default`
+The app still has two coaching modes, but they are represented as instance names on the same `CoachAgent` class.
 
-This gives the app:
+Current instance naming lives in [app/features/workouts/contracts.ts](/home/advait/l3-root/l3/app/features/workouts/contracts.ts):
 
-- one conversation per agent instance, which matches `AIChatAgent`
-- normal SQL for cross-workout reads
-- no custom app-owned chat persistence layer
-- one global listener for best-effort invalidation in a single-user app
-- direct alignment with Cloudflare's documented chat-agent path
+- general coach thread: `general`
+- workout-scoped thread: `workout:{workoutId}`
 
-## 2. Why this is the Cloudflare happy path
+Helpers:
 
-Cloudflare's easiest supported chat model is:
+- `createGeneralCoachTarget()`
+- `createWorkoutCoachTarget(workoutId)`
+- `parseCoachInstanceName(instanceName)`
 
-- one agent instance
-- one persisted chat thread
-- built-in message persistence
-- streaming responses
-- resumable streams
-- tools defined inside `onChatMessage()`
+The root app shell defaults to the general coach target, and the workout detail route overrides that target with the canonical workout-scoped thread for the current workout.
 
-That matches:
+## Client Integration
 
-- `GeneralCoachAgent/default`
-- `WorkoutCoachAgent/{workoutId}`
+The coach UI lives in a sheet component, not on its own `/coach` route.
 
-It does not match the older design of one top-level `CoachAgent` that owns many chat sessions internally.
+Key files:
 
-That older design is still possible, but it pushes you toward the experimental Session API and extra custom architecture. For MVP, it is the harder path.
+- [app/root.tsx](/home/advait/l3-root/l3/app/root.tsx)
+- [app/features/coach/coach-sheet.tsx](/home/advait/l3-root/l3/app/features/coach/coach-sheet.tsx)
 
-## 3. D1 vs agent/live storage
+The client uses:
 
-### Put this in D1
+- `useAgent({ agent: "CoachAgent", name: target.instanceName })`
+- `useAgentChat({ agent, getInitialMessages })`
 
-Use D1 as the authoritative structured store for:
+Initial chat history is loaded from the agent route's `get-messages` endpoint. The app does not mirror chat transcripts into D1 `sessions` or `messages` tables.
 
-- `settings`
-- `workouts`
-- `workout_exercises`
-- `exercise_sets`
-- notes
-- import/export metadata
-- exercise facts and analytics projections
-- optimistic concurrency state such as `version`
+## Tool Surface
 
-This is where cross-workout queries belong.
-
-### Put this in agent storage
-
-Let `AIChatAgent` persist:
-
-- general coach messages
-- workout coach messages
-- tool call/result history inside those conversations
-- stream recovery state
-
-Do not mirror that history into app-owned D1 `sessions` / `messages` tables in MVP.
-
-### Put this in `AppEvents/default`
-
-Use the singleton DO for:
-
-- global WebSocket listeners
-- best-effort broadcast of mutation notifications after every committed persisted mutation
-- transient connection bookkeeping only
-
-Do not put into `AppEvents/default`:
-
-- authoritative workout state
-- queryable history
-- replayable event logs
-- durable app state of any kind
-
-### Use `setState()` sparingly
-
-Only use `setState()` for small live-synced state if needed later, for example:
-
-- ephemeral connection-visible UI flags
-- live stream metadata
-- tiny optimistic indicators
-
-Do not put the workout database in `this.state`.
-
-## 4. Recommended agent model
-
-### `GeneralCoachAgent`
-
-Use one stable instance:
-
-- class: `GeneralCoachAgent`
-- name: `"default"`
-
-Responsibilities:
-
-- general planning
-- workout creation
-- broad coaching discussion
-- cross-workout reasoning using D1 reads
-- patching any workout when needed, including historical corrections
-
-### `WorkoutCoachAgent`
-
-Use one instance per workout:
-
-- class: `WorkoutCoachAgent`
-- name: `workoutId`
-
-Responsibilities:
-
-- canonical workout conversation
-- in-workout modifications
-- workout-specific summaries
-- reasoning over the active workout plus recent relevant history
-
-Important rule:
-
-- the workout's canonical conversation identity should just be `WorkoutCoachAgent/{workoutId}`
-- `WorkoutCoachAgent` is the canonical in-context thread for a workout, not the exclusive mutation owner
-- do not invent a second app-level session identity unless a later feature requires it
-
-## 5. Chat transport
-
-The lowest-friction Cloudflare routing model is:
-
-```text
-/agents/general-coach/default
-/agents/workout-coach/:workoutId
-```
-
-Use:
-
-- `routeAgentRequest()` in the Worker
-- `useAgent()`
-- `useAgentChat()`
-
-This should be the primary chat transport.
-
-The rest of the app can still use normal React Router loaders/actions for structured data screens.
-
-Use a separate global WebSocket transport for live invalidation:
-
-```text
-/events/default
-```
-
-That route should connect to the singleton `AppEvents/default` Durable Object.
-
-## 6. Shared mutation/query layer
-
-Keep one domain service layer for workout mutations and reads.
-
-Both of these should call the same code:
-
-- manual UI actions
-- agent tools
-
-That layer should:
-
-- use Drizzle against D1
-- enforce `expected_version`
-- rebuild/update projections
-- reject stale writes with `VERSION_MISMATCH`
-- publish a best-effort invalidation envelope to `AppEvents/default` after commit
-
-For multi-workout correction flows:
-
-- execute one guarded patch per target workout
-- allow partial success
-- return an explicit per-workout result summary to the caller
-
-The important architectural rule is:
-
-- agent tools do not own business rules
-- reducers/services own business rules
-
-## 7. Tool design
-
-Keep the tool surface exactly as narrow as the spec wants:
+The current tool surface is defined in [workers/coach-agent-tools.ts](/home/advait/l3-root/l3/workers/coach-agent-tools.ts):
 
 - `create_workout`
 - `patch_workout`
 - `query_history`
+- `set_user_profile`
 
-Recommended ownership:
+Important behavior:
 
-- `create_workout` -> either agent
-- `patch_workout` -> both agents
-- `query_history` -> either agent, backed by D1 reads
+- `patch_workout` is scoped on workout threads. A workout-bound thread cannot patch some other workout.
+- `create_workout` can be used from either general or workout-scoped threads.
+- `query_history` reads structured workout history through the shared D1 service layer.
+- `set_user_profile` is the only durable settings mutation exposed through the coach today.
 
-Typical usage:
+## Prompt and Context Assembly
 
-- `WorkoutCoachAgent` usually patches its own workout
-- `WorkoutCoachAgent` may also create a follow-up workout, often adapted from its current workout context
-- `GeneralCoachAgent` may patch any existing workout after loading the latest snapshot
-- cross-workout correction requests from `GeneralCoachAgent` should still decompose into one guarded patch per target workout
-- all persisted mutations, including lightweight set-field updates, should emit the same live invalidation flow
+`CoachAgent.beforeTurn()` assembles different prompts depending on the thread kind.
 
-The invalidation envelope should use a shared Zod schema in code so UI emitters and listeners validate the same contract.
+General thread context:
 
-Define tools inside `onChatMessage()` with AI SDK `tool()`.
+- recent workouts from `loadWorkoutList()`
+- saved user profile from settings
+- exercise catalog prompt
+- patch contract prompt
 
-Example shape:
+Workout thread context:
 
-```ts
-import { AIChatAgent } from "@cloudflare/ai-chat";
-import { convertToModelMessages, streamText, tool } from "ai";
-import { z } from "zod";
+- workout detail snapshot from `loadWorkoutDetail()`
+- saved user profile from settings
+- next open set summary
+- PR count
+- exercise summary lines
+- explicit patch reference with real exercise and set ids
 
-export class WorkoutCoachAgent extends AIChatAgent<Env> {
-  async onChatMessage() {
-    const workoutId = this.name;
-    const modelId = await loadGlobalModelSetting(this.env.DB);
+This means the current architecture relies more on server-side context assembly than on a large read-tool surface.
 
-    const result = streamText({
-      model: gatewayLanguageModel(this.env, modelId),
-      messages: await convertToModelMessages(this.messages),
-      tools: {
-        patch_workout: tool({
-          description: "Apply a guarded patch to the active workout.",
-          inputSchema: z.object({
-            workout_id: z.string(),
-            expected_version: z.number(),
-            reason: z.string(),
-            ops: z.array(z.unknown()),
-          }),
-          execute: async (input) => patchWorkoutWithGuards(this.env.DB, input),
-        }),
-      },
-    });
+## Data Ownership
 
-    return result.toUIMessageStreamResponse();
-  }
-}
-```
+### D1 is authoritative for structured workout state
 
-### Model selection and inference
+Workout facts live in D1 through the shared service layer in [app/features/workouts/d1-service.server.ts](/home/advait/l3-root/l3/app/features/workouts/d1-service.server.ts).
 
-Use one global setting value for the active model.
+That includes:
 
-Rules:
+- workouts
+- workout exercises
+- exercise sets
+- workout versions for optimistic concurrency
+- history queries used by `query_history`
+- the `user_profile` app setting
 
-- store the exact Cloudflare AI Gateway model ID in the singleton `settings` row
-- default it to `openai/gpt-5.4`
-- use Cloudflare AI Gateway taxonomy directly
-- do not define app-level model aliases
-- do not define per-agent model mappings in MVP
+Both route actions and agent tools call into this shared domain layer.
 
-Example stored values:
+### Agent runtime owns chat history
 
-- `openai/gpt-5.4`
-- `anthropic/claude-opus-4-1`
-- `google/gemini-2.5-pro`
+The app relies on the Cloudflare agent runtime for conversation history. The UI fetches existing messages from the agent route, and there is no app-owned D1 chat persistence layer.
 
-Inference flow:
+### App events are browser-local today
 
-- the client sends a message to a Cloudflare agent route
-- `AIChatAgent` persists the thread and handles chat/runtime concerns
-- the agent reads the global model setting from D1
-- the agent passes that exact model ID to an AI SDK model created through Cloudflare AI Gateway
+The repo does have an invalidation/event contract, but it is not backed by a Durable Object.
 
-Important rule:
+Current implementation:
 
-- Cloudflare Agents are the chat/runtime layer
-- Cloudflare AI Gateway is the inference routing layer
-- the app stores one vendor-qualified model ID, not a local alias
+- schema: [app/features/app-events/schema.ts](/home/advait/l3-root/l3/app/features/app-events/schema.ts)
+- transport: [app/features/app-events/client.ts](/home/advait/l3-root/l3/app/features/app-events/client.ts)
 
-### Do not use in MVP
+Behavior:
 
-Avoid:
+- successful route actions publish invalidation envelopes into browser events
+- successful coach tool calls also publish invalidation envelopes
+- revalidation is handled with route `handle.invalidateKeys` plus `useRevalidator()`
+- cross-tab fanout uses `BroadcastChannel` when available
 
-- client-side tools
-- generic SQL tools
-- one tool per UI button
-- "edit anything" tools
+There is no `AppEvents/default` Durable Object in the current codebase.
 
-The user should still log sets faster through direct UI actions than through chat.
+## Model Selection Today
 
-## 8. Concurrency and consistency
+Model selection is simpler than the old docs described.
 
-Moving structured data into D1 means you no longer get implicit single-threaded serialization for workout storage.
+Current behavior in [workers/coach-agent-helpers.ts](/home/advait/l3-root/l3/workers/coach-agent-helpers.ts):
 
-That is acceptable, but the spec must keep explicit concurrency guards.
+- AI Gateway id: `default`
+- model id: hardcoded `openai/gpt-5.4`
 
-Required rules:
+There is no implemented D1-backed global model selector yet.
 
-- every mutation carries `expected_version`
-- updates run in a D1 transaction where applicable
-- stale writes return `VERSION_MISMATCH`
-- all mutations target stable IDs
+The only persisted setting today is:
 
-### Important consistency seam
+- `user_profile`
 
-There is no automatic single transaction spanning:
+## Workout UI vs Agent Mutation Surface
 
-- AIChatAgent message persistence in Durable Object storage
-- D1 workout mutation
-- `AppEvents/default` notification broadcast
+The direct workout UI and the agent do not expose the same mutation surface.
 
-Design implications:
+Direct route actions today:
 
-- mutation handlers must be idempotent
-- D1 state should be the source of truth for what committed
-- live broadcast is best-effort and non-authoritative
-- the UI should prefer committed workout state over optimistic chat assumptions
-- WebSocket listeners should treat notifications as invalidation hints and trigger RR7 loader revalidation or fetcher reloads from D1-backed reads
-- `AppEvents/default` should stay stateless apart from transient connection tracking
+- `start_workout`
+- `finish_workout`
+- `update_set_designation`
+- `update_set_planned`
+- `update_set_actuals`
+- `confirm_set`
+- `unconfirm_set`
+- `add_set`
+- `remove_set`
+- `remove_exercise`
+- `reorder_exercise`
+- `update_workout_notes`
+- `update_exercise_notes`
+- `update_exercise_rest_seconds`
+- `delete_workout`
 
-## 9. Context assembly
+Agent-only mutation capabilities today:
 
-Do not build a large read-tool surface.
+- `create_workout`
+- `patch_workout` ops like `add_exercise`, `replace_exercise`, `skip_exercise`, `skip_remaining_sets`, and `update_workout_metadata`
 
-Before the model runs, assemble the needed context on the server from D1:
+That split matters when writing docs or planning product work. The agent can currently do some workout restructuring that the manual UI does not yet expose.
 
-- profile/preferences
-- active workout snapshot
-- recent relevant workouts
-- derived exercise stats
-- recent milestones / PRs
+## Post-Workout Flow Status
 
-Then pass the assembled context into the model prompt or tool layer.
+This repo does not yet implement a dedicated post-workout agent flow.
 
-This preserves the spec's "context assembly, not tool sprawl" principle.
+Current state:
 
-## 10. What about compaction?
+- the workout thread remains available after completion
+- the coach can discuss the completed workout using the same workout-scoped context
+- the workout coach prompt tells the model to prefer `sourceWorkoutId` when creating a follow-up workout based on the current session
 
-If the goal is strict Cloudflare happy path, do not start with the Session API just to get message compaction.
+Missing pieces:
 
-Instead, in MVP:
+- no automatic post-workout summary step
+- no special review/reflection thread kind
+- no completion-triggered follow-up workflow
+- no dedicated UI for post-workout analysis
 
-- use `AIChatAgent`
-- let it handle normal message persistence and resumable streaming
-- rely on `pruneMessages()` or similar model-context trimming for what the LLM sees
-- rely on built-in row-size protection for oversized message/tool payloads
+If this is the next feature area, it should be documented and built as a new layer on top of the existing `general` and `workout:{workoutId}` thread model rather than pretending it already exists.
 
-What `AIChatAgent` already gives you:
+## Recommended Documentation Vocabulary
 
-- automatic message persistence
-- resumable streams
-- row-size protection for large message/tool payloads
+Use these names in repo docs for the current implementation:
 
-What it does not give you as the primary model:
+- "CoachAgent" for the runtime class
+- "general thread" for `general`
+- "workout-scoped thread" for `workout:{workoutId}`
+- "browser app-event invalidation" for the current revalidation mechanism
 
-- explicit Session API compaction overlays
-- multi-session search inside one agent
+Avoid these phrases unless you are explicitly describing future work:
 
-If later you need:
+- `GeneralCoachAgent`
+- `WorkoutCoachAgent`
+- `AIChatAgent` as the current base class
+- `AppEvents/default`
+- D1-backed model preference
+- post-workout review flow
 
-- long-lived searchable coaching memory
-- explicit non-destructive summary overlays
-- session forking
+## Near-Term Gaps
 
-then evaluate the Session API as a phase-2 enhancement. It is not the MVP happy path.
+The main architecture gaps between the docs and the code are:
 
-## 11. Drizzle + D1 guidance
-
-Use Drizzle as the only application-facing persistence layer for D1.
-
-Recommended uses:
-
-- schema definitions in TypeScript
-- migration files checked into the repo
-- query helpers for reads
-- transaction-scoped service functions for guarded writes
-
-Recommended posture:
-
-- D1 schema is the authoritative structured model
-- Drizzle migrations are the authoritative schema history
-- agent tool handlers should call typed Drizzle services, not inline SQL
-
-## 12. Cross-workout reads
-
-This is the main reason D1 is preferable here.
-
-The following should read D1 directly:
-
-- Home
-- Workouts list
-- Analytics
-- General coach history lookups
-- PR views
-
-Do not build these by querying many workout agents at request time.
-
-That would be the main operational trap if workout truth lived inside per-workout DO storage.
-
-## 13. What not to use in MVP
-
-Skip these until the core product is working:
-
-- Think as the main base class
-- Session API as the default chat layer
-- sub-agents
-- Browser Run
-- sandboxed code execution
-- self-authored tools
-- MCP server hosting
-- workflow-based orchestration for ordinary chat turns
-
-This is not anti-Cloudflare. It is just staying on the shortest path.
-
-## 14. Required repo/config changes
-
-The repo will need at least:
-
-- `agents`
-- `@cloudflare/ai-chat`
-- `ai`
-- `drizzle-orm`
-- `drizzle-kit`
-- `zod`
-
-Wrangler will need at minimum:
-
-- `nodejs_compat`
-- a D1 binding, for example `DB`
-- Durable Object bindings for `GeneralCoachAgent` and `WorkoutCoachAgent`
-- a Durable Object binding for `AppEvents`
-- migration entries for all three Durable Object classes
-- an `AI` binding plus Cloudflare AI Gateway configuration for provider keys or billing
-
-Illustrative shape:
-
-```jsonc
-{
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "lifting3",
-  "main": "./workers/app.ts",
-  "compatibility_date": "2026-04-16",
-  "compatibility_flags": ["nodejs_compat"],
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "lifting3",
-      "database_id": "replace-me",
-    },
-  ],
-  "durable_objects": {
-    "bindings": [
-      { "name": "GeneralCoachAgent", "class_name": "GeneralCoachAgent" },
-      { "name": "WorkoutCoachAgent", "class_name": "WorkoutCoachAgent" },
-      { "name": "AppEvents", "class_name": "AppEvents" },
-    ],
-  },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": ["GeneralCoachAgent", "WorkoutCoachAgent", "AppEvents"],
-    },
-  ],
-  "observability": { "enabled": true },
-}
-```
-
-Require the shared Workers AI `AI` binding for inference, and keep third-party provider keys in Cloudflare AI Gateway instead of Worker secrets.
-
-## 15. Final recommendation
-
-For `lifting3`, the Cloudflare-native architecture should be:
-
-1. D1 as the authoritative store for structured workout data.
-2. Drizzle for D1 schema, migrations, and queries.
-3. `GeneralCoachAgent/default` for the general coach thread.
-4. `WorkoutCoachAgent/{workoutId}` for the canonical workout thread.
-5. one singleton `settings` row storing an AI Gateway model ID, defaulting to `openai/gpt-5.4`
-6. Cloudflare AI Gateway as the inference routing layer for that model ID
-7. `AppEvents/default` as a singleton WebSocket fanout hub for best-effort invalidation.
-8. Direct chat via `routeAgentRequest()` and `useAgentChat()`.
-9. Shared D1-backed domain services used by both UI actions and agent tools.
-
-That gives you the part of Cloudflare that helps most:
-
-- built-in durable chat runtime
-- direct conversation routing
-- DO-backed message persistence
-- one global live notification channel for a single-user app
-- resumable streams
-- ordinary SQL for app data
-- clean cross-workout querying
-
-without forcing the workout database itself into Durable Object storage.
-
-## Official references
-
-- Cloudflare Agents overview: https://developers.cloudflare.com/agents/
-- Agents API: https://developers.cloudflare.com/agents/api-reference/agents-api/
-- Chat agents: https://developers.cloudflare.com/agents/api-reference/chat-agents/
-- Routing: https://developers.cloudflare.com/agents/api-reference/routing/
-- Store and sync state: https://developers.cloudflare.com/agents/api-reference/store-and-sync-state/
-- Using AI models: https://developers.cloudflare.com/agents/api-reference/using-ai-models/
-- AI Gateway: https://developers.cloudflare.com/ai-gateway/
-- AI Gateway + Vercel AI SDK: https://developers.cloudflare.com/ai-gateway/integrations/vercel-ai-sdk/
-- D1: https://developers.cloudflare.com/d1/
-- Durable Objects: https://developers.cloudflare.com/durable-objects/
-- Project Think: https://blog.cloudflare.com/project-think/
+1. Post-workout flow is still missing.
+2. Model selection is hardcoded instead of user-configurable.
+3. Settings UI is placeholder-only even though `user_profile` persistence exists.
+4. Analytics UI is placeholder-only even though history querying and PR calculations already exist.
+5. Live invalidation is browser-local today, not server-pushed.
