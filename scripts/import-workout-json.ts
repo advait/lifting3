@@ -1,8 +1,9 @@
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+
+import { getScriptArgs } from "./cli-args.ts";
 
 import {
   buildExistingWorkoutIdsQuery,
@@ -12,38 +13,27 @@ import {
   loadValidatedWorkoutFiles,
   summarizeWorkoutImport,
 } from "./workout-json-helpers.ts";
-
-type ImportNamespace = "dev" | "prod";
+import {
+  getD1NamespaceLabel,
+  parseD1Namespace,
+  runWranglerJsonQuery,
+  runWranglerSqlFile,
+  type D1Namespace,
+} from "./d1-cli.ts";
 
 const WORKOUT_ID_QUERY_BATCH_SIZE = 100;
 
 function printUsage() {
   process.stdout.write(
     [
-      "Usage: pnpm import:workout-json -- --namespace <dev|prod> [--dry-run] <file-or-directory> [more-paths...]",
+      "Usage: pnpm import:workout-json -- --namespace <local|dev|prod> [--dry-run] <file-or-directory> [more-paths...]",
       "",
       "Examples:",
-      "  pnpm import:workout-json -- --namespace dev --dry-run ./tmp/workouts",
-      "  pnpm import:workout-json -- --namespace prod ./exports/*.json",
-      "",
-      "Namespace mapping:",
-      "  dev  -> remote preview D1 database",
-      "  prod -> remote primary D1 database",
+      "  pnpm import:workout-json -- --namespace local --dry-run ./tmp/workouts",
+      "  pnpm import:workout-json -- --namespace dev ./exports/*.json",
       "",
     ].join("\n"),
   );
-}
-
-function getPackageManagerExecutable() {
-  return process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-}
-
-function getWranglerTargetFlags(namespace: ImportNamespace) {
-  return namespace === "dev" ? ["--remote", "--preview"] : ["--remote"];
-}
-
-function getNamespaceLabel(namespace: ImportNamespace) {
-  return namespace === "dev" ? "dev preview namespace" : "prod namespace";
 }
 
 function chunkValues<T>(values: readonly T[], chunkSize: number) {
@@ -56,54 +46,7 @@ function chunkValues<T>(values: readonly T[], chunkSize: number) {
   return chunks;
 }
 
-function parseNamespace(value: string | undefined): ImportNamespace {
-  if (value === "dev" || value === "prod") {
-    return value;
-  }
-
-  throw new Error("Pass --namespace dev or --namespace prod.");
-}
-
-function runWranglerCommand(args: readonly string[], options?: { captureStdout?: boolean }) {
-  const result = spawnSync(getPackageManagerExecutable(), ["wrangler", ...args], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    stdio: options?.captureStdout === true ? ["inherit", "pipe", "inherit"] : "inherit",
-  });
-
-  if (result.status !== 0) {
-    throw new Error(`Wrangler failed with exit code ${result.status ?? "unknown"}.`);
-  }
-
-  return result.stdout ?? "";
-}
-
-function runWranglerImport(namespace: ImportNamespace, sqlFilePath: string) {
-  runWranglerCommand([
-    "d1",
-    "execute",
-    "DB",
-    ...getWranglerTargetFlags(namespace),
-    "--yes",
-    "--file",
-    sqlFilePath,
-  ]);
-}
-
-function runWranglerJsonQuery(namespace: ImportNamespace, query: string) {
-  const stdout = runWranglerCommand(
-    ["d1", "execute", "DB", ...getWranglerTargetFlags(namespace), "--json", "--command", query],
-    { captureStdout: true },
-  );
-
-  const parsed = JSON.parse(stdout) as Array<{
-    readonly results?: ReadonlyArray<Record<string, unknown>>;
-  }>;
-
-  return parsed.flatMap((entry) => entry.results ?? []);
-}
-
-function findExistingWorkoutIds(namespace: ImportNamespace, workoutIds: readonly string[]) {
+function findExistingWorkoutIds(namespace: D1Namespace, workoutIds: readonly string[]) {
   const existingWorkoutIds = new Set<string>();
 
   for (const workoutIdBatch of chunkValues(workoutIds, WORKOUT_ID_QUERY_BATCH_SIZE)) {
@@ -128,6 +71,7 @@ function findExistingWorkoutIds(namespace: ImportNamespace, workoutIds: readonly
 async function main() {
   try {
     const { positionals, values } = parseArgs({
+      args: getScriptArgs(),
       allowPositionals: true,
       options: {
         "dry-run": {
@@ -155,7 +99,7 @@ async function main() {
       throw new Error("Pass at least one workout JSON path.");
     }
 
-    const namespace = parseNamespace(values.namespace);
+    const namespace = parseD1Namespace(values.namespace);
     const files = await loadValidatedWorkoutFiles(positionals);
 
     if (files.length === 0) {
@@ -172,7 +116,7 @@ async function main() {
     if (existingWorkoutIds.length > 0) {
       throw new Error(
         [
-          `The ${getNamespaceLabel(namespace)} already contains ${existingWorkoutIds.length} workout(s) with matching ids.`,
+          `The ${getD1NamespaceLabel(namespace)} already contains ${existingWorkoutIds.length} workout(s) with matching ids.`,
           `Existing ids: ${existingWorkoutIds.join(", ")}`,
         ].join("\n"),
       );
@@ -182,7 +126,7 @@ async function main() {
       process.stdout.write(
         [
           `Dry run complete for ${summary.workoutCount} workout(s).`,
-          `Target: ${getNamespaceLabel(namespace)}`,
+          `Target: ${getD1NamespaceLabel(namespace)}`,
           `Files: ${summary.fileCount}, exercises: ${summary.exerciseCount}, sets: ${summary.setCount}`,
           "",
         ].join("\n"),
@@ -197,14 +141,14 @@ async function main() {
     writeFileSync(sqlFilePath, sql, "utf8");
 
     try {
-      runWranglerImport(namespace, sqlFilePath);
+      runWranglerSqlFile(namespace, sqlFilePath);
     } finally {
       rmSync(tempDirectory, { force: true, recursive: true });
     }
 
     process.stdout.write(
       [
-        `Imported ${summary.workoutCount} workout(s) into the ${getNamespaceLabel(namespace)}.`,
+        `Imported ${summary.workoutCount} workout(s) into the ${getD1NamespaceLabel(namespace)}.`,
         `Exercises: ${summary.exerciseCount}, sets: ${summary.setCount}`,
         "",
       ].join("\n"),

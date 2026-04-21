@@ -22,7 +22,9 @@
     "test:watch": "vp test watch",
     "typecheck": "pnpm cf-typegen && react-router typegen && tsc -b",
     "validate:workout-json": "node --experimental-strip-types ./scripts/validate-workout-json.ts",
-    "verify:lifting2-exercises": "node --experimental-strip-types ./scripts/verify-lifting2-exercise-compat.ts"
+    "verify:lifting2-exercises": "node --experimental-strip-types ./scripts/verify-lifting2-exercise-compat.ts",
+    "export:app-state": "node --experimental-strip-types ./scripts/export-app-state.ts",
+    "import:app-state": "node --experimental-strip-types ./scripts/import-app-state.ts"
   },
   "dependencies": {
     "@cloudflare/ai-chat": "^0.4.4",
