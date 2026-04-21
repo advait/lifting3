@@ -27,6 +27,11 @@ import { Separator } from "~/components/atoms/separator";
 import { WorkoutStatusBadge } from "~/components/molecules/workout-status-badge";
 import type { AppTopBarAction } from "~/features/app-events/client";
 import type { CoachTarget } from "~/features/coach/contracts";
+import {
+  isSameCoachTarget,
+  subscribeCoachSessionRequests,
+  type CoachSessionRequest,
+} from "~/features/coach/session-request";
 import type { WorkoutListItem } from "~/features/workouts/contracts";
 import { APP_NAME } from "~/lib/meta";
 import { cn } from "~/lib/utils";
@@ -216,11 +221,23 @@ export function AppShell({
 }: AppShellProps) {
   const location = useLocation();
   const [coachOpen, setCoachOpen] = useState(false);
+  const [coachSessionRequest, setCoachSessionRequest] = useState<CoachSessionRequest | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     setSidebarOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    return subscribeCoachSessionRequests((request) => {
+      if (!isSameCoachTarget(request.target, coachTarget)) {
+        return;
+      }
+
+      setCoachSessionRequest(request);
+      setCoachOpen(true);
+    });
+  }, [coachTarget]);
 
   useEffect(() => {
     if (!coachOpen && !sidebarOpen) {
@@ -375,6 +392,7 @@ export function AppShell({
             onClose={() => {
               setCoachOpen(false);
             }}
+            sessionRequest={coachSessionRequest}
             target={coachTarget}
           />
         </div>

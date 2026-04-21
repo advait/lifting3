@@ -38,11 +38,13 @@ import { Button } from "~/components/atoms/button";
 import { publishAppEvent } from "~/features/app-events/client";
 import { type AppEventEnvelope, appInvalidateKeySchema } from "~/features/app-events/schema";
 import { formatCoachInstanceName, type CoachTarget } from "~/features/coach/contracts";
+import type { CoachSessionRequest } from "~/features/coach/session-request";
 import { cn } from "~/lib/utils";
 
 interface CoachSheetProps {
   isOpen: boolean;
   onClose: () => void;
+  sessionRequest?: CoachSessionRequest | null;
   target: CoachTarget;
 }
 
@@ -57,6 +59,20 @@ const TOOL_SUMMARY_LIMIT = 3;
 const COACH_AGENT_RUNTIME_NAME = "CoachAgent";
 
 type CoachMessagePart = UIMessage["parts"][number];
+type CoachSheetSendMessage = (message: Pick<UIMessage, "parts" | "role">) => Promise<unknown>;
+
+export interface CoachSheetChatController {
+  addToolApprovalResponse: (args: { approved: boolean; id: string }) => void;
+  clearError: () => void;
+  clearHistory: () => void;
+  error: Error | undefined;
+  isServerStreaming: boolean;
+  isStreaming: boolean;
+  messages: readonly UIMessage[];
+  sendMessage: CoachSheetSendMessage;
+  status: string;
+  stop: () => void | Promise<unknown>;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -842,15 +858,34 @@ function CoachSheetClosedContent({
   );
 }
 
-function CoachSheetSessionContent({
+function useCoachSheetLiveChat(target: CoachTarget): CoachSheetChatController {
+  const agentConfig = getAgentConfig(target);
+  const agent = useAgent({
+    agent: agentConfig.agent,
+    name: formatCoachInstanceName(target),
+  });
+
+  return useAgentChat({
+    agent,
+    getInitialMessages: getInitialCoachMessages,
+  });
+}
+
+export function CoachSheetSessionPanel({
   dragHandleProps,
   isExpanded,
+  chat,
   onClose,
+  onSessionRequestHandled,
+  sessionRequest,
   target,
 }: {
+  chat: CoachSheetChatController;
   dragHandleProps: ComponentPropsWithoutRef<"button">;
   isExpanded: boolean;
   onClose: () => void;
+  onSessionRequestHandled: (requestId: string) => void;
+  sessionRequest: CoachSessionRequest | null;
   target: CoachTarget;
 }) {
   const [draft, setDraft] = useState("");
@@ -863,10 +898,6 @@ function CoachSheetSessionContent({
   const observedToolStatesRef = useRef<Map<string, ReturnType<typeof getToolPartState>>>(new Map());
   const publishedToolEventIdsRef = useRef<Set<string>>(new Set());
   const hasObservedLiveAgentActivityRef = useRef(false);
-  const agent = useAgent({
-    agent: agentConfig.agent,
-    name: formatCoachInstanceName(target),
-  });
   const {
     addToolApprovalResponse,
     clearHistory,
@@ -878,10 +909,7 @@ function CoachSheetSessionContent({
     sendMessage,
     status,
     stop,
-  } = useAgentChat({
-    agent,
-    getInitialMessages: getInitialCoachMessages,
-  });
+  } = chat;
   const isSubmitting = status === "submitted";
   const isBusy = isSubmitting || isStreaming;
   const chatErrorMessage = error ? getChatErrorMessage(error) : null;
@@ -1045,6 +1073,11 @@ function CoachSheetSessionContent({
     : isServerStreaming
       ? "Coach is working in the background"
       : "Coach is replying";
+  const pendingInitialMessageRequestId = sessionRequest?.requestId ?? null;
+  const pendingInitialMessage =
+    sessionRequest?.initialMessage && sessionRequest.initialMessage.trim().length > 0
+      ? sessionRequest.initialMessage
+      : null;
 
   const submitDraft = () => {
     const nextDraft = draft.trim();
@@ -1070,6 +1103,29 @@ function CoachSheetSessionContent({
     scrollDiscussionToTail();
   };
   const showJumpToBottomButton = messages.length > 0 && !isBottomLocked;
+
+  useEffect(() => {
+    if (!pendingInitialMessage || !pendingInitialMessageRequestId || isBusy) {
+      return;
+    }
+
+    onSessionRequestHandled(pendingInitialMessageRequestId);
+    clearError();
+    setIsBottomLocked(true);
+    startTransition(() => {
+      void sendMessage({
+        parts: [{ text: pendingInitialMessage, type: "text" }],
+        role: "user",
+      });
+    });
+  }, [
+    clearError,
+    isBusy,
+    onSessionRequestHandled,
+    pendingInitialMessage,
+    pendingInitialMessageRequestId,
+    sendMessage,
+  ]);
 
   return (
     <>
@@ -1202,7 +1258,37 @@ function CoachSheetSessionContent({
   );
 }
 
-export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
+function CoachSheetSessionContent({
+  dragHandleProps,
+  isExpanded,
+  onClose,
+  onSessionRequestHandled,
+  sessionRequest,
+  target,
+}: {
+  dragHandleProps: ComponentPropsWithoutRef<"button">;
+  isExpanded: boolean;
+  onClose: () => void;
+  onSessionRequestHandled: (requestId: string) => void;
+  sessionRequest: CoachSessionRequest | null;
+  target: CoachTarget;
+}) {
+  const chat = useCoachSheetLiveChat(target);
+
+  return (
+    <CoachSheetSessionPanel
+      chat={chat}
+      dragHandleProps={dragHandleProps}
+      isExpanded={isExpanded}
+      onClose={onClose}
+      onSessionRequestHandled={onSessionRequestHandled}
+      sessionRequest={sessionRequest}
+      target={target}
+    />
+  );
+}
+
+export function CoachSheet({ isOpen, onClose, sessionRequest = null, target }: CoachSheetProps) {
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -1211,7 +1297,13 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
   const dragOffsetRef = useRef(0);
   const didDragRef = useRef(false);
   const suppressHandleClickRef = useRef(false);
+  const expandedSessionRequestIdsRef = useRef<Set<string>>(new Set());
+  const handledSessionRequestIdsRef = useRef<Set<string>>(new Set());
   const threadKey = target.kind === "workout" ? `${target.kind}:${target.workoutId}` : target.kind;
+  const activeSessionRequest =
+    sessionRequest && !handledSessionRequestIdsRef.current.has(sessionRequest.requestId)
+      ? sessionRequest
+      : null;
 
   useEffect(() => {
     if (isOpen) {
@@ -1241,6 +1333,23 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
     setDragOffset(0);
     setIsDragging(false);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !sessionRequest?.expand) {
+      return;
+    }
+
+    if (expandedSessionRequestIdsRef.current.has(sessionRequest.requestId)) {
+      return;
+    }
+
+    expandedSessionRequestIdsRef.current.add(sessionRequest.requestId);
+    setIsExpanded(true);
+  }, [isOpen, sessionRequest]);
+
+  const handleSessionRequestHandled = (requestId: string) => {
+    handledSessionRequestIdsRef.current.add(requestId);
+  };
 
   const dragHandleProps: ComponentPropsWithoutRef<"button"> = {
     onPointerCancel: () => {
@@ -1356,6 +1465,8 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
             isExpanded={isExpanded}
             key={threadKey}
             onClose={onClose}
+            onSessionRequestHandled={handleSessionRequestHandled}
+            sessionRequest={activeSessionRequest}
             target={target}
           />
         ) : (

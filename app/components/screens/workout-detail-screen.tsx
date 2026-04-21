@@ -48,6 +48,10 @@ import {
 import { Textarea } from "~/components/atoms/textarea";
 import { WorkoutStatusBadge } from "~/components/molecules/workout-status-badge";
 import { usePublishAppEvent } from "~/features/app-events/client";
+import {
+  createPostWorkoutCoachSessionRequest,
+  publishCoachSessionRequest,
+} from "~/features/coach/session-request";
 import { workoutMutationResultSchema } from "~/features/workouts/actions";
 import { ExerciseRestTimer } from "~/features/workouts/exercise-rest-timer";
 import type {
@@ -121,6 +125,12 @@ interface SessionSummarySectionProps {
   progress: WorkoutDetailLoaderData["progress"];
   totalWeightLbs: number;
   workout: WorkoutDetailWorkout;
+}
+
+function parseWorkoutMutationResult(actionData: unknown) {
+  const parsedActionData = workoutMutationResultSchema.safeParse(actionData);
+
+  return parsedActionData.success ? parsedActionData.data : null;
 }
 
 function getAvailableActions(
@@ -360,6 +370,7 @@ function WorkoutOverviewCard({
   workout,
 }: WorkoutOverviewCardProps) {
   const notesFetcher = useFetcher();
+  const reopenWorkoutFormRef = useRef<HTMLFormElement | null>(null);
   const [nowMs, setNowMs] = useState(initialNowMs);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isNotesDialogOpen, setIsNotesDialogOpen] = useState(false);
@@ -369,6 +380,7 @@ function WorkoutOverviewCard({
   const canEditWorkoutNotes = hasAction(availableActions, "update_workout_notes");
   const canStartWorkout = hasAction(availableActions, "start_workout");
   const canFinishWorkout = hasAction(availableActions, "finish_workout");
+  const canMarkWorkoutIncomplete = workout.status === "completed" && !isHistoricalEditMode;
   const canEnterHistoricalEditMode =
     (workout.status === "completed" || workout.status === "canceled") && !isHistoricalEditMode;
   const controlsDisabled = isMutationPending;
@@ -479,6 +491,16 @@ function WorkoutOverviewCard({
                       Edit notes
                     </DropdownMenuItem>
                   ) : null}
+                  {canMarkWorkoutIncomplete ? (
+                    <DropdownMenuItem
+                      disabled={controlsDisabled}
+                      onSelect={() => {
+                        reopenWorkoutFormRef.current?.requestSubmit();
+                      }}
+                    >
+                      Mark as not completed
+                    </DropdownMenuItem>
+                  ) : null}
                   <DropdownMenuItem
                     className="text-destructive focus:bg-destructive/10 focus:text-destructive"
                     disabled={controlsDisabled}
@@ -546,6 +568,16 @@ function WorkoutOverviewCard({
               workoutId={workout.id}
               workoutVersion={workout.version}
             />
+          </Form>
+          <Form className="hidden" method="post" ref={reopenWorkoutFormRef}>
+            <MutationFields
+              action="start_workout"
+              workoutId={workout.id}
+              workoutVersion={workout.version}
+            />
+            {workout.startedAt ? (
+              <input name="startedAt" type="hidden" value={workout.startedAt} />
+            ) : null}
           </Form>
         </section>
 
@@ -1696,7 +1728,6 @@ export function WorkoutDetailScreen({ actionData, loaderData }: WorkoutDetailScr
   const navigate = useNavigate();
   const navigation = useNavigation();
   const [isHistoricalEditMode, setIsHistoricalEditMode] = useState(false);
-  usePublishAppEvent(actionData);
 
   const pendingMutations = getPendingWorkoutMutations(
     [
@@ -1724,14 +1755,29 @@ export function WorkoutDetailScreen({ actionData, loaderData }: WorkoutDetailScr
   });
 
   useEffect(() => {
-    const parsedActionData = workoutMutationResultSchema.safeParse(actionData);
+    const mutationResult = parseWorkoutMutationResult(actionData);
 
-    if (!parsedActionData.success || parsedActionData.data.action !== "delete_workout") {
+    if (!mutationResult || mutationResult.action !== "delete_workout") {
       return;
     }
 
     void navigate("/workouts", { replace: true });
   }, [actionData, navigate]);
+
+  useEffect(() => {
+    const mutationResult = parseWorkoutMutationResult(actionData);
+
+    if (!mutationResult || mutationResult.action !== "finish_workout" || !mutationResult.ok) {
+      return;
+    }
+
+    publishCoachSessionRequest(
+      createPostWorkoutCoachSessionRequest({
+        requestId: mutationResult.eventId,
+        workoutId: mutationResult.workoutId,
+      }),
+    );
+  }, [actionData]);
 
   useEffect(() => {
     setIsHistoricalEditMode(false);
@@ -1752,6 +1798,7 @@ export function WorkoutDetailScreen({ actionData, loaderData }: WorkoutDetailScr
       window.removeEventListener("pageshow", resetHistoricalEditMode);
     };
   }, []);
+  usePublishAppEvent(actionData);
 
   return (
     <section

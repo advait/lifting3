@@ -11,11 +11,20 @@ import type { WorkoutExercise, WorkoutSet } from "~/features/workouts/contracts"
 
 import type { GeneralCoachContext, WorkoutCoachContext } from "./context";
 
-export const DEFAULT_COACH_SYSTEM_PROMPT = "You are lifting3's coach.";
+export const DEFAULT_COACH_SYSTEM_PROMPT = [
+  "You are lifting3's coach.",
+  "Coach like a pragmatic strength coach for one athlete: direct, concrete, and grounded in the actual workout data.",
+  "Lead with judgment and next actions, not generic encouragement.",
+  "Do not invent facts or claim that a tool mutation succeeded unless the tool output says ok: true.",
+].join(" ");
 
 const EXERCISE_SUMMARY_LIMIT = 6;
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
+});
+const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
 });
 const XML_TEXT_ESCAPE_PATTERN = /[&<>]/g;
 const XML_TEXT_ESCAPES = {
@@ -24,18 +33,46 @@ const XML_TEXT_ESCAPES = {
   ">": "&gt;",
 } as const;
 
-function formatSetValues(set: WorkoutSet) {
-  const weight = set.actual.weightLbs ?? set.planned.weightLbs;
-  const reps = set.reps;
-  const rpe = set.actual.rpe ?? set.planned.rpe;
-
+function formatSetValues({
+  reps,
+  rpe,
+  weightLbs,
+}: {
+  readonly reps: number | null;
+  readonly rpe: number | null;
+  readonly weightLbs: number | null;
+}) {
   const segments = [
-    weight == null ? null : `${weight} lb`,
+    weightLbs == null ? null : `${weightLbs} lb`,
     reps == null ? null : `${reps} reps`,
     rpe == null ? null : `RPE ${rpe}`,
   ].filter((segment) => segment !== null);
 
   return segments.length > 0 ? segments.join(", ") : "no logged load target";
+}
+
+function formatSetTarget(set: WorkoutSet) {
+  return formatSetValues({
+    reps: set.reps,
+    rpe: set.planned.rpe,
+    weightLbs: set.planned.weightLbs,
+  });
+}
+
+function formatLoggedSetValues(set: WorkoutSet) {
+  return formatSetValues({
+    reps: set.reps,
+    rpe: set.actual.rpe,
+    weightLbs: set.actual.weightLbs,
+  });
+}
+
+function formatSetContextValues(set: WorkoutSet) {
+  return formatSetValues({
+    reps: set.reps,
+    rpe: set.actual.rpe ?? set.planned.rpe,
+    weightLbs: set.actual.weightLbs ?? set.planned.weightLbs,
+  });
 }
 
 function isSetConfirmed(set: WorkoutSet) {
@@ -71,13 +108,14 @@ function summarizeExercise(exercise: WorkoutExercise) {
   const nextSet =
     (isExerciseActionable(exercise) ? exercise.sets.find((set) => !isSetConfirmed(set)) : null) ??
     exercise.sets[0];
+  const nextSetLabel = isExerciseActionable(exercise) ? "next target" : "reference set";
 
   return [
     `${exercise.displayName} [${exercise.id}]: ${exercise.sets.length} sets total (${exercise.status})`,
     `${confirmedSets} confirmed`,
     personalRecords > 0 ? `${personalRecords} PR${personalRecords === 1 ? "" : "s"}` : null,
     openSets > 0 ? `${openSets} open` : null,
-    nextSet ? `next target ${formatSetValues(nextSet)}` : null,
+    nextSet ? `${nextSetLabel} ${formatSetContextValues(nextSet)}` : null,
   ]
     .filter((segment) => segment !== null)
     .join(", ");
@@ -87,9 +125,12 @@ function buildWorkoutPatchReference(workoutDetail: WorkoutCoachContext["workoutD
   return workoutDetail.exercises
     .map((exercise) => [
       `- ${exercise.displayName} [${exercise.id}] exercise_status=${exercise.status}`,
-      ...exercise.sets.map(
-        (set, index) =>
-          `  - set ${index + 1} [${set.id}] confirmed=${isSetConfirmed(set)} designation=${set.designation} planned=${formatSetValues(set)}`,
+      ...exercise.sets.map((set, index) =>
+        [
+          `  - set ${index + 1} [${set.id}] confirmed=${isSetConfirmed(set)} designation=${set.designation}`,
+          `target=${formatSetTarget(set)}`,
+          `logged=${formatLoggedSetValues(set)}`,
+        ].join(" "),
       ),
     ])
     .flat()
@@ -127,6 +168,16 @@ function renderExerciseCatalogSection() {
   }).join("\n");
 }
 
+function renderSharedCoachBehaviorSection() {
+  return [
+    "Coach like a real strength coach, not a generic assistant.",
+    "Lead with the most important training judgment, then give the clearest next action.",
+    "Base claims on the provided workout data, saved profile, or tool output.",
+    "If the data is incomplete or contradictory, say that plainly instead of smoothing it over.",
+    "Keep replies compact but specific.",
+  ].join("\n");
+}
+
 function renderPatchWorkoutContractSection() {
   return [
     "For patch_workout, ops[].type must be exactly one of:",
@@ -161,8 +212,9 @@ export function renderGeneralCoachPrompt({
   return [
     "You are lifting3's general coach.",
     "You help with workout planning, training structure, and broad coaching discussion.",
-    "Be concrete and concise.",
+    renderSharedCoachBehaviorSection(),
     "Use tools when the user asks to create a workout, patch workout data, or inspect structured history.",
+    "When a useful answer depends on historical comparison or trends, use query_history instead of guessing.",
     "Do not claim that you completed a mutation unless the tool returned ok: true.",
     "If patch_workout returns ok: false with VERSION_MISMATCH, explain the conflict and ask the user to retry after refresh.",
     renderPatchWorkoutContractSection(),
@@ -185,6 +237,8 @@ export function renderWorkoutCoachPrompt({
 }: WorkoutCoachContext): string {
   const nextOpenSet = findNextOpenSet(workoutDetail);
   const personalRecords = countWorkoutPersonalRecords(workoutDetail.exercises);
+  const isCompletedWorkout = workoutDetail.workout.status === "completed";
+  const isCanceledWorkout = workoutDetail.workout.status === "canceled";
   const exerciseLines = workoutDetail.exercises
     .slice(0, EXERCISE_SUMMARY_LIMIT)
     .map((exercise) => `- ${summarizeExercise(exercise)}`);
@@ -195,13 +249,38 @@ export function renderWorkoutCoachPrompt({
       return trimmedNote ? [trimmedNote] : [];
     })
     .join(" | ");
+  const modeLine =
+    isCompletedWorkout || isCanceledWorkout
+      ? "Mode: post-workout review"
+      : "Mode: live workout support";
+  const completedAtLine =
+    workoutDetail.workout.completedAt != null
+      ? `Completed at: ${dateTimeFormatter.format(new Date(workoutDetail.workout.completedAt))}`
+      : null;
+  const loggingGapLine =
+    isCompletedWorkout && workoutDetail.progress.unconfirmed > 0
+      ? `Logging gaps: ${workoutDetail.progress.unconfirmed} sets remain unconfirmed even though the workout is completed.`
+      : null;
+  const workoutModeGuidance =
+    isCompletedWorkout || isCanceledWorkout
+      ? [
+          "This workout is no longer live.",
+          "Default to a recap unless the user clearly asks to edit the workout.",
+          "Prioritize adherence to plan, standout lifts, missed or incomplete work, likely readiness or fatigue signals, and one clear next-session adjustment.",
+        ]
+      : [
+          "Treat this as a live session unless the user clearly asks for historical analysis.",
+          "Prioritize next-set decisions, pacing, substitutions, and in-session adjustments.",
+        ];
 
   return [
     "You are lifting3's workout coach.",
     "You are attached to a single workout thread and must ground your reply in the workout snapshot below.",
-    "Be concrete, concise, and useful.",
+    renderSharedCoachBehaviorSection(),
+    ...workoutModeGuidance,
     "Use patch_workout for workout edits, create_workout when the user asks for a new session, and query_history for structured comparisons.",
     "If the user wants a follow-up workout based on this session, prefer using this workout as sourceWorkoutId.",
+    "Only use query_history when comparison materially improves the answer.",
     "Do not claim that workout data changed unless patch_workout returned ok: true.",
     "Do not claim that you created a new workout unless create_workout returned ok: true.",
     "If patch_workout returns ok: false with VERSION_MISMATCH, explain that the workout changed and the user should retry after refresh.",
@@ -212,12 +291,15 @@ export function renderWorkoutCoachPrompt({
     `Workout: ${workoutDetail.workout.title} (${workoutDetail.workout.id})`,
     `Version: ${workoutDetail.workout.version}`,
     `Status: ${workoutDetail.workout.status}`,
+    modeLine,
     `Date: ${dateFormatter.format(new Date(workoutDetail.workout.date))}`,
+    completedAtLine,
     `Progress: ${workoutDetail.progress.confirmed} confirmed, ${workoutDetail.progress.unconfirmed} unconfirmed of ${workoutDetail.progress.total} total sets`,
     `Personal records: ${personalRecords}`,
     nextOpenSet
-      ? `Next open set: ${nextOpenSet.exercise.displayName} -> ${formatSetValues(nextOpenSet.set)}`
+      ? `Next open set: ${nextOpenSet.exercise.displayName} -> ${formatSetContextValues(nextOpenSet.set)}`
       : "Next open set: none",
+    loggingGapLine,
     notes.length > 0 ? `Notes: ${notes}` : null,
     "",
     "Exercise snapshot:",

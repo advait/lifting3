@@ -101,9 +101,37 @@ describe("coach prompt rendering", () => {
 
     expect(prompt).toContain("Workout: Upper A (workout-1)");
     expect(prompt).toContain("Version: 3");
+    expect(prompt).toContain("Mode: live workout support");
     expect(prompt).toContain("Next open set: Bench Press (Barbell) -> 225 lb, 5 reps, RPE 8");
     expect(prompt).toContain("Patch reference:");
-    expect(prompt).toContain("Bench Press (Barbell) [exercise-1]");
+    expect(prompt).toContain("target=225 lb, 5 reps, RPE 8");
+    expect(prompt).toContain("logged=5 reps");
     expect(prompt).toContain("No saved user profile.");
+  });
+
+  it("switches the workout coach prompt into review mode for completed workouts", () => {
+    const prompt = renderWorkoutCoachPrompt({
+      userProfile: null,
+      workoutDetail: {
+        ...WORKOUT_DETAIL,
+        progress: {
+          confirmed: 0,
+          total: 1,
+          unconfirmed: 1,
+        },
+        workout: {
+          ...WORKOUT_DETAIL.workout,
+          completedAt: "2026-04-21T11:15:00.000Z",
+          status: "completed",
+        },
+      },
+    });
+
+    expect(prompt).toContain("Mode: post-workout review");
+    expect(prompt).toContain("This workout is no longer live.");
+    expect(prompt).toContain("Completed at:");
+    expect(prompt).toContain(
+      "Logging gaps: 1 sets remain unconfirmed even though the workout is completed.",
+    );
   });
 });

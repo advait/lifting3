@@ -233,6 +233,35 @@ describe("workout optimistic detail helpers", () => {
     });
   });
 
+  it("reopens a completed workout by clearing completedAt and preserving startedAt", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(FIXED_NOW));
+
+    const loaderData = createLoaderData();
+
+    loaderData.workout.completedAt = "2026-04-21T10:04:00.000Z";
+    loaderData.workout.startedAt = "2026-04-21T09:15:00.000Z";
+    loaderData.workout.status = "completed";
+
+    const optimisticDetail = applyOptimisticWorkoutDetail(loaderData, [
+      {
+        key: "navigation:reopen",
+        mutation: {
+          action: "start_workout",
+          expectedVersion: 1,
+          startedAt: "2026-04-21T09:15:00.000Z",
+          workoutId: "workout-1",
+        },
+      },
+    ]);
+
+    expect(optimisticDetail.workout.completedAt).toBeNull();
+    expect(optimisticDetail.workout.startedAt).toBe("2026-04-21T09:15:00.000Z");
+    expect(optimisticDetail.workout.status).toBe("active");
+    expect(optimisticDetail.workout.updatedAt).toBe("2026-04-21T09:15:00.000Z");
+    expect(optimisticDetail.workout.version).toBe(2);
+  });
+
   it("does not apply invalid optimistic edits that would clear a confirmed set", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(FIXED_NOW));
