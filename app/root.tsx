@@ -8,9 +8,11 @@ import {
   type AppEventRouteHandle,
   useAppEventRevalidation,
 } from "./features/app-events/client";
+import type { CoachTarget } from "./features/coach/contracts";
+import { createGeneralCoachTarget } from "./features/coach/contracts";
 import { usePwaRegistration } from "./features/pwa/install";
-import type { WorkoutAgentTarget, WorkoutListItem } from "./features/workouts/contracts";
-import { createGeneralCoachTarget, workoutListSearchSchema } from "./features/workouts/contracts";
+import type { WorkoutListItem } from "./features/workouts/contracts";
+import { workoutListSearchSchema } from "./features/workouts/contracts";
 import { createWorkoutRouteService } from "./features/workouts/d1-service.server";
 import { APP_DESCRIPTION, APP_NAME, createPageMeta } from "./lib/meta";
 import { getAppDatabase } from "./lib/.server/router-context";
@@ -21,7 +23,7 @@ interface RootSidebarLoaderData {
   readonly recentWorkouts: ReadonlyArray<Pick<WorkoutListItem, "date" | "id" | "status" | "title">>;
 }
 
-const DEFAULT_COACH_TARGET = createGeneralCoachTarget() satisfies WorkoutAgentTarget;
+const DEFAULT_COACH_TARGET = createGeneralCoachTarget() satisfies CoachTarget;
 
 export const handle = defineAppEventRouteHandle({
   invalidateKeys: () => ["workouts:list"],

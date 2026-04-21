@@ -3,6 +3,59 @@ import { z } from "zod";
 import { EXERCISE_SCHEMA_IDS } from "../exercises/schema.ts";
 import { SET_KINDS, WORKOUT_STATUSES } from "./file.ts";
 
+export const PATCH_WORKOUT_OPERATION_TYPES = [
+  "add_exercise",
+  "replace_exercise",
+  "skip_exercise",
+  "reorder_exercise",
+  "update_exercise_targets",
+  "add_set",
+  "skip_remaining_sets",
+  "update_workout_metadata",
+  "add_note",
+] as const;
+export const PATCH_WORKOUT_TOOL_EXAMPLES = [
+  {
+    expectedVersion: 3,
+    ops: [
+      {
+        exerciseId: "exercise-id",
+        setUpdates: [
+          {
+            planned: {
+              reps: 12,
+              weightLbs: 50,
+            },
+            setId: "set-1",
+          },
+          {
+            planned: {
+              reps: 12,
+              weightLbs: 55,
+            },
+            setId: "set-2",
+          },
+        ],
+        type: "update_exercise_targets",
+      },
+    ],
+    reason: "Adjust row targets upward based on recent performance.",
+    workoutId: "workout-id",
+  },
+  {
+    expectedVersion: 3,
+    ops: [
+      {
+        date: "2026-04-18",
+        title: "Upper A - Travel Hotel Gym",
+        type: "update_workout_metadata",
+      },
+    ],
+    reason: "Rename and reschedule the workout.",
+    workoutId: "workout-id",
+  },
+] as const;
+
 const HISTORY_METRICS = [
   "top_set",
   "max_load",

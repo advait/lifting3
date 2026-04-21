@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useRef } from "react";
 import { type UIMatch, useMatches, useRevalidator } from "react-router";
-import type { WorkoutAgentTarget } from "../workouts/contracts.ts";
+import type { CoachTarget } from "../coach/contracts.ts";
 
 import {
   type AppEventEnvelope,
@@ -49,7 +49,7 @@ type AppTopBarFormAction = {
 export type AppTopBarAction = AppTopBarLinkAction | AppTopBarFormAction;
 
 export interface AppEventRouteHandle {
-  coachTarget?: (args: AppEventRouteHandleArgs) => WorkoutAgentTarget | null;
+  coachTarget?: (args: AppEventRouteHandleArgs) => CoachTarget | null;
   invalidateKeys?: (args: AppEventRouteHandleArgs) => readonly AppInvalidateKey[];
   pageTitle?: (args: AppEventRouteHandleArgs) => string | null;
   topBarAction?: (args: AppEventRouteHandleArgs) => AppTopBarAction | null;

@@ -6,14 +6,12 @@ import {
   EXERCISE_MOVEMENT_PATTERNS,
   EXERCISE_SCHEMA_IDS,
 } from "../exercises/schema.ts";
+import { coachTargetSchema } from "../coach/contracts.ts";
 import { SET_KINDS, WORKOUT_STATUSES } from "./file.ts";
 import { DEFAULT_EXERCISE_REST_SECONDS } from "./rest-timer.ts";
 
 const WORKOUT_SOURCES = ["manual", "imported", "agent"] as const;
 const EXERCISE_STATUSES = ["planned", "active", "completed", "skipped", "replaced"] as const;
-const AGENT_KINDS = ["general", "workout"] as const;
-export const GENERAL_COACH_INSTANCE_NAME = "general";
-export const WORKOUT_COACH_INSTANCE_PREFIX = "workout:";
 
 const nonEmptyStringSchema = z.string().trim().min(1);
 const nullableTrimmedStringSchema = z.string().trim().min(1).nullable();
@@ -24,7 +22,6 @@ const workoutStatusSchema = z.enum(WORKOUT_STATUSES);
 const setKindSchema = z.enum(SET_KINDS);
 const exerciseStatusSchema = z.enum(EXERCISE_STATUSES);
 const workoutSourceSchema = z.enum(WORKOUT_SOURCES);
-const agentKindSchema = z.enum(AGENT_KINDS);
 const nonNegativeIntegerSchema = z.int().nonnegative();
 const positiveIntegerSchema = z.int().positive();
 const restSecondsSchema = z.coerce.number().int().positive();
@@ -216,12 +213,6 @@ export const workoutDetailParamsSchema = z.strictObject({
   workoutId: nonEmptyStringSchema,
 });
 
-/** Identifies the canonical agent thread a workout screen should attach to. */
-export const workoutAgentTargetSchema = z.strictObject({
-  kind: agentKindSchema,
-  instanceName: nonEmptyStringSchema,
-});
-
 export const workoutDetailWorkoutSchema = z.strictObject({
   id: nonEmptyStringSchema,
   title: nonEmptyStringSchema,
@@ -242,7 +233,7 @@ export const workoutDetailLoaderDataSchema = z.strictObject({
   workout: workoutDetailWorkoutSchema,
   exercises: z.array(workoutExerciseSchema),
   progress: workoutSetCountsSchema,
-  agentTarget: workoutAgentTargetSchema,
+  coachTarget: coachTargetSchema,
   loadedAt: isoDateTimeSchema,
 });
 
@@ -256,41 +247,5 @@ export type WorkoutSet = z.infer<typeof workoutSetSchema>;
 export type WorkoutExerciseState = z.infer<typeof workoutExerciseStateSchema>;
 export type WorkoutExerciseDisplay = z.infer<typeof workoutExerciseDisplaySchema>;
 export type WorkoutExercise = z.infer<typeof workoutExerciseSchema>;
-export type WorkoutAgentTarget = z.infer<typeof workoutAgentTargetSchema>;
 export type WorkoutDetailWorkout = z.infer<typeof workoutDetailWorkoutSchema>;
 export type WorkoutDetailLoaderData = z.infer<typeof workoutDetailLoaderDataSchema>;
-
-export function createGeneralCoachTarget(): WorkoutAgentTarget {
-  return {
-    instanceName: GENERAL_COACH_INSTANCE_NAME,
-    kind: "general",
-  };
-}
-
-export function createWorkoutCoachTarget(workoutId: string): WorkoutAgentTarget {
-  return {
-    instanceName: `${WORKOUT_COACH_INSTANCE_PREFIX}${workoutId}`,
-    kind: "workout",
-  };
-}
-
-export function parseCoachInstanceName(instanceName: string) {
-  if (instanceName === GENERAL_COACH_INSTANCE_NAME) {
-    return {
-      kind: "general" as const,
-    };
-  }
-
-  if (instanceName.startsWith(WORKOUT_COACH_INSTANCE_PREFIX)) {
-    const workoutId = instanceName.slice(WORKOUT_COACH_INSTANCE_PREFIX.length).trim();
-
-    if (workoutId.length > 0) {
-      return {
-        kind: "workout" as const,
-        workoutId,
-      };
-    }
-  }
-
-  return null;
-}

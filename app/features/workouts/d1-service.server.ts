@@ -17,6 +17,7 @@ import {
   createWorkoutInvalidateKey,
   uniqueInvalidateKeys,
 } from "../app-events/schema.ts";
+import { createWorkoutCoachTarget } from "../coach/contracts.ts";
 import { getExerciseSchemaById } from "../exercises/schema.ts";
 import type {
   CreateWorkoutToolInput,
@@ -36,7 +37,6 @@ import type {
   WorkoutSet,
 } from "./contracts.ts";
 import {
-  createWorkoutCoachTarget,
   workoutDetailLoaderDataSchema,
   workoutDetailWorkoutSchema,
   workoutExerciseSchema,
@@ -660,7 +660,7 @@ function buildWorkoutDetail(
   >,
 ) {
   return workoutDetailLoaderDataSchema.parse({
-    agentTarget: createWorkoutCoachTarget(record.workout.id),
+    coachTarget: createWorkoutCoachTarget(record.workout.id),
     exercises: record.exercises.map((exercise) =>
       decorateExercise(
         exercise,

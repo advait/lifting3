@@ -2,13 +2,13 @@ import { data, type ShouldRevalidateFunctionArgs } from "react-router";
 
 import { WorkoutDetailScreen } from "~/components/screens/workout-detail-screen";
 import { defineAppEventRouteHandle } from "~/features/app-events/client";
+import { createWorkoutCoachTarget } from "~/features/coach/contracts";
 import {
   createExerciseInvalidateKey,
   createWorkoutInvalidateKey,
 } from "~/features/app-events/schema";
 import { workoutMutationResultSchema } from "~/features/workouts/actions";
 import {
-  createWorkoutCoachTarget,
   workoutDetailLoaderDataSchema,
   workoutDetailParamsSchema,
 } from "~/features/workouts/contracts";
@@ -25,7 +25,7 @@ export const handle = defineAppEventRouteHandle({
     const parsedLoaderData = workoutDetailLoaderDataSchema.safeParse(loaderData);
 
     if (parsedLoaderData.success) {
-      return parsedLoaderData.data.agentTarget;
+      return parsedLoaderData.data.coachTarget;
     }
 
     return params.workoutId ? createWorkoutCoachTarget(params.workoutId) : null;

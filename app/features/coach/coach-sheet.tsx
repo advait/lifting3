@@ -37,13 +37,13 @@ import { Badge } from "~/components/atoms/badge";
 import { Button } from "~/components/atoms/button";
 import { publishAppEvent } from "~/features/app-events/client";
 import { type AppEventEnvelope, appInvalidateKeySchema } from "~/features/app-events/schema";
-import type { WorkoutAgentTarget } from "~/features/workouts/contracts";
+import { formatCoachInstanceName, type CoachTarget } from "~/features/coach/contracts";
 import { cn } from "~/lib/utils";
 
 interface CoachSheetProps {
   isOpen: boolean;
   onClose: () => void;
-  target: WorkoutAgentTarget;
+  target: CoachTarget;
 }
 
 const SHEET_CLOSE_DRAG_THRESHOLD_PX = 120;
@@ -706,7 +706,7 @@ function CoachErrorCard({ message, onDismiss }: { message: string; onDismiss: ()
   );
 }
 
-function getAgentConfig(target: WorkoutAgentTarget) {
+function getAgentConfig(target: CoachTarget) {
   switch (target.kind) {
     case "workout":
       return {
@@ -796,7 +796,7 @@ function CoachSheetClosedContent({
   dragHandleProps: ComponentPropsWithoutRef<"button">;
   isExpanded: boolean;
   onClose: () => void;
-  target: WorkoutAgentTarget;
+  target: CoachTarget;
 }) {
   const agentConfig = getAgentConfig(target);
 
@@ -851,7 +851,7 @@ function CoachSheetSessionContent({
   dragHandleProps: ComponentPropsWithoutRef<"button">;
   isExpanded: boolean;
   onClose: () => void;
-  target: WorkoutAgentTarget;
+  target: CoachTarget;
 }) {
   const [draft, setDraft] = useState("");
   const [isBottomLocked, setIsBottomLocked] = useState(true);
@@ -865,7 +865,7 @@ function CoachSheetSessionContent({
   const hasObservedLiveAgentActivityRef = useRef(false);
   const agent = useAgent({
     agent: agentConfig.agent,
-    name: target.instanceName,
+    name: formatCoachInstanceName(target),
   });
   const {
     addToolApprovalResponse,
@@ -1211,7 +1211,7 @@ export function CoachSheet({ isOpen, onClose, target }: CoachSheetProps) {
   const dragOffsetRef = useRef(0);
   const didDragRef = useRef(false);
   const suppressHandleClickRef = useRef(false);
-  const threadKey = `${target.kind}:${target.instanceName}`;
+  const threadKey = target.kind === "workout" ? `${target.kind}:${target.workoutId}` : target.kind;
 
   useEffect(() => {
     if (isOpen) {

@@ -10,9 +10,9 @@ const BASE_LOADED_AT = "2026-04-21T10:00:00.000Z";
 const FIXED_NOW = "2026-04-21T10:05:00.000Z";
 
 const BASE_WORKOUT_DETAIL = {
-  agentTarget: {
-    instanceName: "workout:workout-1",
+  coachTarget: {
     kind: "workout",
+    workoutId: "workout-1",
   },
   exercises: [
     {

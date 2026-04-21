@@ -26,11 +26,12 @@ import { LocalDateTime } from "~/components/atoms/local-date-time";
 import { Separator } from "~/components/atoms/separator";
 import { WorkoutStatusBadge } from "~/components/molecules/workout-status-badge";
 import type { AppTopBarAction } from "~/features/app-events/client";
-import type { WorkoutAgentTarget, WorkoutListItem } from "~/features/workouts/contracts";
+import type { CoachTarget } from "~/features/coach/contracts";
+import type { WorkoutListItem } from "~/features/workouts/contracts";
 import { APP_NAME } from "~/lib/meta";
 import { cn } from "~/lib/utils";
 
-import { CoachSheet } from "./coach-sheet";
+import { CoachSheet } from "~/features/coach/coach-sheet";
 import { InstallAppCallout } from "./install-app-callout";
 
 type NavigationItem = {
@@ -42,7 +43,7 @@ type NavigationItem = {
 
 interface AppShellProps {
   readonly children: ReactNode;
-  readonly coachTarget: WorkoutAgentTarget;
+  readonly coachTarget: CoachTarget;
   readonly pageTitle: string;
   readonly recentWorkouts: ReadonlyArray<Pick<WorkoutListItem, "date" | "id" | "status" | "title">>;
   readonly topBarAction: AppTopBarAction | null;
