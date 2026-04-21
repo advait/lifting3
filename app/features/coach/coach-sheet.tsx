@@ -37,6 +37,14 @@ import { Badge } from "~/components/atoms/badge";
 import { Button } from "~/components/atoms/button";
 import { publishAppEvent } from "~/features/app-events/client";
 import { type AppEventEnvelope, appInvalidateKeySchema } from "~/features/app-events/schema";
+import {
+  appendCoachSheetDebugEntry,
+  ensureCoachSheetDebugGlobal,
+  getCoachSheetDebugTrace,
+  summarizeCoachSheetAgentEvent,
+  serializeCoachSheetDebugTarget,
+  summarizeCoachSheetMessages,
+} from "~/features/coach/coach-sheet-debug";
 import { formatCoachInstanceName, type CoachTarget } from "~/features/coach/contracts";
 import type { CoachSessionRequest } from "~/features/coach/session-request";
 import { cn } from "~/lib/utils";
@@ -73,6 +81,15 @@ export interface CoachSheetChatController {
   status: string;
   stop: () => void | Promise<unknown>;
 }
+
+type CoachSheetDebugAgentClient = {
+  addEventListener?: (
+    type: string,
+    listener: (event: { data?: unknown }) => void,
+    options?: { signal?: AbortSignal },
+  ) => void;
+  removeEventListener?: (type: string, listener: (event: { data?: unknown }) => void) => void;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -116,6 +133,67 @@ async function getInitialCoachMessages({ url }: { url: string }): Promise<UIMess
   } catch {
     return [];
   }
+}
+
+function useCoachSheetAgentDebugTrace(
+  agent: CoachSheetDebugAgentClient,
+  chat: CoachSheetChatController,
+  target: CoachTarget,
+) {
+  const messageCountRef = useRef(chat.messages.length);
+  const statusRef = useRef(chat.status);
+  const targetRef = useRef(serializeCoachSheetDebugTarget(target));
+  const targetKey = target.kind === "workout" ? `${target.kind}:${target.workoutId}` : target.kind;
+
+  messageCountRef.current = chat.messages.length;
+  statusRef.current = chat.status;
+  targetRef.current = serializeCoachSheetDebugTarget(target);
+
+  useEffect(() => {
+    ensureCoachSheetDebugGlobal();
+
+    if (typeof agent.addEventListener !== "function") {
+      return;
+    }
+
+    const abortController = new AbortController();
+    const handleAgentMessage = (event: { data?: unknown }) => {
+      if (typeof event.data !== "string") {
+        return;
+      }
+
+      let parsedMessage: unknown;
+
+      try {
+        parsedMessage = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+
+      const agentEvent = summarizeCoachSheetAgentEvent(parsedMessage);
+
+      if (!agentEvent) {
+        return;
+      }
+
+      appendCoachSheetDebugEntry({
+        event: agentEvent,
+        kind: "agent-receive",
+        messageCount: messageCountRef.current,
+        status: statusRef.current,
+        target: targetRef.current,
+      });
+    };
+
+    agent.addEventListener("message", handleAgentMessage, {
+      signal: abortController.signal,
+    });
+
+    return () => {
+      abortController.abort();
+      agent.removeEventListener?.("message", handleAgentMessage);
+    };
+  }, [agent, targetKey]);
 }
 
 function parseToolMutationEnvelope(
@@ -865,10 +943,14 @@ function useCoachSheetLiveChat(target: CoachTarget): CoachSheetChatController {
     name: formatCoachInstanceName(target),
   });
 
-  return useAgentChat({
+  const chat = useAgentChat({
     agent,
     getInitialMessages: getInitialCoachMessages,
   });
+
+  useCoachSheetAgentDebugTrace(agent, chat, target);
+
+  return chat;
 }
 
 export function CoachSheetSessionPanel({
@@ -898,6 +980,8 @@ export function CoachSheetSessionPanel({
   const observedToolStatesRef = useRef<Map<string, ReturnType<typeof getToolPartState>>>(new Map());
   const publishedToolEventIdsRef = useRef<Set<string>>(new Set());
   const hasObservedLiveAgentActivityRef = useRef(false);
+  const lastLoggedChatTraceSignatureRef = useRef<string | null>(null);
+  const lastLoggedErrorSignatureRef = useRef<string | null>(null);
   const {
     addToolApprovalResponse,
     clearHistory,
@@ -913,6 +997,8 @@ export function CoachSheetSessionPanel({
   const isSubmitting = status === "submitted";
   const isBusy = isSubmitting || isStreaming;
   const chatErrorMessage = error ? getChatErrorMessage(error) : null;
+  const targetKey = target.kind === "workout" ? `${target.kind}:${target.workoutId}` : target.kind;
+  const serializedTarget = serializeCoachSheetDebugTarget(target);
   const publishToolMutationEvents = useEffectEvent((nextMessages: readonly UIMessage[]) => {
     const nextObservedToolStates = new Map<string, ReturnType<typeof getToolPartState>>();
 
@@ -940,6 +1026,13 @@ export function CoachSheetSessionPanel({
 
           if (envelope && !publishedToolEventIdsRef.current.has(envelope.eventId)) {
             publishedToolEventIdsRef.current.add(envelope.eventId);
+            appendCoachSheetDebugEntry({
+              envelope,
+              kind: "publish-app-event",
+              messageCount: nextMessages.length,
+              status,
+              target: serializedTarget,
+            });
             publishAppEvent(envelope);
           }
         }
@@ -1002,12 +1095,69 @@ export function CoachSheetSessionPanel({
   });
 
   useEffect(() => {
+    ensureCoachSheetDebugGlobal();
+  }, []);
+
+  useEffect(() => {
     if (isBusy) {
       hasObservedLiveAgentActivityRef.current = true;
     }
 
     publishToolMutationEvents(messages);
   }, [isBusy, messages]);
+
+  useEffect(() => {
+    const messageSummary = summarizeCoachSheetMessages(messages);
+    const traceEntry = {
+      isServerStreaming,
+      isStreaming,
+      kind: "chat-update" as const,
+      messageCount: messages.length,
+      messages: messageSummary,
+      status,
+      target: serializedTarget,
+    };
+    const traceSignature = JSON.stringify(traceEntry);
+
+    if (lastLoggedChatTraceSignatureRef.current === traceSignature) {
+      return;
+    }
+
+    lastLoggedChatTraceSignatureRef.current = traceSignature;
+    appendCoachSheetDebugEntry(traceEntry);
+  }, [isServerStreaming, isStreaming, messages, status, targetKey]);
+
+  useEffect(() => {
+    if (!error) {
+      lastLoggedErrorSignatureRef.current = null;
+      return;
+    }
+
+    const errorSignature = [error.name, error.message, error.stack].join("\n");
+
+    if (lastLoggedErrorSignatureRef.current === errorSignature) {
+      return;
+    }
+
+    lastLoggedErrorSignatureRef.current = errorSignature;
+    appendCoachSheetDebugEntry({
+      error: {
+        message: error.message,
+        name: error.name,
+        stack: error.stack ?? null,
+      },
+      kind: "chat-error",
+      messageCount: messages.length,
+      status,
+      target: serializedTarget,
+    });
+    console.error("Coach sheet chat error", error, {
+      debugTrace: getCoachSheetDebugTrace(),
+      messageCount: messages.length,
+      status,
+      target: serializedTarget,
+    });
+  }, [error, messages.length, status, targetKey]);
 
   useEffect(() => {
     const discussionScroll = discussionScrollRef.current;
@@ -1059,6 +1209,12 @@ export function CoachSheetSessionPanel({
   }, [isBottomLocked, messages, status]);
 
   const handleClearThread = () => {
+    appendCoachSheetDebugEntry({
+      kind: "clear-thread",
+      messageCount: messages.length,
+      status,
+      target: serializedTarget,
+    });
     void stop();
     clearError();
     clearHistory();
@@ -1089,6 +1245,14 @@ export function CoachSheetSessionPanel({
     clearError();
     setIsBottomLocked(true);
     setDraft("");
+    appendCoachSheetDebugEntry({
+      kind: "send-message",
+      messageCount: messages.length,
+      source: "draft",
+      status,
+      target: serializedTarget,
+      text: nextDraft,
+    });
     startTransition(() => {
       void sendMessage({
         parts: [{ text: nextDraft, type: "text" }],
@@ -1112,6 +1276,14 @@ export function CoachSheetSessionPanel({
     onSessionRequestHandled(pendingInitialMessageRequestId);
     clearError();
     setIsBottomLocked(true);
+    appendCoachSheetDebugEntry({
+      kind: "send-message",
+      messageCount: messages.length,
+      source: "session-request",
+      status,
+      target: serializedTarget,
+      text: pendingInitialMessage,
+    });
     startTransition(() => {
       void sendMessage({
         parts: [{ text: pendingInitialMessage, type: "text" }],
@@ -1121,10 +1293,13 @@ export function CoachSheetSessionPanel({
   }, [
     clearError,
     isBusy,
+    messages.length,
     onSessionRequestHandled,
     pendingInitialMessage,
     pendingInitialMessageRequestId,
     sendMessage,
+    status,
+    targetKey,
   ]);
 
   return (
