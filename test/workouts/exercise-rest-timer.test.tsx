@@ -24,6 +24,7 @@ function createSet(id: string, confirmedAt: string | null): WorkoutSet {
       weightLbs: 225,
     },
     previous: null,
+    personalRecord: null,
     reps: 5,
   };
 }

@@ -177,6 +177,7 @@ function createImportedSet(
     orderIndex: setOrderIndex,
     planned: setLoadValues,
     previous: null,
+    personalRecord: null,
     reps: set.reps ?? null,
   });
 }

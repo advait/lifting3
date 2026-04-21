@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { appInvalidateKeySchema, workoutEventTypeSchema } from "../app-events/schema.ts";
+import { workoutSetPersonalRecordSchema } from "./contracts.ts";
 import { SET_KINDS } from "./file.ts";
 
 export const WORKOUT_ROUTE_ACTIONS = [
@@ -28,6 +29,11 @@ const isoDateTimeSchema = z.iso.datetime({ offset: true });
 const nullableTrimmedStringSchema = z.string().trim().min(1).nullable();
 const setKindSchema = z.enum(SET_KINDS);
 const workoutRouteActionSchema = z.enum(WORKOUT_ROUTE_ACTIONS);
+const confirmedSetMutationResultSchema = z.strictObject({
+  exerciseId: nonEmptyStringSchema,
+  personalRecord: workoutSetPersonalRecordSchema.nullable(),
+  setId: nonEmptyStringSchema,
+});
 
 const halfStepRpeSchema = z
   .number()
@@ -226,6 +232,7 @@ export const workoutMutationInputSchema = z.discriminatedUnion("action", [
 /** Standardizes successful write responses so routes and fanout share one envelope shape. */
 export const workoutMutationResultSchema = z.strictObject({
   action: workoutRouteActionSchema,
+  confirmedSet: confirmedSetMutationResultSchema.optional(),
   eventId: nonEmptyStringSchema,
   eventType: workoutEventTypeSchema,
   invalidate: z.array(appInvalidateKeySchema).min(1),

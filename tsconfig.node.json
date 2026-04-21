@@ -4,7 +4,7 @@
     "scripts/**/*.ts",
     "app/features/**/*.ts",
     "app/lib/.server/**/*.ts",
-    "types/cloudflare-node.d.ts"
+    "types/**/*.d.ts"
   ],
   "compilerOptions": {
     "allowImportingTsExtensions": true,

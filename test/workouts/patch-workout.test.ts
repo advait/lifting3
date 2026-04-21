@@ -978,6 +978,91 @@ describe("createWorkoutRouteService.mutateWorkout", () => {
     expect(unconfirmedSet?.reps).toBe(5);
     expect(unconfirmedSet?.confirmedAt).toBeNull();
   });
+  it("returns PR metadata only when a confirmed set exceeds prior workout history", async () => {
+    await insertSeedWorkouts([
+      {
+        date: "2026-04-14T00:00:00.000Z",
+        exercises: [
+          {
+            exerciseSchemaId: "deadlift_barbell",
+            id: "deadlift-prior-exercise",
+            sets: [
+              {
+                actual: { rpe: 8, weightLbs: 275 },
+                confirmedAt: "2026-04-14T09:13:00.000Z",
+                id: "deadlift-prior-set-1",
+                reps: 5,
+                planned: { weightLbs: 275 },
+              },
+            ],
+            status: "completed",
+          },
+        ],
+        id: "deadlift-prior-workout",
+        status: "completed",
+        title: "Deadlift Prior",
+        version: 3,
+      },
+      {
+        date: "2026-04-16T00:00:00.000Z",
+        exercises: [
+          {
+            exerciseSchemaId: "deadlift_barbell",
+            id: "exercise-workout-active-lower-a-1",
+            sets: [
+              {
+                actual: { rpe: 8, weightLbs: 275 },
+                confirmedAt: "2026-04-16T09:13:00.000Z",
+                id: "set-exercise-workout-active-lower-a-1-1",
+                reps: 5,
+                planned: { weightLbs: 275 },
+              },
+              {
+                id: "set-exercise-workout-active-lower-a-1-2",
+                reps: 5,
+                planned: { weightLbs: 295 },
+              },
+            ],
+            status: "active",
+          },
+        ],
+        id: "workout-active-lower-a",
+        status: "active",
+        title: "Lower A",
+        version: 7,
+      },
+    ]);
+    const result = await workoutRouteService.mutateWorkout({
+      action: "confirm_set",
+      actual: {
+        rpe: 8.5,
+        weightLbs: 295,
+      },
+      exerciseId: "exercise-workout-active-lower-a-1",
+      expectedVersion: 7,
+      reps: 5,
+      setId: "set-exercise-workout-active-lower-a-1-2",
+      workoutId: "workout-active-lower-a",
+    });
+
+    expect(result.confirmedSet).toEqual({
+      exerciseId: "exercise-workout-active-lower-a-1",
+      personalRecord: {
+        kind: "weight",
+        previousMaxWeightLbs: 275,
+      },
+      setId: "set-exercise-workout-active-lower-a-1-2",
+    });
+
+    const detail = await workoutRouteService.loadWorkoutDetail({
+      workoutId: "workout-active-lower-a",
+    });
+    expect(detail.exercises[0]?.sets[0]?.personalRecord).toBeNull();
+    expect(detail.exercises[0]?.sets[1]?.personalRecord).toEqual({
+      kind: "weight",
+      previousMaxWeightLbs: 275,
+    });
+  });
 });
 describe("createWorkoutAgentToolService.createWorkout", () => {
   it("creates a planned workout from an explicit exercise plan", async () => {

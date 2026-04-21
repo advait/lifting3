@@ -8,6 +8,10 @@ import {
   workoutListSearchSchema,
 } from "~/features/workouts/contracts";
 import { createWorkoutRouteService } from "~/features/workouts/d1-service.server";
+import {
+  countWorkoutPersonalRecords,
+  countWorkoutSetPersonalRecords,
+} from "~/features/workouts/personal-records";
 import { WorkoutNotFoundError } from "~/features/workouts/service";
 import { createAppDatabase } from "~/lib/.server/db";
 import {
@@ -114,6 +118,7 @@ function summarizeExercise(exercise: WorkoutExercise) {
   const openSets = isExerciseActionable(exercise)
     ? exercise.sets.filter((set) => !isSetConfirmed(set)).length
     : 0;
+  const personalRecords = countWorkoutSetPersonalRecords(exercise.sets);
   const nextSet =
     (isExerciseActionable(exercise) ? exercise.sets.find((set) => !isSetConfirmed(set)) : null) ??
     exercise.sets[0];
@@ -121,6 +126,7 @@ function summarizeExercise(exercise: WorkoutExercise) {
   return [
     `${exercise.displayName} [${exercise.id}]: ${exercise.sets.length} sets total (${exercise.status})`,
     `${confirmedSets} confirmed`,
+    personalRecords > 0 ? `${personalRecords} PR${personalRecords === 1 ? "" : "s"}` : null,
     openSets > 0 ? `${openSets} open` : null,
     nextSet ? `next target ${formatSetValues(nextSet)}` : null,
   ]
@@ -146,6 +152,7 @@ function buildWorkoutCoachSystemPrompt(
   userProfile: string | null,
 ) {
   const nextOpenSet = findNextOpenSet(loaderData);
+  const personalRecords = countWorkoutPersonalRecords(loaderData.exercises);
   const exerciseLines = loaderData.exercises
     .slice(0, EXERCISE_SUMMARY_LIMIT)
     .map((exercise) => `- ${summarizeExercise(exercise)}`);
@@ -175,6 +182,7 @@ function buildWorkoutCoachSystemPrompt(
     `Status: ${loaderData.workout.status}`,
     `Date: ${dateFormatter.format(new Date(loaderData.workout.date))}`,
     `Progress: ${loaderData.progress.confirmed} confirmed, ${loaderData.progress.unconfirmed} unconfirmed of ${loaderData.progress.total} total sets`,
+    `Personal records: ${personalRecords}`,
     nextOpenSet
       ? `Next open set: ${nextOpenSet.exercise.displayName} -> ${formatSetValues(nextOpenSet.set)}`
       : "Next open set: none",

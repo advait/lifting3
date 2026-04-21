@@ -1,4 +1,11 @@
-import { CheckIcon, DumbbellIcon, MoreHorizontalIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import {
+  CheckIcon,
+  DumbbellIcon,
+  MoreHorizontalIcon,
+  PlusIcon,
+  SparklesIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import {
   Form,
@@ -20,6 +27,7 @@ import {
   AlertDialogMedia,
   AlertDialogTitle,
 } from "~/components/atoms/alert-dialog";
+import { Badge } from "~/components/atoms/badge";
 import { Button } from "~/components/atoms/button";
 import {
   Dialog,
@@ -52,6 +60,8 @@ import {
   applyOptimisticWorkoutDetail,
   getPendingWorkoutMutations,
 } from "~/features/workouts/optimistic-detail";
+import { fireWeightPersonalRecordConfetti } from "~/features/workouts/personal-record-confetti.client";
+import { countWorkoutPersonalRecords } from "~/features/workouts/personal-records";
 import { formatRestTimerValue, parseRestTimerSecondsInput } from "~/features/workouts/rest-timer";
 import { cn } from "~/lib/utils";
 
@@ -107,6 +117,7 @@ interface WorkoutOverviewCardProps {
 
 interface SessionSummarySectionProps {
   exercisesCount: number;
+  personalRecords: number;
   progress: WorkoutDetailLoaderData["progress"];
   workout: WorkoutDetailWorkout;
 }
@@ -229,6 +240,31 @@ function formatSetPerformance(values: WorkoutSet["previous"]) {
   const mainPart = `${formatOptionalValue(weight)} x ${formatOptionalValue(reps)}`;
 
   return rpe == null ? mainPart : `${mainPart} @ RPE ${rpe}`;
+}
+
+function PersonalRecordBadge({
+  personalRecord,
+}: {
+  personalRecord: NonNullable<WorkoutSet["personalRecord"]>;
+}) {
+  const previousMaxWeightLbs =
+    personalRecord.kind === "weight" ? personalRecord.previousMaxWeightLbs : null;
+  const accessibleLabel =
+    previousMaxWeightLbs == null
+      ? "Personal record"
+      : `Personal record. Previous max ${previousMaxWeightLbs} pounds.`;
+
+  return (
+    <Badge
+      aria-label={accessibleLabel}
+      className="border-amber-300/30 bg-linear-to-r from-amber-400/24 via-orange-300/18 to-yellow-200/22 text-[10px] text-amber-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_10px_18px_-16px_rgba(251,191,36,0.95)]"
+      title={accessibleLabel}
+      variant="outline"
+    >
+      <SparklesIcon aria-hidden data-icon="inline-start" />
+      PR
+    </Badge>
+  );
 }
 
 function getCarryForwardSetValues(set: WorkoutSet | null | undefined) {
@@ -615,9 +651,19 @@ function SetRpeChooserRow({
       return;
     }
 
+    const parsedMutationResult = workoutMutationResultSchema.safeParse(fetcher.data);
+
+    if (
+      parsedMutationResult.success &&
+      parsedMutationResult.data.action === "confirm_set" &&
+      parsedMutationResult.data.confirmedSet?.personalRecord
+    ) {
+      void fireWeightPersonalRecordConfetti();
+    }
+
     setDidSubmit(false);
     onClose();
-  }, [didSubmit, fetcher.state, onClose]);
+  }, [didSubmit, fetcher.data, fetcher.state, onClose]);
 
   const submitSetConfirmation = (rpe: number | null) => {
     const formData = new FormData();
@@ -745,6 +791,7 @@ function EditableSetNumberCell({
   const displayValue =
     fieldName === "reps" ? set.reps : (set.actual.weightLbs ?? set.planned.weightLbs);
   const controlsDisabled = isMutationPending || fetcher.state !== "idle";
+  const inputWidthClassName = fieldName === "reps" ? "w-12" : "w-14";
   const pattern = inputMode === "numeric" ? "[0-9]*" : "[0-9]*[.]?[0-9]*";
 
   useEffect(() => {
@@ -800,7 +847,7 @@ function EditableSetNumberCell({
   if (!isEditing) {
     return (
       <button
-        className="w-full rounded-md px-1 py-1 text-center disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex min-w-8 items-center justify-center rounded-md px-1 py-1 text-center disabled:cursor-not-allowed disabled:opacity-60"
         disabled={controlsDisabled}
         onClick={startEditing}
         type="button"
@@ -812,7 +859,7 @@ function EditableSetNumberCell({
 
   return (
     <fetcher.Form
-      className="w-full"
+      className="flex justify-center"
       method="post"
       onSubmit={() => {
         setDidSubmit(true);
@@ -827,7 +874,10 @@ function EditableSetNumberCell({
       />
       <input
         autoComplete="off"
-        className="h-8 w-full rounded-md border border-border/70 bg-background px-1 text-center outline-none"
+        className={cn(
+          "h-8 rounded-md border border-border/70 bg-background px-1 text-center outline-none",
+          inputWidthClassName,
+        )}
         disabled={controlsDisabled}
         enterKeyHint="done"
         inputMode={inputMode}
@@ -1316,7 +1366,7 @@ function ExerciseCard({
                   <th className="px-2 py-2 text-center font-medium first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
                     Previous
                   </th>
-                  <th className="w-16 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                  <th className="w-24 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
                     LBS
                   </th>
                   <th className="w-14 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
@@ -1359,16 +1409,21 @@ function ExerciseCard({
                           {formatSetPerformance(set.previous)}
                         </td>
                         <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                          <EditableSetNumberCell
-                            editAction={setWeightEditAction}
-                            exerciseId={exercise.id}
-                            fieldName="weightLbs"
-                            inputMode="decimal"
-                            isMutationPending={controlsDisabled}
-                            set={set}
-                            step="0.5"
-                            workout={workout}
-                          />
+                          <div className="flex items-center justify-center gap-1.5">
+                            <EditableSetNumberCell
+                              editAction={setWeightEditAction}
+                              exerciseId={exercise.id}
+                              fieldName="weightLbs"
+                              inputMode="decimal"
+                              isMutationPending={controlsDisabled}
+                              set={set}
+                              step="0.5"
+                              workout={workout}
+                            />
+                            {set.personalRecord ? (
+                              <PersonalRecordBadge personalRecord={set.personalRecord} />
+                            ) : null}
+                          </div>
                         </td>
                         <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
                           <EditableSetNumberCell
@@ -1520,7 +1575,12 @@ function ExerciseCard({
   );
 }
 
-function SessionSummarySection({ exercisesCount, progress, workout }: SessionSummarySectionProps) {
+function SessionSummarySection({
+  exercisesCount,
+  personalRecords,
+  progress,
+  workout,
+}: SessionSummarySectionProps) {
   return (
     <section className="grid gap-3 text-sm">
       <h2 className="font-semibold text-sm tracking-tight">Session Summary</h2>
@@ -1577,6 +1637,13 @@ function SessionSummarySection({ exercisesCount, progress, workout }: SessionSum
             )}
           </dd>
         </div>
+        <div className="flex items-center justify-between gap-3 border-border/60 border-t pt-2 text-foreground">
+          <dt className="inline-flex items-center gap-1.5 font-medium">
+            <SparklesIcon aria-hidden className="size-3.5 text-primary" />
+            PRs
+          </dt>
+          <dd className="font-semibold tabular-nums">{personalRecords}</dd>
+        </div>
       </dl>
     </section>
   );
@@ -1608,6 +1675,7 @@ export function WorkoutDetailScreen({ actionData, loaderData }: WorkoutDetailScr
     loaderData.workout.id,
   );
   const optimisticLoaderData = applyOptimisticWorkoutDetail(loaderData, pendingMutations);
+  const personalRecords = countWorkoutPersonalRecords(optimisticLoaderData.exercises);
   const isMutationPending = pendingMutations.length > 0;
   const availableActions = getAvailableActions(optimisticLoaderData.workout.status, {
     historicalEditMode: isHistoricalEditMode,
@@ -1683,6 +1751,7 @@ export function WorkoutDetailScreen({ actionData, loaderData }: WorkoutDetailScr
       <aside className="grid content-start gap-4 lg:border-border/70 lg:border-l lg:pl-6">
         <SessionSummarySection
           exercisesCount={optimisticLoaderData.exercises.length}
+          personalRecords={personalRecords}
           progress={optimisticLoaderData.progress}
           workout={optimisticLoaderData.workout}
         />

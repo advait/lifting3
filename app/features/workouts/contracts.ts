@@ -54,6 +54,13 @@ const setPerformanceSnapshotSchema = z.strictObject({
   rpe: halfStepRpeSchema.nullable(),
 });
 
+export const workoutSetPersonalRecordSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("weight"),
+    previousMaxWeightLbs: z.number().nonnegative().nullable(),
+  }),
+]);
+
 /** Summarizes visible set progress for list/detail routes without exposing storage internals. */
 export const workoutSetCountsSchema = z
   .strictObject({
@@ -81,6 +88,7 @@ export const workoutSetSchema = z
     planned: setLoadValuesSchema,
     actual: setLoadValuesSchema,
     previous: setPerformanceSnapshotSchema.nullable(),
+    personalRecord: workoutSetPersonalRecordSchema.nullable().default(null),
     confirmedAt: isoDateTimeSchema.nullable(),
   })
   .superRefine((set, context) => {
@@ -243,6 +251,7 @@ export type WorkoutListExerciseSummary = z.infer<typeof workoutListExerciseSumma
 export type WorkoutListItem = z.infer<typeof workoutListItemSchema>;
 export type WorkoutListLoaderData = z.infer<typeof workoutListLoaderDataSchema>;
 export type WorkoutDetailParams = z.infer<typeof workoutDetailParamsSchema>;
+export type WorkoutSetPersonalRecord = z.infer<typeof workoutSetPersonalRecordSchema>;
 export type WorkoutSet = z.infer<typeof workoutSetSchema>;
 export type WorkoutExerciseState = z.infer<typeof workoutExerciseStateSchema>;
 export type WorkoutExerciseDisplay = z.infer<typeof workoutExerciseDisplaySchema>;

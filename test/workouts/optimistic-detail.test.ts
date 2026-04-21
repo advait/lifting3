@@ -46,6 +46,7 @@ const BASE_WORKOUT_DETAIL = {
             weightLbs: 225,
           },
           previous: null,
+          personalRecord: null,
           reps: 5,
         },
         {
@@ -62,6 +63,7 @@ const BASE_WORKOUT_DETAIL = {
             weightLbs: 225,
           },
           previous: null,
+          personalRecord: null,
           reps: 5,
         },
       ],
@@ -308,6 +310,7 @@ describe("workout optimistic detail helpers", () => {
           weightLbs: 225,
         },
         previous: null,
+        personalRecord: null,
         reps: 5,
       },
       {
@@ -324,6 +327,7 @@ describe("workout optimistic detail helpers", () => {
           weightLbs: 225,
         },
         previous: null,
+        personalRecord: null,
         reps: 5,
       },
       {
@@ -340,6 +344,7 @@ describe("workout optimistic detail helpers", () => {
           weightLbs: 225,
         },
         previous: null,
+        personalRecord: null,
         reps: 5,
       },
       {
@@ -356,6 +361,7 @@ describe("workout optimistic detail helpers", () => {
           weightLbs: 225,
         },
         previous: null,
+        personalRecord: null,
         reps: 5,
       },
       {
@@ -372,6 +378,7 @@ describe("workout optimistic detail helpers", () => {
           weightLbs: 225,
         },
         previous: null,
+        personalRecord: null,
         reps: 5,
       },
     ];
@@ -432,6 +439,7 @@ describe("workout optimistic detail helpers", () => {
           weightLbs: 225,
         },
         previous: null,
+        personalRecord: null,
         reps: 5,
       },
       {
@@ -448,6 +456,7 @@ describe("workout optimistic detail helpers", () => {
           weightLbs: 225,
         },
         previous: null,
+        personalRecord: null,
         reps: 5,
       },
       {
@@ -464,6 +473,7 @@ describe("workout optimistic detail helpers", () => {
           weightLbs: 225,
         },
         previous: null,
+        personalRecord: null,
         reps: 5,
       },
       {
@@ -480,6 +490,7 @@ describe("workout optimistic detail helpers", () => {
           weightLbs: 225,
         },
         previous: null,
+        personalRecord: null,
         reps: 5,
       },
       {
@@ -496,6 +507,7 @@ describe("workout optimistic detail helpers", () => {
           weightLbs: 225,
         },
         previous: null,
+        personalRecord: null,
         reps: 5,
       },
     ];

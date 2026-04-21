@@ -20,6 +20,7 @@ function cloneSet(set: WorkoutSet): WorkoutSet {
   return {
     ...set,
     actual: { ...set.actual },
+    personalRecord: set.personalRecord ? { ...set.personalRecord } : null,
     planned: { ...set.planned },
     previous: set.previous ? { ...set.previous } : null,
   };
@@ -127,6 +128,7 @@ function createOptimisticSet(
     designation: input.designation,
     id: `optimistic-set:${key}`,
     orderIndex: input.orderIndex,
+    personalRecord: null,
     planned: {
       rpe: input.planned?.rpe ?? null,
       weightLbs: input.planned?.weightLbs ?? null,

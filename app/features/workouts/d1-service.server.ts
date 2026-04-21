@@ -1,5 +1,5 @@
 import type { BatchItem } from "drizzle-orm/batch";
-import { and, asc, desc, eq, gte, inArray, lt, lte, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lt, lte, ne, or } from "drizzle-orm";
 
 import type { AppDatabase } from "../../lib/.server/db/index.ts";
 import {
@@ -47,6 +47,7 @@ import {
   workoutSetCountsSchema,
   workoutSetSchema,
 } from "./contracts.ts";
+import { buildWorkoutSetPersonalRecords } from "./personal-records.ts";
 import { DEFAULT_EXERCISE_REST_SECONDS, normalizeRestSeconds } from "./rest-timer.ts";
 import { cascadeSetReps, cascadeSetWeightLbs } from "./set-weight-cascade.ts";
 import type { WorkoutRouteService } from "./service.ts";
@@ -139,6 +140,7 @@ type RouteMutationByAction<K extends WorkoutMutationInput["action"]> = Extract<
   WorkoutMutationInput,
   { action: K }
 >;
+type ConfirmedSetMutationResult = NonNullable<WorkoutMutationResult["confirmedSet"]>;
 type ToolPatchByType<K extends PatchWorkoutToolOp["type"]> = Extract<
   PatchWorkoutToolOp,
   { type: K }
@@ -518,6 +520,7 @@ function getAlignedPreviousSetValues(
 function decorateExercise(
   exercise: WorkoutExerciseState,
   previousExercise: WorkoutExerciseState | null = null,
+  previousMaxWeightLbs: number | null = null,
 ) {
   const exerciseSchema = getExerciseSchemaById(exercise.exerciseSchemaId);
 
@@ -526,6 +529,10 @@ function decorateExercise(
   }
 
   const alignedPreviousSetValues = getAlignedPreviousSetValues(exercise.sets, previousExercise);
+  const personalRecordsBySetId = buildWorkoutSetPersonalRecords(
+    exercise.sets,
+    previousMaxWeightLbs,
+  );
 
   return workoutExerciseSchema.parse({
     classification: exerciseSchema.classification,
@@ -541,6 +548,7 @@ function decorateExercise(
     orderIndex: exercise.orderIndex,
     sets: exercise.sets.map((set, index) => ({
       ...cloneValue(set),
+      personalRecord: personalRecordsBySetId.get(set.id) ?? null,
       previous: alignedPreviousSetValues[index],
     })),
     status: exercise.status,
@@ -639,6 +647,10 @@ function buildWorkoutDetail(
     WorkoutExerciseState["exerciseSchemaId"],
     WorkoutExerciseState
   >,
+  previousMaxWeightByExerciseSchemaId: ReadonlyMap<
+    WorkoutExerciseState["exerciseSchemaId"],
+    number
+  >,
 ) {
   return workoutDetailLoaderDataSchema.parse({
     agentTarget: createWorkoutCoachTarget(record.workout.id),
@@ -646,6 +658,7 @@ function buildWorkoutDetail(
       decorateExercise(
         exercise,
         previousExercisesBySchemaId.get(exercise.exerciseSchemaId) ?? null,
+        previousMaxWeightByExerciseSchemaId.get(exercise.exerciseSchemaId) ?? null,
       ),
     ),
     loadedAt: new Date().toISOString(),
@@ -709,6 +722,9 @@ function createMutationResult(
   eventType: WorkoutMutationResult["eventType"],
   exerciseSchemaIds: readonly string[] = [],
   includeExerciseInvalidations = false,
+  options?: {
+    confirmedSet?: ConfirmedSetMutationResult;
+  },
 ) {
   const invalidate = buildRouteInvalidateKeys(
     record.workout.id,
@@ -718,6 +734,7 @@ function createMutationResult(
 
   return workoutMutationResultSchema.parse({
     action,
+    confirmedSet: options?.confirmedSet,
     eventId: `${record.workout.id}-v${record.workout.version}-${eventType}`,
     eventType,
     invalidate,
@@ -725,6 +742,26 @@ function createMutationResult(
     version: record.workout.version,
     workoutId: record.workout.id,
   });
+}
+
+function buildConfirmedSetMutationResult(
+  record: StoredWorkoutRecord,
+  exerciseId: string,
+  setId: string,
+  previousMaxWeightLbs: number | null,
+): ConfirmedSetMutationResult {
+  const exercise = findExercise(record, exerciseId);
+  const set = findSet(exercise, setId);
+  const personalRecordsBySetId = buildWorkoutSetPersonalRecords(
+    exercise.sets,
+    previousMaxWeightLbs,
+  );
+
+  return {
+    exerciseId,
+    personalRecord: personalRecordsBySetId.get(set.id) ?? null,
+    setId,
+  };
 }
 
 function matchesWorkoutSearch(record: StoredWorkoutRecord, search: WorkoutListSearch) {
@@ -1562,6 +1599,16 @@ async function loadStoredWorkoutRecord(db: AppDatabase, workoutId: string) {
   return record;
 }
 
+function buildPriorWorkoutScope(record: StoredWorkoutRecord) {
+  return and(
+    ne(workouts.id, record.workout.id),
+    or(
+      lt(workouts.date, record.workout.date),
+      and(eq(workouts.date, record.workout.date), lt(workouts.updatedAt, record.workout.updatedAt)),
+    ),
+  );
+}
+
 async function loadPreviousExercisesBySchemaId(
   db: AppDatabase,
   record: StoredWorkoutRecord,
@@ -1577,18 +1624,7 @@ async function loadPreviousExercisesBySchemaId(
   const priorWorkoutRows = await db
     .select()
     .from(workouts)
-    .where(
-      and(
-        ne(workouts.id, record.workout.id),
-        or(
-          lt(workouts.date, record.workout.date),
-          and(
-            eq(workouts.date, record.workout.date),
-            lt(workouts.updatedAt, record.workout.updatedAt),
-          ),
-        ),
-      ),
-    )
+    .where(buildPriorWorkoutScope(record))
     .orderBy(desc(workouts.date), desc(workouts.updatedAt));
   const priorRecords = await loadStoredWorkoutRecords(db, priorWorkoutRows);
   const previousExercisesBySchemaId = new Map<
@@ -1615,6 +1651,56 @@ async function loadPreviousExercisesBySchemaId(
   }
 
   return previousExercisesBySchemaId;
+}
+
+async function loadPreviousMaxWeightByExerciseSchemaId(
+  db: AppDatabase,
+  record: StoredWorkoutRecord,
+): Promise<Map<WorkoutExerciseState["exerciseSchemaId"], number>> {
+  const exerciseSchemaIds = [
+    ...new Set(record.exercises.map((exercise) => exercise.exerciseSchemaId)),
+  ];
+
+  if (exerciseSchemaIds.length === 0) {
+    return new Map();
+  }
+
+  const rows = await db
+    .select({
+      actualWeightLbs: exerciseSets.actualWeightLbs,
+      exerciseSchemaId: workoutExercises.exerciseSchemaId,
+    })
+    .from(workoutExercises)
+    .innerJoin(workouts, eq(workoutExercises.workoutId, workouts.id))
+    .innerJoin(exerciseSets, eq(exerciseSets.exerciseId, workoutExercises.id))
+    .where(
+      and(
+        buildPriorWorkoutScope(record),
+        inArray(workoutExercises.exerciseSchemaId, exerciseSchemaIds),
+        isNotNull(exerciseSets.confirmedAt),
+        isNotNull(exerciseSets.actualWeightLbs),
+      ),
+    );
+  const previousMaxWeightByExerciseSchemaId = new Map<
+    WorkoutExerciseState["exerciseSchemaId"],
+    number
+  >();
+
+  for (const row of rows) {
+    const actualWeightLbs = row.actualWeightLbs;
+    const currentMaxWeightLbs =
+      previousMaxWeightByExerciseSchemaId.get(row.exerciseSchemaId) ?? null;
+
+    if (actualWeightLbs == null) {
+      continue;
+    }
+
+    if (currentMaxWeightLbs == null || actualWeightLbs > currentMaxWeightLbs) {
+      previousMaxWeightByExerciseSchemaId.set(row.exerciseSchemaId, actualWeightLbs);
+    }
+  }
+
+  return previousMaxWeightByExerciseSchemaId;
 }
 
 async function loadCurrentWorkoutVersion(db: AppDatabase, workoutId: string) {
@@ -2467,9 +2553,16 @@ export function createWorkoutRouteService(db: AppDatabase): WorkoutRouteService 
   return {
     async loadWorkoutDetail(params: WorkoutDetailParams) {
       const record = await loadStoredWorkoutRecord(db, params.workoutId);
-      const previousExercisesBySchemaId = await loadPreviousExercisesBySchemaId(db, record);
+      const [previousExercisesBySchemaId, previousMaxWeightByExerciseSchemaId] = await Promise.all([
+        loadPreviousExercisesBySchemaId(db, record),
+        loadPreviousMaxWeightByExerciseSchemaId(db, record),
+      ]);
 
-      return buildWorkoutDetail(record, previousExercisesBySchemaId);
+      return buildWorkoutDetail(
+        record,
+        previousExercisesBySchemaId,
+        previousMaxWeightByExerciseSchemaId,
+      );
     },
 
     async loadWorkoutList(search: WorkoutListSearch) {
@@ -2538,6 +2631,22 @@ export function createWorkoutRouteService(db: AppDatabase): WorkoutRouteService 
         updatedAt: getMutationTimestamp(input),
         workoutId: input.workoutId,
       });
+      let confirmedSet: ConfirmedSetMutationResult | undefined;
+
+      if (input.action === "confirm_set") {
+        const exercise = findExercise(updatedRecord, input.exerciseId);
+        const previousMaxWeightByExerciseSchemaId = await loadPreviousMaxWeightByExerciseSchemaId(
+          db,
+          updatedRecord,
+        );
+
+        confirmedSet = buildConfirmedSetMutationResult(
+          updatedRecord,
+          input.exerciseId,
+          input.setId,
+          previousMaxWeightByExerciseSchemaId.get(exercise.exerciseSchemaId) ?? null,
+        );
+      }
 
       return createMutationResult(
         input.action,
@@ -2545,6 +2654,9 @@ export function createWorkoutRouteService(db: AppDatabase): WorkoutRouteService 
         plan.eventType,
         getInvalidateExerciseSchemaIds(applied),
         plan.includeExerciseInvalidations,
+        {
+          confirmedSet,
+        },
       );
     },
   };
