@@ -46,6 +46,7 @@ import {
   workoutSetCountsSchema,
   workoutSetSchema,
 } from "./contracts.ts";
+import { cascadeSetWeightLbs } from "./set-weight-cascade.ts";
 import type { WorkoutRouteService } from "./service.ts";
 import { WorkoutConflictError, WorkoutMutationError, WorkoutNotFoundError } from "./service.ts";
 
@@ -1000,6 +1001,11 @@ function applyMutationOperation(
       const exercise = findExercise(record, operation.exerciseId);
       const set = findSet(exercise, operation.setId);
 
+      cascadeSetWeightLbs(exercise.sets, {
+        mode: "planned",
+        nextWeightLbs: operation.planned?.weightLbs,
+        setId: operation.setId,
+      });
       set.planned = mergeDefinedSetLoadValues(set.planned, operation.planned);
       applyDefinedReps(set, operation.reps);
 
@@ -1012,6 +1018,11 @@ function applyMutationOperation(
       const exercise = findExercise(record, operation.exerciseId);
       const set = findSet(exercise, operation.setId);
 
+      cascadeSetWeightLbs(exercise.sets, {
+        mode: "actual",
+        nextWeightLbs: operation.actual?.weightLbs,
+        setId: operation.setId,
+      });
       set.actual = mergeDefinedSetLoadValues(set.actual, operation.actual);
       applyDefinedReps(set, operation.reps);
       assertConfirmedSetHasLoggedValues(set);

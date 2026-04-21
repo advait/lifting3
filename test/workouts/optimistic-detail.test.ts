@@ -260,4 +260,129 @@ describe("workout optimistic detail helpers", () => {
     expect(optimisticDetail.workout.version).toBe(1);
     expect(optimisticDetail.loadedAt).toBe(BASE_LOADED_AT);
   });
+
+  it("cascades optimistic logged-weight edits across matching future working sets", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(FIXED_NOW));
+
+    const loaderData = createLoaderData();
+
+    loaderData.workout.startedAt = "2026-04-21T10:01:00.000Z";
+    loaderData.workout.status = "active";
+    loaderData.exercises[0].status = "active";
+    loaderData.exercises[0].sets = [
+      {
+        actual: {
+          rpe: null,
+          weightLbs: 225,
+        },
+        confirmedAt: "2026-04-21T10:02:00.000Z",
+        designation: "working",
+        id: "set-1",
+        orderIndex: 0,
+        planned: {
+          rpe: null,
+          weightLbs: 225,
+        },
+        previous: null,
+        reps: 5,
+      },
+      {
+        actual: {
+          rpe: null,
+          weightLbs: null,
+        },
+        confirmedAt: null,
+        designation: "working",
+        id: "set-2",
+        orderIndex: 1,
+        planned: {
+          rpe: null,
+          weightLbs: 225,
+        },
+        previous: null,
+        reps: 5,
+      },
+      {
+        actual: {
+          rpe: null,
+          weightLbs: null,
+        },
+        confirmedAt: null,
+        designation: "working",
+        id: "set-3",
+        orderIndex: 2,
+        planned: {
+          rpe: null,
+          weightLbs: 225,
+        },
+        previous: null,
+        reps: 5,
+      },
+      {
+        actual: {
+          rpe: null,
+          weightLbs: 225,
+        },
+        confirmedAt: "2026-04-21T10:09:00.000Z",
+        designation: "working",
+        id: "set-4",
+        orderIndex: 3,
+        planned: {
+          rpe: null,
+          weightLbs: 225,
+        },
+        previous: null,
+        reps: 5,
+      },
+      {
+        actual: {
+          rpe: null,
+          weightLbs: null,
+        },
+        confirmedAt: null,
+        designation: "working",
+        id: "set-5",
+        orderIndex: 4,
+        planned: {
+          rpe: null,
+          weightLbs: 225,
+        },
+        previous: null,
+        reps: 5,
+      },
+    ];
+    loaderData.progress = {
+      confirmed: 2,
+      total: 5,
+      unconfirmed: 3,
+    };
+
+    const optimisticDetail = applyOptimisticWorkoutDetail(loaderData, [
+      {
+        key: "fetcher:update-set-actuals",
+        mutation: {
+          action: "update_set_actuals",
+          actual: {
+            weightLbs: 235,
+          },
+          exerciseId: "exercise-1",
+          expectedVersion: 1,
+          setId: "set-2",
+          workoutId: "workout-1",
+        },
+      },
+    ]);
+
+    expect(optimisticDetail.exercises[0]?.sets.map((set) => set.actual.weightLbs)).toEqual([
+      225,
+      235,
+      235,
+      225,
+      null,
+    ]);
+    expect(optimisticDetail.workout.updatedAt).toBe(FIXED_NOW);
+    expect(optimisticDetail.workout.version).toBe(2);
+    expect(optimisticDetail.loadedAt).toBe(FIXED_NOW);
+  });
 });

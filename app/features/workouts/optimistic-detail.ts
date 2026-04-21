@@ -2,6 +2,7 @@ import type { WorkoutMutationInput } from "./actions.ts";
 import type { WorkoutDetailLoaderData, WorkoutExercise, WorkoutSet } from "./contracts.ts";
 import { workoutSetSchema } from "./contracts.ts";
 import { safeParseWorkoutMutationFormData } from "./mutation-form.ts";
+import { cascadeSetWeightLbs } from "./set-weight-cascade.ts";
 
 const SET_LOAD_VALUE_KEYS = ["rpe", "weightLbs"] as const;
 
@@ -226,10 +227,15 @@ function applyPendingMutation(
       const exercise = findExercise(loaderData, mutation.exerciseId);
       const set = exercise ? findSet(exercise, mutation.setId) : null;
 
-      if (!set) {
+      if (!exercise || !set) {
         return false;
       }
 
+      cascadeSetWeightLbs(exercise.sets, {
+        mode: "planned",
+        nextWeightLbs: mutation.planned?.weightLbs,
+        setId: mutation.setId,
+      });
       set.planned = mergeDefinedSetLoadValues(set.planned, mutation.planned);
       applyDefinedReps(set, mutation.reps);
       return true;
@@ -238,10 +244,15 @@ function applyPendingMutation(
       const exercise = findExercise(loaderData, mutation.exerciseId);
       const set = exercise ? findSet(exercise, mutation.setId) : null;
 
-      if (!set) {
+      if (!exercise || !set) {
         return false;
       }
 
+      cascadeSetWeightLbs(exercise.sets, {
+        mode: "actual",
+        nextWeightLbs: mutation.actual?.weightLbs,
+        setId: mutation.setId,
+      });
       const nextActual = mergeDefinedSetLoadValues(set.actual, mutation.actual);
       const nextReps = mutation.reps !== undefined ? mutation.reps : set.reps;
 

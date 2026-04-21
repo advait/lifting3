@@ -578,6 +578,131 @@ describe("createWorkoutRouteService.mutateWorkout", () => {
     });
     expect(detail.exercises[0]?.sets[0]?.reps).toBe(9);
   });
+  it("cascades logged weight updates across matching unconfirmed working sets", async () => {
+    await insertSeedWorkout({
+      date: "2026-04-16T00:00:00.000Z",
+      exercises: [
+        {
+          exerciseSchemaId: "bench_press_barbell",
+          id: "route-exercise-actual-cascade",
+          sets: [
+            {
+              actual: { weightLbs: 225 },
+              confirmedAt: "2026-04-16T09:05:00.000Z",
+              id: "route-actual-cascade-set-1",
+              planned: { weightLbs: 225 },
+              reps: 5,
+            },
+            {
+              id: "route-actual-cascade-set-2",
+              planned: { weightLbs: 225 },
+              reps: 5,
+            },
+            {
+              id: "route-actual-cascade-set-3",
+              planned: { weightLbs: 225 },
+              reps: 5,
+            },
+            {
+              actual: { weightLbs: 225 },
+              confirmedAt: "2026-04-16T09:14:00.000Z",
+              id: "route-actual-cascade-set-4",
+              planned: { weightLbs: 225 },
+              reps: 5,
+            },
+            {
+              id: "route-actual-cascade-set-5",
+              planned: { weightLbs: 225 },
+              reps: 5,
+            },
+          ],
+          status: "active",
+        },
+      ],
+      id: "route-workout-actual-cascade",
+      status: "active",
+      title: "Route Actual Cascade",
+      version: 1,
+    });
+    await workoutRouteService.mutateWorkout({
+      action: "update_set_actuals",
+      actual: {
+        weightLbs: 235,
+      },
+      exerciseId: "route-exercise-actual-cascade",
+      expectedVersion: 1,
+      setId: "route-actual-cascade-set-2",
+      workoutId: "route-workout-actual-cascade",
+    });
+    const detail = await workoutRouteService.loadWorkoutDetail({
+      workoutId: "route-workout-actual-cascade",
+    });
+    expect(detail.exercises[0]?.sets.map((set) => set.actual.weightLbs)).toEqual([
+      225,
+      235,
+      235,
+      225,
+      null,
+    ]);
+  });
+  it("cascades planned warmup weight updates without touching working sets", async () => {
+    await insertSeedWorkout({
+      date: "2026-04-16T00:00:00.000Z",
+      exercises: [
+        {
+          exerciseSchemaId: "front_squat",
+          id: "route-exercise-planned-cascade",
+          sets: [
+            {
+              designation: "warmup",
+              id: "route-planned-cascade-set-1",
+              planned: { weightLbs: 45 },
+              reps: 5,
+            },
+            {
+              designation: "warmup",
+              id: "route-planned-cascade-set-2",
+              planned: { weightLbs: 45 },
+              reps: 5,
+            },
+            {
+              designation: "working",
+              id: "route-planned-cascade-set-3",
+              planned: { weightLbs: 135 },
+              reps: 4,
+            },
+            {
+              designation: "working",
+              id: "route-planned-cascade-set-4",
+              planned: { weightLbs: 135 },
+              reps: 4,
+            },
+          ],
+          status: "planned",
+        },
+      ],
+      id: "route-workout-planned-cascade",
+      status: "planned",
+      title: "Route Planned Cascade",
+      version: 1,
+    });
+    await workoutRouteService.mutateWorkout({
+      action: "update_set_planned",
+      exerciseId: "route-exercise-planned-cascade",
+      expectedVersion: 1,
+      planned: {
+        weightLbs: 55,
+      },
+      setId: "route-planned-cascade-set-1",
+      workoutId: "route-workout-planned-cascade",
+    });
+    const detail = await workoutRouteService.loadWorkoutDetail({
+      workoutId: "route-workout-planned-cascade",
+    });
+    expect(detail.exercises[0]?.sets.map((set) => set.planned.weightLbs)).toEqual([
+      55, 55, 135, 135,
+    ]);
+  });
   it("uses the shared engine for reorder_exercise without adding exercise invalidations", async () => {
     await insertSeedWorkout({
       date: "2026-04-16T00:00:00.000Z",
