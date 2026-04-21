@@ -22,6 +22,7 @@ const EXERCISE_STATUSES = ["planned", "active", "completed", "skipped", "replace
 const nullableStringSchema = z.string().nullable();
 const nullableNumberSchema = z.number().nullable();
 const nonNegativeIntegerSchema = z.number().int().nonnegative();
+const positiveIntegerSchema = z.number().int().positive();
 
 const appSettingRowSchema = z.strictObject({
   createdAt: z.iso.datetime({ offset: true }),
@@ -52,6 +53,7 @@ const workoutExerciseRowSchema = z.strictObject({
   coachNotes: nullableStringSchema,
   exerciseSchemaId: z.enum(EXERCISE_SCHEMA_IDS),
   id: z.string().min(1),
+  restSeconds: positiveIntegerSchema,
   orderIndex: nonNegativeIntegerSchema,
   sourceExerciseName: nullableStringSchema,
   status: z.enum(EXERCISE_STATUSES),
@@ -125,6 +127,7 @@ function loadExportRows(namespace: ReturnType<typeof parseD1Namespace>): AppStat
       [
         "SELECT id, workout_id AS workoutId, order_index AS orderIndex,",
         "  exercise_schema_id AS exerciseSchemaId, status,",
+        "  rest_seconds AS restSeconds,",
         "  source_exercise_name AS sourceExerciseName,",
         "  user_notes AS userNotes, coach_notes AS coachNotes",
         "FROM workout_exercises",

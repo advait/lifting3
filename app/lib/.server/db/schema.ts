@@ -4,6 +4,7 @@ import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-or
 import { APP_SETTING_KEYS } from "../../../features/settings/contracts.ts";
 import { EXERCISE_SCHEMA_IDS } from "../../../features/exercises/schema.ts";
 import { SET_KINDS, WORKOUT_STATUSES } from "../../../features/workouts/file.ts";
+import { DEFAULT_EXERCISE_REST_SECONDS } from "../../../features/workouts/rest-timer.ts";
 
 const WORKOUT_SOURCES = ["manual", "imported", "agent"] as const;
 const EXERCISE_STATUSES = ["planned", "active", "completed", "skipped", "replaced"] as const;
@@ -67,6 +68,7 @@ export const workoutExercises = sqliteTable(
       enum: EXERCISE_SCHEMA_IDS,
     }).notNull(),
     status: text("status", { enum: EXERCISE_STATUSES }).notNull(),
+    restSeconds: integer("rest_seconds").notNull().default(DEFAULT_EXERCISE_REST_SECONDS),
     sourceExerciseName: text("source_exercise_name"),
     userNotes: text("user_notes"),
     coachNotes: text("coach_notes"),

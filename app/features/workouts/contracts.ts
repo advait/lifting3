@@ -7,6 +7,7 @@ import {
   EXERCISE_SCHEMA_IDS,
 } from "../exercises/schema.ts";
 import { SET_KINDS, WORKOUT_STATUSES } from "./file.ts";
+import { DEFAULT_EXERCISE_REST_SECONDS } from "./rest-timer.ts";
 
 const WORKOUT_SOURCES = ["manual", "imported", "agent"] as const;
 const EXERCISE_STATUSES = ["planned", "active", "completed", "skipped", "replaced"] as const;
@@ -26,6 +27,7 @@ const workoutSourceSchema = z.enum(WORKOUT_SOURCES);
 const agentKindSchema = z.enum(AGENT_KINDS);
 const nonNegativeIntegerSchema = z.int().nonnegative();
 const positiveIntegerSchema = z.int().positive();
+const restSecondsSchema = z.coerce.number().int().positive();
 
 const halfStepRpeSchema = z
   .number()
@@ -102,6 +104,7 @@ export const workoutExerciseStateSchema = z.strictObject({
   id: nonEmptyStringSchema,
   orderIndex: nonNegativeIntegerSchema,
   exerciseSchemaId: exerciseSchemaIdSchema,
+  restSeconds: restSecondsSchema.default(DEFAULT_EXERCISE_REST_SECONDS),
   status: exerciseStatusSchema,
   userNotes: nullableTrimmedStringSchema,
   coachNotes: nullableTrimmedStringSchema,

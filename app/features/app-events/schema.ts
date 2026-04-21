@@ -23,6 +23,7 @@ export const WORKOUT_EVENT_TYPES = [
   "set_corrected",
   "workout_note_updated",
   "exercise_note_updated",
+  "exercise_rest_updated",
   "workout_completed",
 ] as const;
 

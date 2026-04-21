@@ -1,11 +1,4 @@
-import {
-  CheckIcon,
-  Clock3Icon,
-  DumbbellIcon,
-  MoreHorizontalIcon,
-  PlusIcon,
-  Trash2Icon,
-} from "lucide-react";
+import { CheckIcon, DumbbellIcon, MoreHorizontalIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import {
   Form,
@@ -27,7 +20,6 @@ import {
   AlertDialogMedia,
   AlertDialogTitle,
 } from "~/components/atoms/alert-dialog";
-import { Badge } from "~/components/atoms/badge";
 import { Button } from "~/components/atoms/button";
 import {
   Dialog,
@@ -49,6 +41,7 @@ import { Textarea } from "~/components/atoms/textarea";
 import { WorkoutStatusBadge } from "~/components/molecules/workout-status-badge";
 import { usePublishAppEvent } from "~/features/app-events/client";
 import { workoutMutationResultSchema } from "~/features/workouts/actions";
+import { ExerciseRestTimer } from "~/features/workouts/exercise-rest-timer";
 import type {
   WorkoutDetailLoaderData,
   WorkoutDetailWorkout,
@@ -59,9 +52,9 @@ import {
   applyOptimisticWorkoutDetail,
   getPendingWorkoutMutations,
 } from "~/features/workouts/optimistic-detail";
+import { formatRestTimerValue, parseRestTimerSecondsInput } from "~/features/workouts/rest-timer";
 import { cn } from "~/lib/utils";
 
-const REST_TIMER_PLACEHOLDER = "02:00";
 const RPE_OPTIONS = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10] as const;
 const WORKOUT_ROUTE_ACTIONS = [
   "delete_workout",
@@ -77,6 +70,7 @@ const WORKOUT_ROUTE_ACTIONS = [
   "reorder_exercise",
   "update_workout_notes",
   "update_exercise_notes",
+  "update_exercise_rest_seconds",
   "finish_workout",
 ] as const;
 
@@ -134,6 +128,7 @@ function getAvailableActions(
     "reorder_exercise",
     "update_workout_notes",
     "update_exercise_notes",
+    "update_exercise_rest_seconds",
   ];
 
   switch (workoutStatus) {
@@ -148,6 +143,7 @@ function getAvailableActions(
         "reorder_exercise",
         "update_workout_notes",
         "update_exercise_notes",
+        "update_exercise_rest_seconds",
       ];
     case "active":
       return [
@@ -161,13 +157,14 @@ function getAvailableActions(
         "reorder_exercise",
         "update_workout_notes",
         "update_exercise_notes",
+        "update_exercise_rest_seconds",
         "finish_workout",
       ];
     case "completed":
     case "canceled":
       return options?.historicalEditMode
         ? historicalEditActions
-        : ["update_workout_notes", "update_exercise_notes"];
+        : ["update_workout_notes", "update_exercise_notes", "update_exercise_rest_seconds"];
     default:
       return [];
   }
@@ -426,12 +423,6 @@ function WorkoutOverviewCard({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-
-          {controlsDisabled ? (
-            <Badge className="justify-self-start" variant="secondary">
-              Saving changes...
-            </Badge>
-          ) : null}
 
           {getExerciseNotes(workout.coachNotes) || getExerciseNotes(workout.userNotes) ? (
             <div className="grid gap-2 pt-1">
@@ -867,6 +858,180 @@ function EditableSetNumberCell({
   );
 }
 
+interface EditableExerciseRestTimerValueProps {
+  canEdit: boolean;
+  displayValue: string;
+  exerciseId: string;
+  isMutationPending: boolean;
+  restSeconds: number;
+  tone: "idle" | "overtime" | "running";
+  workout: WorkoutDetailWorkout;
+}
+
+function EditableExerciseRestTimerValue({
+  canEdit,
+  displayValue,
+  exerciseId,
+  isMutationPending,
+  restSeconds,
+  tone,
+  workout,
+}: EditableExerciseRestTimerValueProps) {
+  const fetcher = useFetcher();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftValue, setDraftValue] = useState("");
+  const [didSubmit, setDidSubmit] = useState(false);
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
+  const controlsDisabled = isMutationPending || fetcher.state !== "idle";
+
+  useEffect(() => {
+    if (!isEditing) {
+      return;
+    }
+
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [isEditing]);
+
+  useEffect(() => {
+    if (fetcher.state !== "idle" || !didSubmit) {
+      return;
+    }
+
+    setDidSubmit(false);
+    setValidationMessage(null);
+    setIsEditing(false);
+  }, [didSubmit, fetcher.state]);
+
+  const stopEditing = () => {
+    setDidSubmit(false);
+    setValidationMessage(null);
+    setIsEditing(false);
+  };
+
+  const startEditing = () => {
+    if (!canEdit || controlsDisabled) {
+      return;
+    }
+
+    setDraftValue(formatRestTimerValue(restSeconds * 1000));
+    setDidSubmit(false);
+    setValidationMessage(null);
+    setIsEditing(true);
+  };
+
+  const submitValue = () => {
+    if (!canEdit || !isEditing) {
+      return;
+    }
+
+    const parsedRestSeconds = parseRestTimerSecondsInput(draftValue);
+
+    if (parsedRestSeconds == null) {
+      setValidationMessage("Use m:ss or seconds.");
+      inputRef.current?.focus();
+      inputRef.current?.select();
+      return;
+    }
+
+    setDidSubmit(true);
+    setValidationMessage(null);
+    void fetcher.submit(
+      {
+        action: "update_exercise_rest_seconds",
+        exerciseId,
+        expectedVersion: String(workout.version),
+        restSeconds: String(parsedRestSeconds),
+        workoutId: workout.id,
+      },
+      { method: "post" },
+    );
+  };
+
+  if (!canEdit) {
+    return (
+      <p
+        aria-live="polite"
+        className={cn("font-semibold tabular-nums", tone === "idle" && "text-foreground")}
+        data-rest-timer-value="true"
+      >
+        {displayValue}
+      </p>
+    );
+  }
+
+  if (!isEditing) {
+    return (
+      <button
+        aria-label="Edit rest timer duration"
+        className={cn(
+          "-ml-1 rounded-md px-1 py-0.5 text-left font-semibold tabular-nums disabled:cursor-not-allowed disabled:opacity-60",
+          tone === "idle" && "text-foreground",
+        )}
+        data-rest-timer-value="true"
+        disabled={controlsDisabled}
+        onClick={startEditing}
+        type="button"
+      >
+        {displayValue}
+      </button>
+    );
+  }
+
+  return (
+    <fetcher.Form
+      className="w-full"
+      method="post"
+      onSubmit={() => {
+        setDidSubmit(true);
+      }}
+    >
+      <MutationFields
+        action="update_exercise_rest_seconds"
+        exerciseId={exerciseId}
+        workoutId={workout.id}
+        workoutVersion={workout.version}
+      />
+      <input
+        aria-invalid={validationMessage != null}
+        aria-label="Rest timer duration"
+        autoComplete="off"
+        className={cn(
+          "h-8 w-full rounded-md border bg-background px-2 font-semibold tabular-nums outline-none",
+          validationMessage == null ? "border-border/70" : "border-destructive",
+        )}
+        disabled={controlsDisabled}
+        enterKeyHint="done"
+        inputMode="numeric"
+        name="restSeconds"
+        onBlur={submitValue}
+        onChange={(event) => {
+          setDraftValue(event.target.value);
+          setValidationMessage(null);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            submitValue();
+          }
+
+          if (event.key === "Escape") {
+            event.preventDefault();
+            stopEditing();
+          }
+        }}
+        pattern="[0-9:]*"
+        placeholder="m:ss"
+        ref={inputRef}
+        title={validationMessage ?? "Use m:ss or seconds."}
+        type="text"
+        value={draftValue}
+      />
+    </fetcher.Form>
+  );
+}
+
 interface SetPickerModalProps {
   availableActions: readonly WorkoutRouteAction[];
   exerciseId: string;
@@ -1001,6 +1166,7 @@ function ExerciseCard({
   const canAddSet = hasAction(availableActions, "add_set");
   const canConfirmSet = hasAction(availableActions, "confirm_set");
   const canEditExerciseNotes = hasAction(availableActions, "update_exercise_notes");
+  const canEditExerciseRestSeconds = hasAction(availableActions, "update_exercise_rest_seconds");
   const canRemoveExercise = hasAction(availableActions, "remove_exercise");
   const canRemoveExerciseNow = canRemoveExercise && !exercise.sets.some(isSetConfirmed);
   const canOpenSetPicker =
@@ -1123,122 +1289,134 @@ function ExerciseCard({
           </p>
         ) : null}
 
-        <div className="flex items-center gap-2 text-sm">
-          <Clock3Icon aria-hidden className="size-3.5 text-muted-foreground" />
-          <span className="text-muted-foreground">Rest Timer:</span>
-          <span className="font-medium">{REST_TIMER_PLACEHOLDER}</span>
-        </div>
+        <div className="grid gap-0">
+          <ExerciseRestTimer
+            renderValue={({ displayValue, tone }) => (
+              <EditableExerciseRestTimerValue
+                canEdit={canEditExerciseRestSeconds}
+                displayValue={displayValue}
+                exerciseId={exercise.id}
+                isMutationPending={controlsDisabled}
+                restSeconds={exercise.restSeconds}
+                tone={tone}
+                workout={workout}
+              />
+            )}
+            restSeconds={exercise.restSeconds}
+            sets={exercise.sets}
+          />
 
-        <div className="-mx-4 w-[calc(100%+2rem)] border-border/70 border-y sm:mx-0 sm:w-full">
-          <table className="w-full table-fixed text-sm">
-            <thead className="border-border/70 border-b text-muted-foreground text-[11px] uppercase tracking-[0.12em]">
-              <tr>
-                <th className="w-12 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                  Set
-                </th>
-                <th className="px-2 py-2 text-center font-medium first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
-                  Previous
-                </th>
-                <th className="w-16 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                  LBS
-                </th>
-                <th className="w-14 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                  Reps
-                </th>
-                <th className="w-20 px-2 py-2 text-center font-medium pr-4 sm:w-18 sm:px-2 sm:pr-2">
-                  RPE
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {exercise.sets.map((set) => {
-                const setLabel =
-                  set.designation === "warmup"
-                    ? getSetLabel(set, workingSetNumber)
-                    : getSetLabel(set, ++workingSetNumber);
+          <div className="-mx-4 w-[calc(100%+2rem)] border-border/70 border-b sm:mx-0 sm:w-full">
+            <table className="w-full table-fixed text-sm">
+              <thead className="border-border/70 border-b text-muted-foreground text-[11px] uppercase tracking-[0.12em]">
+                <tr>
+                  <th className="w-12 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                    Set
+                  </th>
+                  <th className="px-2 py-2 text-center font-medium first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
+                    Previous
+                  </th>
+                  <th className="w-16 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                    LBS
+                  </th>
+                  <th className="w-14 px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                    Reps
+                  </th>
+                  <th className="w-20 px-2 py-2 text-center font-medium pr-4 sm:w-18 sm:px-2 sm:pr-2">
+                    RPE
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {exercise.sets.map((set) => {
+                  const setLabel =
+                    set.designation === "warmup"
+                      ? getSetLabel(set, workingSetNumber)
+                      : getSetLabel(set, ++workingSetNumber);
 
-                return (
-                  <Fragment key={set.id}>
-                    <tr className="odd:bg-background/45 even:bg-transparent">
-                      <td className="px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                        <Button
-                          className="h-auto min-w-8 rounded-full px-2 py-1 font-medium"
-                          disabled={controlsDisabled || !canOpenSetPicker}
-                          onClick={() => {
+                  return (
+                    <Fragment key={set.id}>
+                      <tr className="odd:bg-background/45 even:bg-transparent">
+                        <td className="px-1 py-2 text-center font-medium first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                          <Button
+                            className="h-auto min-w-8 rounded-full px-2 py-1 font-medium"
+                            disabled={controlsDisabled || !canOpenSetPicker}
+                            onClick={() => {
+                              setSelectedSetIdForRpe(null);
+                              setSelectedSetForPicker({
+                                label: setLabel,
+                                set,
+                              });
+                            }}
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                          >
+                            {setLabel}
+                          </Button>
+                        </td>
+                        <td className="px-2 py-2 text-center text-muted-foreground leading-relaxed first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
+                          {formatSetPerformance(set.previous)}
+                        </td>
+                        <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                          <EditableSetNumberCell
+                            editAction={setWeightEditAction}
+                            exerciseId={exercise.id}
+                            fieldName="weightLbs"
+                            inputMode="decimal"
+                            isMutationPending={controlsDisabled}
+                            set={set}
+                            step="0.5"
+                            workout={workout}
+                          />
+                        </td>
+                        <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
+                          <EditableSetNumberCell
+                            editAction={setWeightEditAction}
+                            exerciseId={exercise.id}
+                            fieldName="reps"
+                            inputMode="numeric"
+                            isMutationPending={controlsDisabled}
+                            set={set}
+                            step="1"
+                            workout={workout}
+                          />
+                        </td>
+                        <td className="px-2 py-2 text-center pr-4 sm:px-2 sm:pr-2">
+                          <SetRpeButton
+                            canChoose={canConfirmSet && !controlsDisabled}
+                            isOpen={selectedSetIdForRpe === set.id}
+                            onToggle={() => {
+                              if (!canConfirmSet) {
+                                return;
+                              }
+
+                              setSelectedSetForPicker(null);
+                              setSelectedSetIdForRpe((currentValue) =>
+                                currentValue === set.id ? null : set.id,
+                              );
+                            }}
+                            set={set}
+                          />
+                        </td>
+                      </tr>
+                      {selectedSetIdForRpe === set.id ? (
+                        <SetRpeChooserRow
+                          exerciseId={exercise.id}
+                          isMutationPending={controlsDisabled}
+                          onClose={() => {
                             setSelectedSetIdForRpe(null);
-                            setSelectedSetForPicker({
-                              label: setLabel,
-                              set,
-                            });
-                          }}
-                          size="sm"
-                          type="button"
-                          variant="ghost"
-                        >
-                          {setLabel}
-                        </Button>
-                      </td>
-                      <td className="px-2 py-2 text-center text-muted-foreground leading-relaxed first:pl-4 last:pr-4 sm:first:pl-2 sm:last:pr-2">
-                        {formatSetPerformance(set.previous)}
-                      </td>
-                      <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                        <EditableSetNumberCell
-                          editAction={setWeightEditAction}
-                          exerciseId={exercise.id}
-                          fieldName="weightLbs"
-                          inputMode="decimal"
-                          isMutationPending={controlsDisabled}
-                          set={set}
-                          step="0.5"
-                          workout={workout}
-                        />
-                      </td>
-                      <td className="px-1 py-2 text-center first:pl-4 last:pr-4 sm:px-2 sm:first:pl-2 sm:last:pr-2">
-                        <EditableSetNumberCell
-                          editAction={setWeightEditAction}
-                          exerciseId={exercise.id}
-                          fieldName="reps"
-                          inputMode="numeric"
-                          isMutationPending={controlsDisabled}
-                          set={set}
-                          step="1"
-                          workout={workout}
-                        />
-                      </td>
-                      <td className="px-2 py-2 text-center pr-4 sm:px-2 sm:pr-2">
-                        <SetRpeButton
-                          canChoose={canConfirmSet && !controlsDisabled}
-                          isOpen={selectedSetIdForRpe === set.id}
-                          onToggle={() => {
-                            if (!canConfirmSet) {
-                              return;
-                            }
-
-                            setSelectedSetForPicker(null);
-                            setSelectedSetIdForRpe((currentValue) =>
-                              currentValue === set.id ? null : set.id,
-                            );
                           }}
                           set={set}
+                          workout={workout}
                         />
-                      </td>
-                    </tr>
-                    {selectedSetIdForRpe === set.id ? (
-                      <SetRpeChooserRow
-                        exerciseId={exercise.id}
-                        isMutationPending={controlsDisabled}
-                        onClose={() => {
-                          setSelectedSetIdForRpe(null);
-                        }}
-                        set={set}
-                        workout={workout}
-                      />
-                    ) : null}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {canAddSet ? (

@@ -15,6 +15,7 @@ export type SetKind = (typeof SET_KINDS)[number];
 const isoDateTimeSchema = z.iso.datetime({ offset: true });
 const nullableTrimmedStringSchema = z.string().trim().min(1).nullable();
 const exerciseSchemaIdSchema = z.enum(EXERCISE_SCHEMA_IDS);
+const restSecondsSchema = z.coerce.number().int().positive();
 
 type JsonValue = boolean | null | number | string | JsonValue[] | { [key: string]: JsonValue };
 
@@ -75,6 +76,7 @@ export const workoutFileSetSchema = z
 export const workoutFileExerciseSchema = z.object({
   id: z.string().trim().min(1),
   exercise_schema_id: exerciseSchemaIdSchema,
+  rest_seconds: restSecondsSchema.optional(),
   source_exercise_name: nullableTrimmedStringSchema.optional(),
   user_notes: nullableTrimmedStringSchema.optional(),
   coach_notes: nullableTrimmedStringSchema.optional(),

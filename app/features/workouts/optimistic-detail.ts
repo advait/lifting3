@@ -219,6 +219,16 @@ function applyPendingMutation(
 
       return true;
     }
+    case "update_exercise_rest_seconds": {
+      const exercise = findExercise(loaderData, mutation.exerciseId);
+
+      if (!exercise) {
+        return false;
+      }
+
+      exercise.restSeconds = mutation.restSeconds;
+      return true;
+    }
     case "update_set_planned": {
       if (loaderData.workout.status !== "planned") {
         return false;

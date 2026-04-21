@@ -30,6 +30,7 @@ const BASE_WORKOUT_DETAIL = {
       },
       movementPattern: "horizontal_push",
       orderIndex: 0,
+      restSeconds: 120,
       sets: [
         {
           actual: {
@@ -152,6 +153,28 @@ describe("workout optimistic detail helpers", () => {
         workoutId: "workout-1",
       },
     });
+  });
+
+  it("applies optimistic exercise rest timer edits", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(FIXED_NOW));
+
+    const optimisticDetail = applyOptimisticWorkoutDetail(createLoaderData(), [
+      {
+        key: "fetcher:update-rest-timer",
+        mutation: {
+          action: "update_exercise_rest_seconds",
+          exerciseId: "exercise-1",
+          expectedVersion: 1,
+          restSeconds: 150,
+          workoutId: "workout-1",
+        },
+      },
+    ]);
+
+    expect(optimisticDetail.exercises[0]?.restSeconds).toBe(150);
+    expect(optimisticDetail.workout.updatedAt).toBe(FIXED_NOW);
+    expect(optimisticDetail.workout.version).toBe(2);
   });
 
   it("projects live start and add-set mutations onto workout detail", () => {

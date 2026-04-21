@@ -22,6 +22,7 @@ function createWorkoutFile() {
         {
           exercise_schema_id: "bench_press_dumbbell",
           id: "exercise-1",
+          rest_seconds: 150,
           sets: [
             {
               confirmed_at: "2026-04-04T07:18:00.000Z",
@@ -103,6 +104,7 @@ describe("workout JSON import helpers", () => {
       sourceExerciseName: "Dumbbell Bench Press",
       state: {
         id: "legacy-upper-a::exercise:0:exercise-1",
+        restSeconds: 150,
         status: "active",
       },
     });
@@ -136,6 +138,7 @@ describe("workout JSON import helpers", () => {
     });
     expect(rows.exerciseRows[0]).toMatchObject({
       id: "legacy-upper-a::exercise:0:exercise-1",
+      restSeconds: 150,
       sourceExerciseName: "Dumbbell Bench Press",
       status: "active",
     });
@@ -145,6 +148,7 @@ describe("workout JSON import helpers", () => {
     expect(sql).toContain("import_source_system");
     expect(sql).toContain("'lifting2'");
     expect(sql).toContain("'Dumbbell Bench Press'");
+    expect(sql).toContain("150");
     expect(sql).toContain("'legacy-upper-a::set:0:0:exercise-1:set-1'");
   });
 

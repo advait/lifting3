@@ -17,6 +17,7 @@ const NOTE_FIELDS = ["coach", "user"] as const;
 const nonEmptyStringSchema = z.string().trim().min(1);
 const nonNegativeIntegerSchema = z.int().nonnegative();
 const positiveIntegerSchema = z.int().positive();
+const restSecondsSchema = z.coerce.number().int().positive();
 const nullableTrimmedStringSchema = z.string().trim().min(1).nullable();
 const isoDateSchema = z.iso.date();
 const exerciseSchemaIdSchema = z.enum(EXERCISE_SCHEMA_IDS);
@@ -60,6 +61,7 @@ export const exerciseSetTemplateSchema = z.strictObject({
 export const workoutExercisePlanSchema = z.strictObject({
   coachNotes: nullableTrimmedStringSchema.optional(),
   exerciseSchemaId: exerciseSchemaIdSchema,
+  restSeconds: restSecondsSchema.optional(),
   setTemplates: z.array(exerciseSetTemplateSchema).min(1),
   userNotes: nullableTrimmedStringSchema.optional(),
 });

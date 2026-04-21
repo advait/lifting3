@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { EXERCISE_SCHEMA_IDS } from "../exercises/schema.ts";
 import { userProfileValueSchema } from "../settings/contracts.ts";
+import { DEFAULT_EXERCISE_REST_SECONDS } from "../workouts/rest-timer.ts";
 import {
   SET_KINDS,
   sourceMetadataSchema,
@@ -19,6 +20,7 @@ const isoDateTimeSchema = z.iso.datetime({ offset: true });
 const nonEmptyStringSchema = z.string().trim().min(1);
 const nullableTrimmedStringSchema = z.string().trim().min(1).nullable();
 const nonNegativeIntegerSchema = z.int().nonnegative();
+const restSecondsSchema = z.coerce.number().int().positive();
 
 const exerciseSchemaIdSchema = z.enum(EXERCISE_SCHEMA_IDS);
 const exerciseStatusSchema = z.enum(EXERCISE_STATUSES);
@@ -75,6 +77,7 @@ export const appStateExerciseSchema = z.strictObject({
   coach_notes: nullableTrimmedStringSchema,
   exercise_schema_id: exerciseSchemaIdSchema,
   id: nonEmptyStringSchema,
+  rest_seconds: restSecondsSchema.default(DEFAULT_EXERCISE_REST_SECONDS),
   order_index: nonNegativeIntegerSchema,
   sets: z.array(appStateSetSchema),
   source_exercise_name: nullableTrimmedStringSchema,

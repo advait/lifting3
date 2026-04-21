@@ -46,6 +46,7 @@ function createRows() {
       exerciseSchemaId: "bench_press_barbell",
       id: "exercise-1",
       orderIndex: 0,
+      restSeconds: 150,
       sourceExerciseName: "Barbell Bench Press",
       status: "skipped",
       userNotes: "Resume next week.",
@@ -92,6 +93,9 @@ describe("app-state import/export helpers", () => {
       source: "imported",
       version: 7,
     });
+    expect(file.app_state.workouts[0]?.exercises[0]).toMatchObject({
+      rest_seconds: 150,
+    });
     expect(file.app_state.workouts[0]?.exercises[0]?.sets[0]?.reps).toBe(5);
   });
 
@@ -106,6 +110,7 @@ describe("app-state import/export helpers", () => {
     expect(sql).toContain("INSERT INTO exercise_sets");
     expect(sql).toContain("'lifting2'");
     expect(sql).toContain("'Barbell Bench Press'");
+    expect(sql).toContain("150");
     expect(sql).toContain("'set-1'");
   });
 

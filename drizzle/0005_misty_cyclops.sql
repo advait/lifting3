@@ -1,0 +1,1 @@
+ALTER TABLE `workout_exercises` ADD `rest_seconds` integer DEFAULT 120 NOT NULL;

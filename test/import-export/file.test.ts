@@ -23,6 +23,7 @@ function createWorkoutFile(): WorkoutFile {
           coach_notes: null,
           exercise_schema_id: "bench_press_barbell",
           id: "exercise-1",
+          rest_seconds: 135,
           sets: [
             {
               confirmed_at: "2026-04-17T12:20:00.000Z",
@@ -74,6 +75,7 @@ function createAppStateFileInput() {
               coach_notes: "Skip if shoulder is irritated.",
               exercise_schema_id: "bench_press_barbell",
               id: "exercise-1",
+              rest_seconds: 135,
               order_index: 0,
               sets: [
                 {
@@ -135,6 +137,7 @@ describe("import/export file schemas", () => {
       version: 7,
     });
     expect(parsed.app_state.workouts[0]?.exercises[0]).toMatchObject({
+      rest_seconds: 135,
       source_exercise_name: "Barbell Bench Press",
       status: "skipped",
     });

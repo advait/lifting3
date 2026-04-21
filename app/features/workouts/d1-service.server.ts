@@ -47,6 +47,7 @@ import {
   workoutSetCountsSchema,
   workoutSetSchema,
 } from "./contracts.ts";
+import { DEFAULT_EXERCISE_REST_SECONDS, normalizeRestSeconds } from "./rest-timer.ts";
 import { cascadeSetReps, cascadeSetWeightLbs } from "./set-weight-cascade.ts";
 import type { WorkoutRouteService } from "./service.ts";
 import { WorkoutConflictError, WorkoutMutationError, WorkoutNotFoundError } from "./service.ts";
@@ -146,6 +147,7 @@ type SetActualPatch = Partial<WorkoutSet["actual"]>;
 type SetPlannedPatch = Partial<WorkoutSet["planned"]>;
 type WorkoutNotesPatch = RouteMutationByAction<"update_workout_notes">["notes"];
 type ExerciseNotesPatch = RouteMutationByAction<"update_exercise_notes">["notes"];
+type ExerciseRestSeconds = RouteMutationByAction<"update_exercise_rest_seconds">["restSeconds"];
 
 type MutationOperation =
   | {
@@ -245,6 +247,11 @@ type MutationOperation =
     }
   | {
       exerciseId: string;
+      kind: "update_exercise_rest_seconds";
+      restSeconds: ExerciseRestSeconds;
+    }
+  | {
+      exerciseId: string;
       kind: "update_exercise_targets";
       setUpdates: ToolPatchByType<"update_exercise_targets">["setUpdates"];
     }
@@ -325,6 +332,7 @@ function createExercise(input: {
   exerciseSchemaId: WorkoutExerciseState["exerciseSchemaId"];
   id: string;
   orderIndex: number;
+  restSeconds?: unknown;
   sets: WorkoutExerciseState["sets"];
   status?: WorkoutExerciseState["status"];
   userNotes?: WorkoutExerciseState["userNotes"];
@@ -334,6 +342,7 @@ function createExercise(input: {
     exerciseSchemaId: input.exerciseSchemaId,
     id: input.id,
     orderIndex: input.orderIndex,
+    restSeconds: normalizeRestSeconds(input.restSeconds) ?? DEFAULT_EXERCISE_REST_SECONDS,
     sets: input.sets,
     status: input.status ?? "planned",
     userNotes: input.userNotes ?? null,
@@ -406,6 +415,7 @@ function createExerciseFromPlan(orderIndex: number, plan: WorkoutExercisePlanInp
     exerciseSchemaId: plan.exerciseSchemaId,
     id: exerciseId,
     orderIndex,
+    restSeconds: plan.restSeconds,
     sets: buildPlannedSetsFromTemplates(plan.setTemplates),
     status: "planned",
     userNotes: plan.userNotes ?? null,
@@ -527,6 +537,7 @@ function decorateExercise(
     id: exercise.id,
     logging: exerciseSchema.logging,
     movementPattern: exerciseSchema.movementPattern,
+    restSeconds: exercise.restSeconds,
     orderIndex: exercise.orderIndex,
     sets: exercise.sets.map((set, index) => ({
       ...cloneValue(set),
@@ -896,6 +907,16 @@ function normalizeRouteMutation(input: NonDeleteWorkoutMutationInput): RouteMuta
           notes: input.notes,
         },
       };
+    case "update_exercise_rest_seconds":
+      return {
+        eventType: "exercise_rest_updated",
+        includeExerciseInvalidations: true,
+        operation: {
+          exerciseId: input.exerciseId,
+          kind: "update_exercise_rest_seconds",
+          restSeconds: input.restSeconds,
+        },
+      };
     case "finish_workout":
       return {
         eventType: "workout_completed",
@@ -1226,6 +1247,16 @@ function applyMutationOperation(
         summary: `Updated notes for ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
       };
     }
+    case "update_exercise_rest_seconds": {
+      const exercise = findExercise(record, operation.exerciseId);
+
+      exercise.restSeconds = operation.restSeconds;
+
+      return {
+        invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
+        summary: `Updated the rest timer for ${getExerciseDisplayName(exercise.exerciseSchemaId)}.`,
+      };
+    }
     case "finish_workout": {
       record.workout.completedAt = operation.completedAt ?? updatedAt;
       record.workout.status = "completed";
@@ -1464,6 +1495,7 @@ function buildStoredWorkoutRecords(
         exerciseSchemaId: exerciseRow.exerciseSchemaId,
         id: exerciseRow.id,
         orderIndex: exerciseRow.orderIndex,
+        restSeconds: exerciseRow.restSeconds,
         sets,
         status: exerciseRow.status,
         userNotes: exerciseRow.userNotes,
@@ -1607,6 +1639,7 @@ function toWorkoutExerciseInsertRows(record: StoredWorkoutRecord): NewWorkoutExe
     exerciseSchemaId: exercise.exerciseSchemaId,
     id: exercise.id,
     orderIndex: exercise.orderIndex,
+    restSeconds: exercise.restSeconds,
     status: exercise.status,
     userNotes: exercise.userNotes,
     workoutId: record.workout.id,
@@ -1779,6 +1812,7 @@ function cloneExerciseForPlannedWorkout(
     exerciseSchemaId: sourceExercise.exerciseSchemaId,
     id: exerciseId,
     orderIndex,
+    restSeconds: sourceExercise.restSeconds,
     sets: sourceExercise.sets.map((set, setIndex) =>
       createSet({
         designation: set.designation,

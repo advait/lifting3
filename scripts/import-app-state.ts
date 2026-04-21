@@ -34,16 +34,22 @@ function printUsage() {
   );
 }
 
-function assertNewExerciseSetSchema(namespace: ReturnType<typeof parseD1Namespace>) {
-  const columnNames = new Set(getD1TableColumnNames(namespace, "exercise_sets"));
+function assertRequiredSchema(namespace: ReturnType<typeof parseD1Namespace>) {
+  const exerciseSetColumnNames = new Set(getD1TableColumnNames(namespace, "exercise_sets"));
 
-  if (columnNames.has("reps")) {
-    return;
+  if (!exerciseSetColumnNames.has("reps")) {
+    throw new Error(
+      `App-state import into the ${getD1NamespaceLabel(namespace)} requires the migrated exercise_sets schema with a "reps" column. Apply the single-reps migration before importing.`,
+    );
   }
 
-  throw new Error(
-    `App-state import into the ${getD1NamespaceLabel(namespace)} requires the migrated exercise_sets schema with a "reps" column. Apply the single-reps migration before importing.`,
-  );
+  const workoutExerciseColumnNames = new Set(getD1TableColumnNames(namespace, "workout_exercises"));
+
+  if (!workoutExerciseColumnNames.has("rest_seconds")) {
+    throw new Error(
+      `App-state import into the ${getD1NamespaceLabel(namespace)} requires the workout_exercises schema with a "rest_seconds" column. Apply the rest-timer migration before importing.`,
+    );
+  }
 }
 
 async function main() {
@@ -93,7 +99,7 @@ async function main() {
       return;
     }
 
-    assertNewExerciseSetSchema(namespace);
+    assertRequiredSchema(namespace);
 
     const sql = buildAppStateImportSql(file);
     const tempDirectory = mkdtempSync(join(tmpdir(), "lifting3-app-state-import-"));

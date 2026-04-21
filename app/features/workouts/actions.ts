@@ -17,11 +17,13 @@ export const WORKOUT_ROUTE_ACTIONS = [
   "reorder_exercise",
   "update_workout_notes",
   "update_exercise_notes",
+  "update_exercise_rest_seconds",
   "finish_workout",
 ] as const;
 
 const nonEmptyStringSchema = z.string().trim().min(1);
 const nonNegativeIntegerSchema = z.int().nonnegative();
+const positiveIntegerSchema = z.int().positive();
 const isoDateTimeSchema = z.iso.datetime({ offset: true });
 const nullableTrimmedStringSchema = z.string().trim().min(1).nullable();
 const setKindSchema = z.enum(SET_KINDS);
@@ -189,6 +191,13 @@ export const updateExerciseNotesInputSchema = z.strictObject({
   notes: notesPatchSchema,
 });
 
+export const updateExerciseRestSecondsInputSchema = z.strictObject({
+  action: z.literal("update_exercise_rest_seconds"),
+  ...workoutActionBaseShape,
+  exerciseId: nonEmptyStringSchema,
+  restSeconds: positiveIntegerSchema,
+});
+
 export const finishWorkoutInputSchema = z.strictObject({
   action: z.literal("finish_workout"),
   ...workoutActionBaseShape,
@@ -210,6 +219,7 @@ export const workoutMutationInputSchema = z.discriminatedUnion("action", [
   reorderExerciseInputSchema,
   updateWorkoutNotesInputSchema,
   updateExerciseNotesInputSchema,
+  updateExerciseRestSecondsInputSchema,
   finishWorkoutInputSchema,
 ]);
 
@@ -237,6 +247,7 @@ export type RemoveExerciseInput = z.infer<typeof removeExerciseInputSchema>;
 export type ReorderExerciseInput = z.infer<typeof reorderExerciseInputSchema>;
 export type UpdateWorkoutNotesInput = z.infer<typeof updateWorkoutNotesInputSchema>;
 export type UpdateExerciseNotesInput = z.infer<typeof updateExerciseNotesInputSchema>;
+export type UpdateExerciseRestSecondsInput = z.infer<typeof updateExerciseRestSecondsInputSchema>;
 export type FinishWorkoutInput = z.infer<typeof finishWorkoutInputSchema>;
 export type WorkoutMutationInput = z.infer<typeof workoutMutationInputSchema>;
 export type WorkoutMutationResult = z.infer<typeof workoutMutationResultSchema>;

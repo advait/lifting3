@@ -6,6 +6,7 @@ import {
   type WorkoutExerciseState,
   type WorkoutSet,
 } from "./contracts.ts";
+import { DEFAULT_EXERCISE_REST_SECONDS } from "./rest-timer.ts";
 import type { WorkoutFileExercise, WorkoutFile, WorkoutFileSet } from "./file.ts";
 import type {
   NewExerciseSetRow,
@@ -42,6 +43,7 @@ const IMPORT_EXERCISE_COLUMNS = [
   "order_index",
   "exercise_schema_id",
   "status",
+  "rest_seconds",
   "source_exercise_name",
   "user_notes",
   "coach_notes",
@@ -195,6 +197,7 @@ function createImportedExercise(
       exerciseSchemaId: exercise.exercise_schema_id,
       id: createImportedExerciseId(workoutId, exerciseOrderIndex, exercise.id),
       orderIndex: exerciseOrderIndex,
+      restSeconds: exercise.rest_seconds,
       sets,
       status: getExerciseCompletionStatus(sets),
       userNotes: exercise.user_notes ?? null,
@@ -243,6 +246,7 @@ export function toImportedWorkoutRows(record: ImportedWorkoutRecord): ImportedWo
       exerciseSchemaId: state.exerciseSchemaId,
       id: state.id,
       orderIndex: state.orderIndex,
+      restSeconds: state.restSeconds,
       sourceExerciseName,
       status: state.status,
       userNotes: state.userNotes,
@@ -380,6 +384,7 @@ export function buildWorkoutImportSql(rows: readonly ImportedWorkoutRows[]) {
           exerciseRow.orderIndex,
           exerciseRow.exerciseSchemaId,
           exerciseRow.status,
+          exerciseRow.restSeconds ?? DEFAULT_EXERCISE_REST_SECONDS,
           exerciseRow.sourceExerciseName ?? null,
           exerciseRow.userNotes ?? null,
           exerciseRow.coachNotes ?? null,

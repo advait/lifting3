@@ -11,12 +11,14 @@ import {
   startWorkoutInputSchema,
   unconfirmSetInputSchema,
   updateExerciseNotesInputSchema,
+  updateExerciseRestSecondsInputSchema,
   updateSetActualsInputSchema,
   updateSetDesignationInputSchema,
   updateSetPlannedInputSchema,
   updateWorkoutNotesInputSchema,
   workoutMutationInputSchema,
 } from "./actions.ts";
+import { parseRestTimerSecondsInput } from "./rest-timer.ts";
 
 function getFormValue(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -172,6 +174,15 @@ export function safeParseWorkoutMutationFormData(formData: FormData) {
           coachNotes: getOptionalString(formData, "coachNotes"),
           userNotes: getOptionalString(formData, "userNotes"),
         },
+      });
+    case "update_exercise_rest_seconds":
+      return updateExerciseRestSecondsInputSchema.safeParse({
+        action,
+        ...base,
+        exerciseId: getFormValue(formData, "exerciseId"),
+        restSeconds:
+          parseRestTimerSecondsInput(getFormValue(formData, "restSeconds") ?? "") ??
+          getFormValue(formData, "restSeconds"),
       });
     case "finish_workout":
       return finishWorkoutInputSchema.safeParse({
