@@ -532,6 +532,95 @@ describe("createWorkoutRouteService.mutateWorkout", () => {
     });
   });
 
+  it("preserves planned reps when updating only planned weight", async () => {
+    await insertSeedWorkout({
+      date: "2026-04-18T00:00:00.000Z",
+      exercises: [
+        {
+          exerciseSchemaId: "bench_press_barbell",
+          id: "route-exercise-planned-bench",
+          sets: [
+            {
+              id: "route-planned-bench-set-1",
+              planned: { reps: 8, weightLbs: 180 },
+            },
+          ],
+          status: "planned",
+        },
+      ],
+      id: "route-workout-planned-update",
+      status: "planned",
+      title: "Route Planned Update",
+      version: 1,
+    });
+
+    await workoutRouteService.mutateWorkout({
+      action: "update_set_planned",
+      exerciseId: "route-exercise-planned-bench",
+      expectedVersion: 1,
+      planned: {
+        weightLbs: 185,
+      },
+      setId: "route-planned-bench-set-1",
+      workoutId: "route-workout-planned-update",
+    });
+
+    const detail = await workoutRouteService.loadWorkoutDetail({
+      workoutId: "route-workout-planned-update",
+    });
+
+    expect(detail.exercises[0]?.sets[0]?.planned).toEqual({
+      reps: 8,
+      rpe: null,
+      weightLbs: 185,
+    });
+  });
+
+  it("preserves logged reps when updating only logged weight", async () => {
+    await insertSeedWorkout({
+      date: "2026-04-16T00:00:00.000Z",
+      exercises: [
+        {
+          exerciseSchemaId: "bench_press_barbell",
+          id: "route-exercise-actual-bench",
+          sets: [
+            {
+              actual: { reps: 9, weightLbs: 175 },
+              id: "route-actual-bench-set-1",
+              planned: { reps: 8, weightLbs: 165 },
+            },
+          ],
+          status: "active",
+        },
+      ],
+      id: "route-workout-actual-update",
+      status: "active",
+      title: "Route Actual Update",
+      version: 1,
+    });
+
+    await workoutRouteService.mutateWorkout({
+      action: "update_set_actuals",
+      actual: {
+        weightLbs: 185,
+      },
+      exerciseId: "route-exercise-actual-bench",
+      expectedVersion: 1,
+      setId: "route-actual-bench-set-1",
+      workoutId: "route-workout-actual-update",
+    });
+
+    const detail = await workoutRouteService.loadWorkoutDetail({
+      workoutId: "route-workout-actual-update",
+    });
+
+    expect(detail.exercises[0]?.sets[0]?.actual).toEqual({
+      reps: 9,
+      rpe: null,
+      weightLbs: 185,
+    });
+  });
+
   it("uses the shared engine for reorder_exercise without adding exercise invalidations", async () => {
     await insertSeedWorkout({
       date: "2026-04-16T00:00:00.000Z",

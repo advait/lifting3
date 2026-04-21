@@ -334,6 +334,25 @@ function createExercise(input: {
   });
 }
 
+const SET_VALUE_KEYS = ["reps", "rpe", "weightLbs"] as const;
+
+function mergeDefinedSetValues(
+  current: WorkoutSet["planned"],
+  patch: Partial<WorkoutSet["planned"]>,
+) {
+  const next = { ...current };
+
+  for (const key of SET_VALUE_KEYS) {
+    const value = patch[key];
+
+    if (value !== undefined) {
+      next[key] = value;
+    }
+  }
+
+  return next;
+}
+
 function clonePlannedSetTemplate(orderIndex: number, template: ExerciseSetTemplateInput) {
   return createSet({
     designation: template.designation,
@@ -958,10 +977,7 @@ function applyMutationOperation(
       const exercise = findExercise(record, operation.exerciseId);
       const set = findSet(exercise, operation.setId);
 
-      set.planned = {
-        ...set.planned,
-        ...operation.planned,
-      };
+      set.planned = mergeDefinedSetValues(set.planned, operation.planned);
 
       return {
         invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
@@ -972,10 +988,7 @@ function applyMutationOperation(
       const exercise = findExercise(record, operation.exerciseId);
       const set = findSet(exercise, operation.setId);
 
-      set.actual = {
-        ...set.actual,
-        ...operation.actual,
-      };
+      set.actual = mergeDefinedSetValues(set.actual, operation.actual);
 
       return {
         invalidateExerciseSchemaIds: [exercise.exerciseSchemaId],
@@ -997,10 +1010,7 @@ function applyMutationOperation(
       const exercise = findExercise(record, operation.exerciseId);
       const set = findSet(exercise, operation.setId);
 
-      set.actual = {
-        ...set.actual,
-        ...operation.actual,
-      };
+      set.actual = mergeDefinedSetValues(set.actual, operation.actual);
       set.confirmedAt = updatedAt;
       syncExerciseStatus(exercise);
 
@@ -1264,10 +1274,7 @@ function applyMutationOperation(
         }
 
         if (setUpdate.planned !== undefined) {
-          set.planned = {
-            ...set.planned,
-            ...setUpdate.planned,
-          };
+          set.planned = mergeDefinedSetValues(set.planned, setUpdate.planned);
         }
       }
 
