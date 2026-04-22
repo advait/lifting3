@@ -9,7 +9,7 @@ import {
   XIcon,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Form,
   Link,
@@ -222,6 +222,8 @@ export function AppShell({
   const location = useLocation();
   const [coachOpen, setCoachOpen] = useState(false);
   const [coachSessionRequest, setCoachSessionRequest] = useState<CoachSessionRequest | null>(null);
+  const coachTargetRef = useRef(coachTarget);
+  coachTargetRef.current = coachTarget;
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -230,14 +232,14 @@ export function AppShell({
 
   useEffect(() => {
     return subscribeCoachSessionRequests((request) => {
-      if (!isSameCoachTarget(request.target, coachTarget)) {
+      if (!isSameCoachTarget(request.target, coachTargetRef.current)) {
         return;
       }
 
       setCoachSessionRequest(request);
       setCoachOpen(true);
     });
-  }, [coachTarget]);
+  }, []);
 
   useEffect(() => {
     if (!coachOpen && !sidebarOpen) {
