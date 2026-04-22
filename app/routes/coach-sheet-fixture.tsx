@@ -13,7 +13,7 @@ export const handle = defineAppEventRouteHandle({
 export const meta: Route.MetaFunction = ({ location, matches }) =>
   createPageMeta({
     description:
-      "Deterministic browser fixture for replaying high-frequency multi-tool coach-sheet updates.",
+      "Live browser fixture that replays the captured trace8 multi-tool coach stream through a real AIChatAgent.",
     location,
     matches,
     title: "Coach Fixture | lifting3",

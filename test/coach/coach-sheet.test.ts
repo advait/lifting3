@@ -16,6 +16,7 @@ import {
   createWorkoutCoachTarget,
 } from "../../app/features/coach/contracts";
 import {
+  clearCoachSheetDebugRawCapture,
   clearCoachSheetDebugTrace,
   type CoachSheetDebugApi,
   type CoachSheetDebugEntry,
@@ -165,6 +166,7 @@ describe("CoachSheet streaming fixture", () => {
   beforeEach(async () => {
     vi.useFakeTimers();
     resetChatFixture();
+    clearCoachSheetDebugRawCapture();
     clearCoachSheetDebugTrace();
     consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     originalScrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(
@@ -481,6 +483,92 @@ describe("CoachSheet streaming fixture", () => {
           kind: "workout",
           workoutId: "workout-debug",
         },
+      }),
+    );
+  });
+
+  it("captures a raw agent response sequence for replay", async () => {
+    await renderCoachSheet({
+      target: createWorkoutCoachTarget("workout-capture"),
+    });
+
+    const debugApi = window.__coachSheetDebug as CoachSheetDebugApi | undefined;
+    const printRawCapture = window.__printCoachSheetRawCapture;
+
+    dispatchAgentMessage({
+      body: JSON.stringify({
+        toolCallId: "call-debug-ignored",
+        toolName: "query_history",
+        type: "tool-input-start",
+      }),
+      done: false,
+      id: "request-debug-capture",
+      type: "cf_agent_use_chat_response",
+    });
+    dispatchAgentMessage({
+      body: JSON.stringify({
+        delta: '{"exercise":"bench"}',
+        toolCallId: "call-debug-ignored",
+        type: "tool-input-delta",
+      }),
+      done: false,
+      id: "request-debug-capture",
+      type: "cf_agent_use_chat_response",
+    });
+    dispatchAgentMessage({
+      messages: [],
+      type: "cf_agent_chat_messages",
+    });
+    await flushWork();
+
+    const rawCapture = debugApi?.getRawCapture();
+    const printedRawCapture = printRawCapture?.();
+    const liveRawCapture = window.__capture;
+
+    expect(rawCapture).toEqual(
+      expect.objectContaining({
+        armed: true,
+        lockedRequestId: "request-debug-capture",
+        requestedRequestId: null,
+      }),
+    );
+    expect(rawCapture?.events).toHaveLength(3);
+    expect(rawCapture?.events[0]).toEqual(
+      expect.objectContaining({
+        chunk: expect.objectContaining({
+          toolCallId: "call-debug-ignored",
+          toolName: "query_history",
+          type: "tool-input-start",
+        }),
+        rawData: expect.stringContaining('"request-debug-capture"'),
+        requestId: "request-debug-capture",
+        type: "cf_agent_use_chat_response",
+      }),
+    );
+    expect(rawCapture?.events[1]).toEqual(
+      expect.objectContaining({
+        chunk: expect.objectContaining({
+          deltaLength: 20,
+          toolCallId: "call-debug-ignored",
+          type: "tool-input-delta",
+        }),
+        type: "cf_agent_use_chat_response",
+      }),
+    );
+    expect(rawCapture?.events[2]).toEqual(
+      expect.objectContaining({
+        chunk: null,
+        rawData: expect.stringContaining('"cf_agent_chat_messages"'),
+        requestId: null,
+        type: "cf_agent_chat_messages",
+      }),
+    );
+    expect(printedRawCapture).toBe(JSON.stringify(rawCapture));
+    expect(liveRawCapture).toEqual(
+      expect.objectContaining({
+        armed: true,
+        events: expect.any(Array),
+        lockedRequestId: "request-debug-capture",
       }),
     );
   });

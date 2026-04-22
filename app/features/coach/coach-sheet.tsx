@@ -41,6 +41,7 @@ import {
   appendCoachSheetDebugEntry,
   ensureCoachSheetDebugGlobal,
   getCoachSheetDebugTrace,
+  recordCoachSheetDebugRawAgentMessage,
   summarizeCoachSheetAgentEvent,
   serializeCoachSheetDebugTarget,
   summarizeCoachSheetMessages,
@@ -109,7 +110,7 @@ function parseInvalidateKeys(value: unknown) {
   return parsedKeys.length === value.length ? parsedKeys : null;
 }
 
-async function getInitialCoachMessages({ url }: { url: string }): Promise<UIMessage[]> {
+export async function getInitialCoachMessages({ url }: { url: string }): Promise<UIMessage[]> {
   try {
     const getMessagesUrl = new URL(url);
 
@@ -135,7 +136,7 @@ async function getInitialCoachMessages({ url }: { url: string }): Promise<UIMess
   }
 }
 
-function useCoachSheetAgentDebugTrace(
+export function useCoachSheetAgentDebugTrace(
   agent: CoachSheetDebugAgentClient,
   chat: CoachSheetChatController,
   target: CoachTarget,
@@ -169,6 +170,8 @@ function useCoachSheetAgentDebugTrace(
       } catch {
         return;
       }
+
+      recordCoachSheetDebugRawAgentMessage(event.data, parsedMessage);
 
       const agentEvent = summarizeCoachSheetAgentEvent(parsedMessage);
 

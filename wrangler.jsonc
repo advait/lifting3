@@ -13,6 +13,10 @@
         "name": "CoachAgent",
         "class_name": "CoachAgent",
       },
+      {
+        "name": "CoachSheetFixtureAgent",
+        "class_name": "CoachSheetFixtureAgent",
+      },
     ],
   },
   "migrations": [
@@ -31,6 +35,10 @@
     {
       "tag": "v4",
       "deleted_classes": ["WorkoutCoachAgent", "GeneralCoachAgent"],
+    },
+    {
+      "tag": "v5",
+      "new_sqlite_classes": ["CoachSheetFixtureAgent"],
     },
   ],
   "d1_databases": [

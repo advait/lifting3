@@ -1,8 +1,10 @@
 import { createRequestHandler } from "react-router";
 import { createAppRouterContext } from "~/lib/.server/router-context";
 import { CoachAgent } from "./coach-agent";
+import { CoachSheetFixtureAgent } from "./coach-sheet-fixture-agent";
 
 export { CoachAgent };
+export { CoachSheetFixtureAgent };
 
 const requestHandler = createRequestHandler(
   () => import("virtual:react-router/server-build"),
