@@ -32,6 +32,14 @@
       "tag": "v4",
       "deleted_classes": ["WorkoutCoachAgent", "GeneralCoachAgent"],
     },
+    {
+      "tag": "v5",
+      "new_sqlite_classes": ["CoachSheetFixtureAgent"],
+    },
+    {
+      "tag": "v6",
+      "deleted_classes": ["CoachSheetFixtureAgent"],
+    },
   ],
   "d1_databases": [
     {

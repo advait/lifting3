@@ -57,6 +57,7 @@ const SHEET_MAX_UPWARD_DRAG_PX = 160;
 const SHEET_MAX_DOWNWARD_DRAG_PX = 160;
 const TOOL_SUMMARY_LIMIT = 3;
 const COACH_AGENT_RUNTIME_NAME = "CoachAgent";
+export const COACH_CHAT_STREAM_THROTTLE_MS = 50;
 
 type CoachMessagePart = UIMessage["parts"][number];
 type CoachSheetSendMessage = (message: Pick<UIMessage, "parts" | "role">) => Promise<unknown>;
@@ -92,7 +93,7 @@ function parseInvalidateKeys(value: unknown) {
   return parsedKeys.length === value.length ? parsedKeys : null;
 }
 
-async function getInitialCoachMessages({ url }: { url: string }): Promise<UIMessage[]> {
+export async function getInitialCoachMessages({ url }: { url: string }): Promise<UIMessage[]> {
   try {
     const getMessagesUrl = new URL(url);
 
@@ -865,10 +866,13 @@ function useCoachSheetLiveChat(target: CoachTarget): CoachSheetChatController {
     name: formatCoachInstanceName(target),
   });
 
-  return useAgentChat({
+  const chat = useAgentChat({
     agent,
+    experimental_throttle: COACH_CHAT_STREAM_THROTTLE_MS,
     getInitialMessages: getInitialCoachMessages,
   });
+
+  return chat;
 }
 
 export function CoachSheetSessionPanel({
@@ -898,6 +902,7 @@ export function CoachSheetSessionPanel({
   const observedToolStatesRef = useRef<Map<string, ReturnType<typeof getToolPartState>>>(new Map());
   const publishedToolEventIdsRef = useRef<Set<string>>(new Set());
   const hasObservedLiveAgentActivityRef = useRef(false);
+  const lastLoggedErrorSignatureRef = useRef<string | null>(null);
   const {
     addToolApprovalResponse,
     clearHistory,
@@ -913,6 +918,7 @@ export function CoachSheetSessionPanel({
   const isSubmitting = status === "submitted";
   const isBusy = isSubmitting || isStreaming;
   const chatErrorMessage = error ? getChatErrorMessage(error) : null;
+  const targetKey = target.kind === "workout" ? `${target.kind}:${target.workoutId}` : target.kind;
   const publishToolMutationEvents = useEffectEvent((nextMessages: readonly UIMessage[]) => {
     const nextObservedToolStates = new Map<string, ReturnType<typeof getToolPartState>>();
 
@@ -1008,6 +1014,26 @@ export function CoachSheetSessionPanel({
 
     publishToolMutationEvents(messages);
   }, [isBusy, messages]);
+
+  useEffect(() => {
+    if (!error) {
+      lastLoggedErrorSignatureRef.current = null;
+      return;
+    }
+
+    const errorSignature = [error.name, error.message, error.stack].join("\n");
+
+    if (lastLoggedErrorSignatureRef.current === errorSignature) {
+      return;
+    }
+
+    lastLoggedErrorSignatureRef.current = errorSignature;
+    console.error("Coach sheet chat error", error, {
+      messageCount: messages.length,
+      status,
+      target,
+    });
+  }, [error, messages.length, status, targetKey]);
 
   useEffect(() => {
     const discussionScroll = discussionScrollRef.current;
@@ -1121,10 +1147,13 @@ export function CoachSheetSessionPanel({
   }, [
     clearError,
     isBusy,
+    messages.length,
     onSessionRequestHandled,
     pendingInitialMessage,
     pendingInitialMessageRequestId,
     sendMessage,
+    status,
+    targetKey,
   ]);
 
   return (
