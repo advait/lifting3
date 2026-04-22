@@ -13,10 +13,6 @@
         "name": "CoachAgent",
         "class_name": "CoachAgent",
       },
-      {
-        "name": "CoachSheetFixtureAgent",
-        "class_name": "CoachSheetFixtureAgent",
-      },
     ],
   },
   "migrations": [
@@ -39,6 +35,10 @@
     {
       "tag": "v5",
       "new_sqlite_classes": ["CoachSheetFixtureAgent"],
+    },
+    {
+      "tag": "v6",
+      "deleted_classes": ["CoachSheetFixtureAgent"],
     },
   ],
   "d1_databases": [

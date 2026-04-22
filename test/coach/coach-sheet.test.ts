@@ -15,115 +15,61 @@ import {
   createGeneralCoachTarget,
   createWorkoutCoachTarget,
 } from "../../app/features/coach/contracts";
-import {
-  clearCoachSheetDebugRawCapture,
-  clearCoachSheetDebugTrace,
-  type CoachSheetDebugApi,
-  type CoachSheetDebugEntry,
-} from "../../app/features/coach/coach-sheet-debug";
 
-const {
-  dispatchAgentMessage,
-  getChatState,
-  publishAppEventSpy,
-  resetChatFixture,
-  setChatState,
-  subscribeToAgentMessages,
-  subscribeToChatState,
-  unsubscribeFromAgentMessages,
-} = vi.hoisted(() => {
-  const listeners = new Set<() => void>();
-  const agentMessageListeners = new Set<(event: { data?: unknown }) => void>();
-  const publishAppEventSpy = vi.fn();
+const { getChatState, publishAppEventSpy, resetChatFixture, setChatState, subscribeToChatState } =
+  vi.hoisted(() => {
+    const listeners = new Set<() => void>();
+    const publishAppEventSpy = vi.fn();
 
-  function createEmptyChatState() {
+    function createEmptyChatState() {
+      return {
+        addToolApprovalResponse: vi.fn(),
+        clearError: vi.fn(),
+        clearHistory: vi.fn(),
+        error: undefined,
+        isServerStreaming: false,
+        isStreaming: false,
+        messages: [],
+        sendMessage: vi.fn(async () => {}),
+        status: "ready",
+        stop: vi.fn(async () => {}),
+      };
+    }
+
+    let currentChatState = createEmptyChatState();
+
     return {
-      addToolApprovalResponse: vi.fn(),
-      clearError: vi.fn(),
-      clearHistory: vi.fn(),
-      error: undefined,
-      isServerStreaming: false,
-      isStreaming: false,
-      messages: [],
-      sendMessage: vi.fn(async () => {}),
-      status: "ready",
-      stop: vi.fn(async () => {}),
+      getChatState: () => currentChatState,
+      publishAppEventSpy,
+      resetChatFixture: () => {
+        currentChatState = createEmptyChatState();
+        publishAppEventSpy.mockReset();
+      },
+      setChatState: (nextState: Record<string, unknown>) => {
+        currentChatState = {
+          ...currentChatState,
+          ...nextState,
+        };
+
+        for (const listener of listeners) {
+          listener();
+        }
+      },
+      subscribeToChatState: (listener: () => void) => {
+        listeners.add(listener);
+
+        return () => {
+          listeners.delete(listener);
+        };
+      },
     };
-  }
-
-  let currentChatState = createEmptyChatState();
-
-  return {
-    dispatchAgentMessage: (payload: unknown) => {
-      const event = {
-        data: JSON.stringify(payload),
-      };
-
-      for (const listener of agentMessageListeners) {
-        listener(event);
-      }
-    },
-    getChatState: () => currentChatState,
-    publishAppEventSpy,
-    resetChatFixture: () => {
-      currentChatState = createEmptyChatState();
-      agentMessageListeners.clear();
-      publishAppEventSpy.mockReset();
-    },
-    setChatState: (nextState: Record<string, unknown>) => {
-      currentChatState = {
-        ...currentChatState,
-        ...nextState,
-      };
-
-      for (const listener of listeners) {
-        listener();
-      }
-    },
-    subscribeToAgentMessages: (listener: (event: { data?: unknown }) => void) => {
-      agentMessageListeners.add(listener);
-    },
-    subscribeToChatState: (listener: () => void) => {
-      listeners.add(listener);
-
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-    unsubscribeFromAgentMessages: (listener: (event: { data?: unknown }) => void) => {
-      agentMessageListeners.delete(listener);
-    },
-  };
-});
+  });
 
 vi.mock("agents/react", () => ({
   useAgent: () => ({
-    addEventListener: (
-      type: string,
-      listener: (event: { data?: unknown }) => void,
-      options?: { signal?: AbortSignal },
-    ) => {
-      if (type !== "message") {
-        return;
-      }
-
-      subscribeToAgentMessages(listener);
-      options?.signal?.addEventListener(
-        "abort",
-        () => {
-          unsubscribeFromAgentMessages(listener);
-        },
-        { once: true },
-      );
-    },
     agent: "CoachAgent",
     getHttpUrl: () => "http://example.test/agents/coach/general",
     name: "general",
-    removeEventListener: (type: string, listener: (event: { data?: unknown }) => void) => {
-      if (type === "message") {
-        unsubscribeFromAgentMessages(listener);
-      }
-    },
   }),
 }));
 
@@ -166,8 +112,6 @@ describe("CoachSheet streaming fixture", () => {
   beforeEach(async () => {
     vi.useFakeTimers();
     resetChatFixture();
-    clearCoachSheetDebugRawCapture();
-    clearCoachSheetDebugTrace();
     consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     originalScrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(
       HTMLElement.prototype,
@@ -345,21 +289,6 @@ describe("CoachSheet streaming fixture", () => {
     expect(container.textContent).toContain("Finished applying the requested workout updates.");
     expect(container.textContent).toContain("Update workout");
     expect(publishAppEventSpy).toHaveBeenCalledTimes(TOOL_COUNT);
-    const debugTrace =
-      (window.__coachSheetDebug as CoachSheetDebugApi | undefined)?.getTrace() ?? [];
-    const firstStreamingEntry = debugTrace.find(
-      (entry): entry is Extract<CoachSheetDebugEntry, { kind: "chat-update" }> =>
-        entry.kind === "chat-update" && entry.status === "streaming",
-    );
-    const publishEntries = debugTrace.filter(
-      (entry): entry is Extract<CoachSheetDebugEntry, { kind: "publish-app-event" }> =>
-        entry.kind === "publish-app-event",
-    );
-
-    expect(
-      firstStreamingEntry?.messages.at(-1)?.parts.filter((part) => part.type.startsWith("tool-")),
-    ).toHaveLength(TOOL_COUNT);
-    expect(publishEntries).toHaveLength(TOOL_COUNT);
     expect(
       consoleErrorSpy.mock.calls
         .flat()
@@ -435,140 +364,9 @@ describe("CoachSheet streaming fixture", () => {
       "Coach sheet chat error",
       chatError,
       expect.objectContaining({
-        debugTrace: expect.any(Array),
         messageCount: 0,
         status: "error",
         target: createGeneralCoachTarget(),
-      }),
-    );
-  });
-
-  it("records raw agent response chunks in the coach debug trace", async () => {
-    await renderCoachSheet({
-      target: createWorkoutCoachTarget("workout-debug"),
-    });
-
-    dispatchAgentMessage({
-      body: JSON.stringify({
-        toolCallId: "call-debug-1",
-        toolName: "query_history",
-        type: "tool-input-start",
-      }),
-      done: false,
-      id: "request-debug-1",
-      type: "cf_agent_use_chat_response",
-    });
-    await flushWork();
-
-    const debugTrace =
-      (window.__coachSheetDebug as CoachSheetDebugApi | undefined)?.getTrace() ?? [];
-    const agentEntry = debugTrace.find(
-      (entry): entry is Extract<CoachSheetDebugEntry, { kind: "agent-receive" }> =>
-        entry.kind === "agent-receive" && entry.event.type === "cf_agent_use_chat_response",
-    );
-
-    expect(agentEntry).toEqual(
-      expect.objectContaining({
-        event: expect.objectContaining({
-          chunk: expect.objectContaining({
-            toolCallId: "call-debug-1",
-            toolName: "query_history",
-            type: "tool-input-start",
-          }),
-          id: "request-debug-1",
-          type: "cf_agent_use_chat_response",
-        }),
-        status: "ready",
-        target: {
-          kind: "workout",
-          workoutId: "workout-debug",
-        },
-      }),
-    );
-  });
-
-  it("captures a raw agent response sequence for replay", async () => {
-    await renderCoachSheet({
-      target: createWorkoutCoachTarget("workout-capture"),
-    });
-
-    const debugApi = window.__coachSheetDebug as CoachSheetDebugApi | undefined;
-    const printRawCapture = window.__printCoachSheetRawCapture;
-
-    dispatchAgentMessage({
-      body: JSON.stringify({
-        toolCallId: "call-debug-ignored",
-        toolName: "query_history",
-        type: "tool-input-start",
-      }),
-      done: false,
-      id: "request-debug-capture",
-      type: "cf_agent_use_chat_response",
-    });
-    dispatchAgentMessage({
-      body: JSON.stringify({
-        delta: '{"exercise":"bench"}',
-        toolCallId: "call-debug-ignored",
-        type: "tool-input-delta",
-      }),
-      done: false,
-      id: "request-debug-capture",
-      type: "cf_agent_use_chat_response",
-    });
-    dispatchAgentMessage({
-      messages: [],
-      type: "cf_agent_chat_messages",
-    });
-    await flushWork();
-
-    const rawCapture = debugApi?.getRawCapture();
-    const printedRawCapture = printRawCapture?.();
-    const liveRawCapture = window.__capture;
-
-    expect(rawCapture).toEqual(
-      expect.objectContaining({
-        armed: true,
-        lockedRequestId: "request-debug-capture",
-        requestedRequestId: null,
-      }),
-    );
-    expect(rawCapture?.events).toHaveLength(3);
-    expect(rawCapture?.events[0]).toEqual(
-      expect.objectContaining({
-        chunk: expect.objectContaining({
-          toolCallId: "call-debug-ignored",
-          toolName: "query_history",
-          type: "tool-input-start",
-        }),
-        rawData: expect.stringContaining('"request-debug-capture"'),
-        requestId: "request-debug-capture",
-        type: "cf_agent_use_chat_response",
-      }),
-    );
-    expect(rawCapture?.events[1]).toEqual(
-      expect.objectContaining({
-        chunk: expect.objectContaining({
-          deltaLength: 20,
-          toolCallId: "call-debug-ignored",
-          type: "tool-input-delta",
-        }),
-        type: "cf_agent_use_chat_response",
-      }),
-    );
-    expect(rawCapture?.events[2]).toEqual(
-      expect.objectContaining({
-        chunk: null,
-        rawData: expect.stringContaining('"cf_agent_chat_messages"'),
-        requestId: null,
-        type: "cf_agent_chat_messages",
-      }),
-    );
-    expect(printedRawCapture).toBe(JSON.stringify(rawCapture));
-    expect(liveRawCapture).toEqual(
-      expect.objectContaining({
-        armed: true,
-        events: expect.any(Array),
-        lockedRequestId: "request-debug-capture",
       }),
     );
   });
