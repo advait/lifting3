@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "lifting3",
   "compatibility_date": "2026-04-16",
-  "compatibility_flags": ["nodejs_compat", "experimental"],
+  "compatibility_flags": ["nodejs_compat"],
   "main": "./workers/app.ts",
   "ai": {
     "binding": "AI",
