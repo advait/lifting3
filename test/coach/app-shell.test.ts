@@ -10,19 +10,40 @@ import {
   publishCoachSessionRequest,
 } from "../../app/features/coach/session-request";
 
-const { getLocation, setLocation } = vi.hoisted(() => {
-  let currentLocation = {
-    key: "initial",
-    pathname: "/workouts/workout-123",
-  };
+const { getFetchers, getLocation, getNavigation, resetRouterState, setNavigation } = vi.hoisted(
+  () => {
+    let currentLocation = {
+      key: "initial",
+      pathname: "/workouts/workout-123",
+    };
+    let currentNavigation = {
+      formMethod: undefined as string | undefined,
+      state: "idle",
+    };
 
-  return {
-    getLocation: () => currentLocation,
-    setLocation: (nextLocation: typeof currentLocation) => {
-      currentLocation = nextLocation;
-    },
-  };
-});
+    return {
+      getFetchers: () => [],
+      getLocation: () => currentLocation,
+      getNavigation: () => currentNavigation,
+      resetRouterState: () => {
+        currentLocation = {
+          key: "initial",
+          pathname: "/workouts/workout-123",
+        };
+        currentNavigation = {
+          formMethod: undefined,
+          state: "idle",
+        };
+      },
+      setLocation: (nextLocation: typeof currentLocation) => {
+        currentLocation = nextLocation;
+      },
+      setNavigation: (nextNavigation: typeof currentNavigation) => {
+        currentNavigation = nextNavigation;
+      },
+    };
+  },
+);
 
 const { coachSheetSpy, resetCoachSheetSpy } = vi.hoisted(() => {
   const coachSheetSpy = vi.fn();
@@ -68,12 +89,9 @@ vi.mock("react-router", async () => {
     },
     Scripts: () => null,
     ScrollRestoration: () => null,
-    useFetchers: () => [],
+    useFetchers: () => getFetchers(),
     useLocation: () => getLocation(),
-    useNavigation: () => ({
-      formMethod: undefined,
-      state: "idle",
-    }),
+    useNavigation: () => getNavigation(),
   };
 });
 
@@ -153,11 +171,9 @@ describe("AppShell coach session requests", () => {
   let root: Root;
 
   beforeEach(async () => {
+    vi.useFakeTimers();
     resetCoachSheetSpy();
-    setLocation({
-      key: "initial",
-      pathname: "/workouts/workout-123",
-    });
+    resetRouterState();
     ({ AppShell } = await import("../../app/components/organisms/app-shell"));
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -167,6 +183,7 @@ describe("AppShell coach session requests", () => {
   afterEach(() => {
     root.unmount();
     container.remove();
+    vi.useRealTimers();
   });
 
   async function renderAppShell({
@@ -202,5 +219,49 @@ describe("AppShell coach session requests", () => {
     expect(
       coachSheetSpy.mock.calls.some(([call]) => call.isOpen && call.requestId === "finish-1"),
     ).toBe(true);
+  });
+
+  it("shows a delayed save indicator for non-GET mutations", async () => {
+    await renderAppShell();
+
+    const indicator = container.querySelector("[data-visible]");
+
+    expect(indicator?.getAttribute("data-visible")).toBe("false");
+
+    setNavigation({
+      formMethod: "POST",
+      state: "submitting",
+    });
+    await renderAppShell();
+
+    await act(async () => {
+      vi.advanceTimersByTime(124);
+    });
+
+    expect(indicator?.getAttribute("data-visible")).toBe("false");
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(indicator?.getAttribute("data-visible")).toBe("true");
+
+    setNavigation({
+      formMethod: undefined,
+      state: "idle",
+    });
+    await renderAppShell();
+
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(indicator?.getAttribute("data-visible")).toBe("true");
+
+    await act(async () => {
+      vi.advanceTimersByTime(120);
+    });
+
+    expect(indicator?.getAttribute("data-visible")).toBe("false");
   });
 });

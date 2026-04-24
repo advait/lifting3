@@ -18,7 +18,9 @@ import {
   NavLink,
   Scripts,
   ScrollRestoration,
+  useFetchers,
   useLocation,
+  useNavigation,
 } from "react-router";
 
 import { Button } from "~/components/atoms/button";
@@ -82,6 +84,13 @@ const NAV_ITEMS: ReadonlyArray<NavigationItem> = [
     to: "/settings",
   },
 ] as const;
+
+const MUTATION_INDICATOR_DELAY_MS = 125;
+const MUTATION_INDICATOR_MIN_VISIBLE_MS = 220;
+
+function isNonGetFormMethod(method: string | undefined) {
+  return method != null && method.toUpperCase() !== "GET";
+}
 
 function NavigationLink({ item }: { item: NavigationItem }) {
   const Icon = item.icon;
@@ -219,12 +228,19 @@ export function AppShell({
   recentWorkouts,
   topBarAction,
 }: AppShellProps) {
+  const fetchers = useFetchers();
   const location = useLocation();
+  const navigation = useNavigation();
   const [coachOpen, setCoachOpen] = useState(false);
   const [coachSessionRequest, setCoachSessionRequest] = useState<CoachSessionRequest | null>(null);
+  const [showMutationIndicator, setShowMutationIndicator] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const coachTargetRef = useRef(coachTarget);
   coachTargetRef.current = coachTarget;
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const mutationIndicatorShownAtRef = useRef<number | null>(null);
+  const hasPendingMutation =
+    (navigation.state !== "idle" && isNonGetFormMethod(navigation.formMethod)) ||
+    fetchers.some((fetcher) => fetcher.state !== "idle" && isNonGetFormMethod(fetcher.formMethod));
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -259,6 +275,43 @@ export function AppShell({
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [coachOpen, sidebarOpen]);
+
+  useEffect(() => {
+    if (hasPendingMutation) {
+      if (showMutationIndicator) {
+        return;
+      }
+
+      const showTimerId = window.setTimeout(() => {
+        mutationIndicatorShownAtRef.current = window.performance.now();
+        setShowMutationIndicator(true);
+      }, MUTATION_INDICATOR_DELAY_MS);
+
+      return () => {
+        window.clearTimeout(showTimerId);
+      };
+    }
+
+    if (!showMutationIndicator) {
+      return;
+    }
+
+    const visibleForMs =
+      mutationIndicatorShownAtRef.current == null
+        ? 0
+        : window.performance.now() - mutationIndicatorShownAtRef.current;
+    const hideTimerId = window.setTimeout(
+      () => {
+        mutationIndicatorShownAtRef.current = null;
+        setShowMutationIndicator(false);
+      },
+      Math.max(0, MUTATION_INDICATOR_MIN_VISIBLE_MS - visibleForMs),
+    );
+
+    return () => {
+      window.clearTimeout(hideTimerId);
+    };
+  }, [hasPendingMutation, showMutationIndicator]);
 
   return (
     <html className="dark" lang="en">
@@ -329,7 +382,7 @@ export function AppShell({
           </aside>
 
           <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-8 sm:px-6 lg:px-8">
-            <header className="sticky top-0 z-30 -mx-4 border-border/70 border-b bg-background/80 px-4 py-3 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+            <header className="sticky top-0 z-30 -mx-4 overflow-hidden border-border/70 border-b bg-background/80 px-4 py-3 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 relative">
               <div className="mx-auto flex w-full max-w-7xl items-center gap-3">
                 <Button
                   aria-controls="app-sidebar"
@@ -363,6 +416,16 @@ export function AppShell({
                     </Button>
                   </Form>
                 ) : null}
+              </div>
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 bottom-0 h-4"
+                data-visible={showMutationIndicator}
+              >
+                <div className="app-shell-save-indicator">
+                  <div className="app-shell-save-glow" />
+                  <div className="app-shell-save-line" />
+                </div>
               </div>
             </header>
 

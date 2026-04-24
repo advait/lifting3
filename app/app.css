@@ -220,3 +220,66 @@ body {
     @apply font-sans;
   }
 }
+
+@keyframes app-shell-save-border-pan {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.app-shell-save-indicator {
+  position: absolute;
+  inset-inline: 0;
+  bottom: -1px;
+  height: 0.25rem;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+[data-visible="true"] > .app-shell-save-indicator {
+  opacity: 1;
+}
+
+.app-shell-save-line,
+.app-shell-save-glow {
+  position: absolute;
+  inset-inline: 0;
+  border-radius: 9999px;
+  background-image: linear-gradient(
+    110deg,
+    color-mix(in oklab, var(--color-primary) 38%, transparent) 0%,
+    color-mix(in oklab, var(--color-primary) 88%, white) 18%,
+    color-mix(in oklab, var(--color-secondary) 58%, white) 40%,
+    color-mix(in oklab, var(--color-chart-4) 62%, white) 58%,
+    color-mix(in oklab, var(--color-primary) 92%, white) 78%,
+    color-mix(in oklab, var(--color-primary) 38%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: app-shell-save-border-pan 2.6s linear infinite;
+}
+
+.app-shell-save-line {
+  bottom: 0;
+  height: 2px;
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-primary) 22%, transparent),
+    0 0 24px color-mix(in oklab, var(--color-primary) 26%, transparent);
+}
+
+.app-shell-save-glow {
+  bottom: 0;
+  height: 6px;
+  opacity: 0.65;
+  filter: blur(9px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell-save-line,
+  .app-shell-save-glow {
+    animation-duration: 8s;
+  }
+}
