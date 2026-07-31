@@ -1,0 +1,29 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "lifting3-legacy-coach-migration",
+  "compatibility_date": "2026-04-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "./migrate-legacy-coach-sessions.worker.ts",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "LEGACY_COACH",
+        "class_name": "CoachAgent",
+        "script_name": "lifting3",
+      },
+      {
+        "name": "EDA_COACH",
+        "class_name": "EDACoachAgent",
+        "script_name": "lifting3",
+      },
+    ],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lifting3",
+      "database_id": "fc6b0e66-4f5e-4838-9e89-b0a96e1c51be",
+      "preview_database_id": "fc6b0e66-4f5e-4838-9e89-b0a96e1c51be",
+    },
+  ],
+}

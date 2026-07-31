@@ -14,7 +14,8 @@ The Worker exports `EDACoachAgent`, an `EDASessionDurableObject<Env>`. Its runti
 - the `lifting3.coach.thread` application reducer
 - the typed EDA WebSocket protocol
 
-The former `CoachAgent extends Think<Env>` remains exported only as a temporary source for the one-off migration. New traffic never routes to it.
+The former `CoachAgent extends Think<Env>` remains exported only as a temporary source for the
+[one-off migration](legacy-coach-session-migration.md). New traffic never routes to it.
 
 ## Session identity and thread binding
 
