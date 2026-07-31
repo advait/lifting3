@@ -1,225 +1,76 @@
-# Cloudflare Agent Architecture in `lifting3`
+# Effect Durable Agent architecture
 
-Reviewed: 2026-04-21
+Reviewed: 2026-07-31
 
-This document describes the agent architecture that is actually implemented in the repo today.
+`lifting3` is a public reference application for [`effect-durable-agent`](../effect-durable-agent). The coach runs as an event-sourced Cloudflare Durable Object; D1 remains authoritative for workout and profile data.
 
-The previous version of this doc described a target design built around separate `GeneralCoachAgent` and `WorkoutCoachAgent` `AIChatAgent` classes plus an `AppEvents/default` Durable Object. That is not what the code does right now.
+## Runtime
 
-## Current Runtime
+The Worker exports `EDACoachAgent`, an `EDASessionDurableObject<Env>`. Its runtime composes:
 
-`lifting3` currently uses one exported agent class:
+- OpenAI `gpt-5.4` through Cloudflare AI Gateway `default`
+- a four-tool EDA registry
+- a prompt projector that reloads current D1 context before each turn
+- the `lifting3.coach.thread` application reducer
+- the typed EDA WebSocket protocol
 
-- `CoachAgent` in [workers/coach-agent.ts](/home/advait/l3-root/l3/workers/coach-agent.ts)
+The former `CoachAgent extends Think<Env>` remains exported only as a temporary source for the one-off migration. New traffic never routes to it.
 
-Implementation details:
+## Session identity and thread binding
 
-- base class: `Think<Env>`
-- worker entrypoint: [workers/app.ts](/home/advait/l3-root/l3/workers/app.ts)
-- agent routing: `routeAgentRequest(request, env)`
-- chat recovery: disabled via `chatRecovery = false`
-- max steps: `5`
-- message concurrency: `"queue"`
+The product exposes the same stable thread keys as before:
 
-There is no separate `GeneralCoachAgent` class, no separate `WorkoutCoachAgent` class, and no app-defined session manager layer.
+- `general`
+- `workout:{workoutId}`
 
-## Thread Model
+EDA session ids are deterministic UUID v5 values derived from those keys. This preserves one durable session per public thread without exposing Durable Object implementation details to the browser.
 
-The app still has two coaching modes, but they are represented as instance names on the same `CoachAgent` class.
+Each session records one `CoachThreadAttached` application event. The small custom reducer projects that fact to `{ target }`, rejects attempts to rebind a session, and gives the prompt projector a durable link back to current D1 context. Framework reducers already own transcripts, commands, runs, inferences, and tools, so duplicating them in an application reducer would add a second source of truth.
 
-Current instance naming lives in [app/features/workouts/contracts.ts](/home/advait/l3-root/l3/app/features/workouts/contracts.ts):
+## Application events
 
-- general coach thread: `general`
-- workout-scoped thread: `workout:{workoutId}`
+The coach defines two durable application events:
 
-Helpers:
+- `CoachThreadAttached` binds the EDA session to its semantic product thread.
+- `WorkoutMutationCommitted` records the existing workout invalidation envelope after a successful create or patch tool call.
 
-- `createGeneralCoachTarget()`
-- `createWorkoutCoachTarget(workoutId)`
-- `parseCoachInstanceName(instanceName)`
+`WorkoutMutationCommitted` is the bridge between durable agent work and product UI revalidation. The panel receives it on the EDA WebSocket and publishes the existing browser app-event envelope. It no longer guesses mutations by inspecting tool results.
 
-The root app shell defaults to the general coach target, and the workout detail route overrides that target with the canonical workout-scoped thread for the current workout.
+## Prompt projection
 
-## Client Integration
+The configured system message is committed by EDA. Before every inference, the prompt projector replaces its text with fresh context:
 
-The coach UI lives in a sheet component, not on its own `/coach` route.
+- general threads load recent workouts, the user profile, the exercise catalog, and the patch contract;
+- workout threads load the current workout snapshot, open-set summary, PR count, exercise ids, and saved profile.
 
-Key files:
+That keeps chat durable while preserving D1 as the authority for mutable workout facts.
 
-- [app/root.tsx](/home/advait/l3-root/l3/app/root.tsx)
-- [app/features/coach/coach-sheet.tsx](/home/advait/l3-root/l3/app/features/coach/coach-sheet.tsx)
+## Tool surface
 
-The client uses:
-
-- `useAgent({ agent: "CoachAgent", name: target.instanceName })`
-- `useAgentChat({ agent, getInitialMessages })`
-
-Initial chat history is loaded from the agent route's `get-messages` endpoint. The app does not mirror chat transcripts into D1 `sessions` or `messages` tables.
-
-## Tool Surface
-
-The current tool surface is defined in [workers/coach-agent-tools.ts](/home/advait/l3-root/l3/workers/coach-agent-tools.ts):
+The EDA tool registry exposes:
 
 - `create_workout`
 - `patch_workout`
 - `query_history`
 - `set_user_profile`
 
-Important behavior:
+The registry reuses the existing Zod inputs and D1 services. Workout-scoped sessions cannot patch a different workout. Successful workout mutations emit `WorkoutMutationCommitted` through EDA's tool execution context, placing the domain fact in the same durable event log as the tool lifecycle.
 
-- `patch_workout` is scoped on workout threads. A workout-bound thread cannot patch some other workout.
-- `create_workout` can be used from either general or workout-scoped threads.
-- `query_history` reads structured workout history through the shared D1 service layer.
-- `set_user_profile` is the only durable settings mutation exposed through the coach today.
+## HTTP and WebSocket facade
 
-## Prompt and Context Assembly
+The browser uses a narrow application facade:
 
-`CoachAgent.beforeTurn()` assembles different prompts depending on the thread kind.
+- `POST /api/coach/threads/:thread/messages` durably admits a queued message;
+- `POST /api/coach/threads/:thread/stop` admits a stop command;
+- `GET /api/coach/threads/:thread/events?afterSeq=N` upgrades to the EDA WebSocket;
+- `DELETE /api/coach/threads/:thread/session` destroys the EDA session.
 
-General thread context:
+The WebSocket replays durable events after the last acknowledged sequence, streams ephemeral model deltas, requires frame acknowledgements, and reconnects with bounded exponential backoff. The React panel projects messages and tool cards directly from those events. No polling or `get-messages` bootstrap is needed.
 
-- recent workouts from `loadWorkoutList()`
-- saved user profile from settings
-- exercise catalog prompt
-- patch contract prompt
+## Data ownership
 
-Workout thread context:
+- D1 owns workouts, exercises, sets, optimistic versions, history, and `user_profile`.
+- The EDA Durable Object owns commands, the conversation transcript, run/inference/tool lifecycle, and coach application events.
+- Browser app events remain the local route-revalidation transport; durable workout mutation events are their server-originated source for agent changes.
 
-- workout detail snapshot from `loadWorkoutDetail()`
-- saved user profile from settings
-- next open set summary
-- PR count
-- exercise summary lines
-- explicit patch reference with real exercise and set ids
-
-This means the current architecture relies more on server-side context assembly than on a large read-tool surface.
-
-## Data Ownership
-
-### D1 is authoritative for structured workout state
-
-Workout facts live in D1 through the shared service layer in [app/features/workouts/d1-service.server.ts](/home/advait/l3-root/l3/app/features/workouts/d1-service.server.ts).
-
-That includes:
-
-- workouts
-- workout exercises
-- exercise sets
-- workout versions for optimistic concurrency
-- history queries used by `query_history`
-- the `user_profile` app setting
-
-Both route actions and agent tools call into this shared domain layer.
-
-### Agent runtime owns chat history
-
-The app relies on the Cloudflare agent runtime for conversation history. The UI fetches existing messages from the agent route, and there is no app-owned D1 chat persistence layer.
-
-### App events are browser-local today
-
-The repo does have an invalidation/event contract, but it is not backed by a Durable Object.
-
-Current implementation:
-
-- schema: [app/features/app-events/schema.ts](/home/advait/l3-root/l3/app/features/app-events/schema.ts)
-- transport: [app/features/app-events/client.ts](/home/advait/l3-root/l3/app/features/app-events/client.ts)
-
-Behavior:
-
-- successful route actions publish invalidation envelopes into browser events
-- successful coach tool calls also publish invalidation envelopes
-- revalidation is handled with route `handle.invalidateKeys` plus `useRevalidator()`
-- cross-tab fanout uses `BroadcastChannel` when available
-
-There is no `AppEvents/default` Durable Object in the current codebase.
-
-## Model Selection Today
-
-Model selection is simpler than the old docs described.
-
-Current behavior in [workers/coach-agent-helpers.ts](/home/advait/l3-root/l3/workers/coach-agent-helpers.ts):
-
-- AI Gateway id: `default`
-- model id: hardcoded `openai/gpt-5.4`
-
-There is no implemented D1-backed global model selector yet.
-
-The only persisted setting today is:
-
-- `user_profile`
-
-## Workout UI vs Agent Mutation Surface
-
-The direct workout UI and the agent do not expose the same mutation surface.
-
-Direct route actions today:
-
-- `start_workout`
-- `finish_workout`
-- `update_set_designation`
-- `update_set_planned`
-- `update_set_actuals`
-- `confirm_set`
-- `unconfirm_set`
-- `add_set`
-- `remove_set`
-- `remove_exercise`
-- `reorder_exercise`
-- `update_workout_notes`
-- `update_exercise_notes`
-- `update_exercise_rest_seconds`
-- `delete_workout`
-
-Agent-only mutation capabilities today:
-
-- `create_workout`
-- `patch_workout` ops like `add_exercise`, `replace_exercise`, `skip_exercise`, `skip_remaining_sets`, and `update_workout_metadata`
-
-That split matters when writing docs or planning product work. The agent can currently do some workout restructuring that the manual UI does not yet expose.
-
-## Post-Workout Flow Status
-
-This repo does not yet implement a dedicated post-workout agent flow.
-
-Current state:
-
-- the workout thread remains available after completion
-- the coach can discuss the completed workout using the same workout-scoped context
-- the workout coach prompt tells the model to prefer `sourceWorkoutId` when creating a follow-up workout based on the current session
-
-Missing pieces:
-
-- no automatic post-workout summary step
-- no special review/reflection thread kind
-- no completion-triggered follow-up workflow
-- no dedicated UI for post-workout analysis
-
-If this is the next feature area, it should be documented and built as a new layer on top of the existing `general` and `workout:{workoutId}` thread model rather than pretending it already exists.
-
-## Recommended Documentation Vocabulary
-
-Use these names in repo docs for the current implementation:
-
-- "CoachAgent" for the runtime class
-- "general thread" for `general`
-- "workout-scoped thread" for `workout:{workoutId}`
-- "browser app-event invalidation" for the current revalidation mechanism
-
-Avoid these phrases unless you are explicitly describing future work:
-
-- `GeneralCoachAgent`
-- `WorkoutCoachAgent`
-- `AIChatAgent` as the current base class
-- `AppEvents/default`
-- D1-backed model preference
-- post-workout review flow
-
-## Near-Term Gaps
-
-The main architecture gaps between the docs and the code are:
-
-1. Post-workout flow is still missing.
-2. Model selection is hardcoded instead of user-configurable.
-3. Settings UI is placeholder-only even though `user_profile` persistence exists.
-4. Analytics UI is placeholder-only even though history querying and PR calculations already exist.
-5. Live invalidation is browser-local today, not server-pushed.
+This split lets the repository demonstrate crash-safe agent execution and resumable UI streaming without moving structured product data into chat state.

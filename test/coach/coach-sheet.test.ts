@@ -16,84 +16,57 @@ import {
   createWorkoutCoachTarget,
 } from "../../app/features/coach/contracts";
 
-const { getChatState, publishAppEventSpy, resetChatFixture, setChatState, subscribeToChatState } =
-  vi.hoisted(() => {
-    const listeners = new Set<() => void>();
-    const publishAppEventSpy = vi.fn();
+const { getChatState, resetChatFixture, setChatState, subscribeToChatState } = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
 
-    function createEmptyChatState() {
-      return {
-        addToolApprovalResponse: vi.fn(),
-        clearError: vi.fn(),
-        clearHistory: vi.fn(),
-        error: undefined,
-        isServerStreaming: false,
-        isStreaming: false,
-        messages: [],
-        sendMessage: vi.fn(async () => {}),
-        status: "ready",
-        stop: vi.fn(async () => {}),
-      };
-    }
-
-    let currentChatState = createEmptyChatState();
-
+  function createEmptyChatState() {
     return {
-      getChatState: () => currentChatState,
-      publishAppEventSpy,
-      resetChatFixture: () => {
-        currentChatState = createEmptyChatState();
-        publishAppEventSpy.mockReset();
-      },
-      setChatState: (nextState: Record<string, unknown>) => {
-        currentChatState = {
-          ...currentChatState,
-          ...nextState,
-        };
-
-        for (const listener of listeners) {
-          listener();
-        }
-      },
-      subscribeToChatState: (listener: () => void) => {
-        listeners.add(listener);
-
-        return () => {
-          listeners.delete(listener);
-        };
-      },
+      addToolApprovalResponse: vi.fn(),
+      clearError: vi.fn(),
+      clearHistory: vi.fn(),
+      error: undefined,
+      isServerStreaming: false,
+      isStreaming: false,
+      messages: [],
+      sendMessage: vi.fn(async () => {}),
+      status: "ready",
+      stop: vi.fn(async () => {}),
     };
-  });
+  }
 
-vi.mock("agents/react", () => ({
-  useAgent: () => ({
-    agent: "CoachAgent",
-    getHttpUrl: () => "http://example.test/agents/coach/general",
-    name: "general",
-  }),
-}));
-
-vi.mock("@cloudflare/ai-chat/react", async () => {
-  const React = await import("react");
-  const actual = await vi.importActual<typeof import("@cloudflare/ai-chat/react")>(
-    "@cloudflare/ai-chat/react",
-  );
+  let currentChatState = createEmptyChatState();
 
   return {
-    ...actual,
-    useAgentChat: () =>
-      React.useSyncExternalStore(subscribeToChatState, getChatState, getChatState),
+    getChatState: () => currentChatState,
+    resetChatFixture: () => {
+      currentChatState = createEmptyChatState();
+    },
+    setChatState: (nextState: Record<string, unknown>) => {
+      currentChatState = {
+        ...currentChatState,
+        ...nextState,
+      };
+
+      for (const listener of listeners) {
+        listener();
+      }
+    },
+    subscribeToChatState: (listener: () => void) => {
+      listeners.add(listener);
+
+      return () => {
+        listeners.delete(listener);
+      };
+    },
   };
 });
 
-vi.mock("~/features/app-events/client", async () => {
-  const actual = await vi.importActual<typeof import("~/features/app-events/client")>(
-    "~/features/app-events/client",
-  );
+vi.mock("~/features/coach/eda-client", async () => {
+  const React = await import("react");
 
   return {
-    ...actual,
-    publishAppEvent: publishAppEventSpy,
+    useEdaCoachSession: () =>
+      React.useSyncExternalStore(subscribeToChatState, getChatState, getChatState),
   };
 });
 
@@ -288,7 +261,6 @@ describe("CoachSheet streaming fixture", () => {
 
     expect(container.textContent).toContain("Finished applying the requested workout updates.");
     expect(container.textContent).toContain("Update workout");
-    expect(publishAppEventSpy).toHaveBeenCalledTimes(TOOL_COUNT);
     expect(
       consoleErrorSpy.mock.calls
         .flat()

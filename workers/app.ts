@@ -1,8 +1,10 @@
 import { createRequestHandler } from "react-router";
 import { createAppRouterContext } from "~/lib/.server/router-context";
 import { CoachAgent } from "./coach-agent";
+import { EDACoachAgent } from "./eda-coach/agent";
+import { handleCoachApiRequest } from "./eda-coach/api";
 
-export { CoachAgent };
+export { CoachAgent, EDACoachAgent };
 
 const requestHandler = createRequestHandler(
   () => import("virtual:react-router/server-build"),
@@ -11,11 +13,10 @@ const requestHandler = createRequestHandler(
 
 export default {
   async fetch(request, env, ctx) {
-    const { routeAgentRequest } = await import("agents");
-    const agentResponse = await routeAgentRequest(request, env);
+    const coachResponse = await handleCoachApiRequest(request, env);
 
-    if (agentResponse) {
-      return agentResponse;
+    if (coachResponse) {
+      return coachResponse;
     }
 
     return requestHandler(request, createAppRouterContext(env, ctx));

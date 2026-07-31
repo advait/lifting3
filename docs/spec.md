@@ -75,9 +75,9 @@ Important note:
 
 ## 4. Current Coaching Model
 
-The repo currently uses one Cloudflare agent class:
+The repo currently uses one EDA Durable Object class:
 
-- `CoachAgent extends Think<Env>`
+- `EDACoachAgent extends EDASessionDurableObject<Env>`
 
 Thread identity is encoded in the instance name:
 
@@ -88,8 +88,10 @@ Current behavior:
 
 - the app shell defaults to the `general` thread
 - workout detail routes override the coach target to `workout:{workoutId}`
-- the coach sheet uses `useAgent` and `useAgentChat`
-- initial history is loaded from the agent route's `get-messages` endpoint
+- a deterministic UUID v5 maps each public thread key to its EDA session
+- the coach sheet replays durable history and live deltas over EDA's WebSocket protocol
+- frame acknowledgements and a durable sequence cursor make reconnects resumable
+- workout tool mutations emit durable `WorkoutMutationCommitted` application events
 
 The repo does not currently implement:
 
@@ -285,18 +287,18 @@ The main current gaps are:
 2. Analytics route is mostly placeholder UI.
 3. Settings route is mostly placeholder UI.
 4. Model selection is hardcoded instead of configurable.
-5. Live invalidation is browser-local instead of server-pushed.
+5. Route invalidation remains browser-local, but coach mutations now arrive as server-pushed EDA events.
 6. The direct workout UI exposes fewer restructuring actions than the coach can perform.
 
 ## 14. Current Documentation Rule
 
 When updating docs for this repo, describe the current implementation using this vocabulary:
 
-- `CoachAgent`
-- `Think`
+- `EDACoachAgent`
+- `effect-durable-agent`
 - `general` thread
 - `workout:{workoutId}` thread
-- browser app-event invalidation
+- durable coach mutation events plus browser app-event invalidation
 - hardcoded AI Gateway model
 
 Do not describe these as current implementation unless they are added later:

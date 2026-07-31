@@ -26,10 +26,10 @@ const devPort = getDevPort();
 
 export default defineConfig({
   fmt: {
-    ignorePatterns: [".agents/**"],
+    ignorePatterns: [".agents/**", "effect-durable-agent/**"],
   },
   lint: {
-    ignorePatterns: [".agents/**"],
+    ignorePatterns: [".agents/**", "effect-durable-agent/**"],
     options: {
       typeAware: true,
       typeCheck: true,

@@ -4,6 +4,7 @@
     "scripts/**/*.ts",
     "app/features/**/*.ts",
     "app/lib/.server/**/*.ts",
+    "workers/eda-coach/events.ts",
     "types/**/*.d.ts"
   ],
   "compilerOptions": {

@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "lifting3",
-  "compatibility_date": "2026-04-16",
+  "compatibility_date": "2026-04-22",
   "compatibility_flags": ["nodejs_compat"],
   "main": "./workers/app.ts",
   "ai": {
@@ -11,6 +11,10 @@
     "bindings": [
       {
         "name": "CoachAgent",
+        "class_name": "EDACoachAgent",
+      },
+      {
+        "name": "LegacyCoachAgent",
         "class_name": "CoachAgent",
       },
     ],
@@ -39,6 +43,10 @@
     {
       "tag": "v6",
       "deleted_classes": ["CoachSheetFixtureAgent"],
+    },
+    {
+      "tag": "v7",
+      "new_sqlite_classes": ["EDACoachAgent"],
     },
   ],
   "d1_databases": [

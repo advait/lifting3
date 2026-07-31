@@ -57,3 +57,10 @@ export function parseCoachInstanceName(instanceName: string): CoachThread | null
 
   return workoutId.length > 0 ? createWorkoutCoachTarget(workoutId) : null;
 }
+
+export function formatCoachApiPath(
+  target: CoachTarget,
+  resource: "events" | "messages" | "session" | "stop",
+) {
+  return `/api/coach/threads/${encodeURIComponent(formatCoachInstanceName(target))}/${resource}`;
+}
