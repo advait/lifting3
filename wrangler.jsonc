@@ -13,10 +13,6 @@
         "name": "CoachAgent",
         "class_name": "EDACoachAgent",
       },
-      {
-        "name": "LegacyCoachAgent",
-        "class_name": "CoachAgent",
-      },
     ],
   },
   "migrations": [
@@ -48,7 +44,14 @@
       "tag": "v7",
       "new_sqlite_classes": ["EDACoachAgent"],
     },
+    {
+      "tag": "v8",
+      "deleted_classes": ["CoachAgent"],
+    },
   ],
+  "triggers": {
+    "crons": ["*/5 * * * *"],
+  },
   "d1_databases": [
     {
       "binding": "DB",

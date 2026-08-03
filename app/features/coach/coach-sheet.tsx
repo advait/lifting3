@@ -32,6 +32,7 @@ import {
   type CoachMessagePart,
   type CoachToolPart,
   type CoachToolState,
+  type CoachWorkoutActivity,
 } from "~/features/coach/eda-projection";
 import type { CoachSessionRequest } from "~/features/coach/session-request";
 import { cn } from "~/lib/utils";
@@ -57,13 +58,15 @@ type CoachSheetSendMessage = (message: CoachSendMessageInput) => Promise<unknown
 type CoachToolDisplayState = CoachToolState | "approved" | "denied" | "waiting-approval";
 
 export interface CoachSheetChatController {
+  activities: readonly CoachWorkoutActivity[];
   clearError: () => void;
-  clearHistory: () => void | Promise<void>;
+  connectionStatus: "connecting" | "error" | "live";
   error: Error | undefined;
   isServerStreaming: boolean;
   isStreaming: boolean;
   messages: readonly CoachMessage[];
   sendMessage: CoachSheetSendMessage;
+  startNewConversation: () => void | Promise<void>;
   status: string;
 }
 
@@ -610,6 +613,52 @@ function CoachErrorCard({ message, onDismiss }: { message: string; onDismiss: ()
   );
 }
 
+function WorkoutActivityContext({
+  activities,
+  connectionStatus,
+}: {
+  activities: readonly CoachWorkoutActivity[];
+  connectionStatus: CoachSheetChatController["connectionStatus"];
+}) {
+  if (activities.length === 0) {
+    return null;
+  }
+
+  const recent = activities.slice(-6);
+  return (
+    <details className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2.5">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm">
+        <DumbbellIcon aria-hidden className="size-4 text-primary" />
+        <span className="min-w-0 flex-1 font-medium text-foreground">Coach workout context</span>
+        <Badge variant="outline">{connectionStatus === "live" ? "Synced" : "Reconnecting"}</Badge>
+      </summary>
+      <div className="mt-3 grid gap-2 border-border/60 border-t pt-3">
+        {recent.map((activity) => (
+          <div className="flex items-start gap-2 text-xs" key={activity.id}>
+            <CheckCircle2Icon aria-hidden className="mt-0.5 size-3.5 shrink-0 text-primary" />
+            <span className="min-w-0 flex-1 text-foreground">{activity.summary}</span>
+            <span className="shrink-0 text-muted-foreground">#{activity.seq}</span>
+          </div>
+        ))}
+        <details className="text-xs">
+          <summary className="cursor-pointer text-muted-foreground">Event lens</summary>
+          <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-background/80 p-2 text-[10px] leading-relaxed">
+            {JSON.stringify(
+              recent.map((activity) => ({
+                action: activity.record.action,
+                eventId: activity.id,
+                seq: activity.seq,
+              })),
+              null,
+              2,
+            )}
+          </pre>
+        </details>
+      </div>
+    </details>
+  );
+}
+
 function getAgentConfig(target: CoachTarget) {
   switch (target.kind) {
     case "workout":
@@ -649,11 +698,12 @@ function CoachSheetHeader({
           disabled={clearDisabled}
           onClick={onClear}
           size="sm"
+          title="Start a new conversation while preserving workout history"
           type="button"
           variant="outline"
         >
           <EraserIcon />
-          Clear
+          New chat
         </Button>
 
         <button
@@ -774,13 +824,15 @@ export function CoachSheetSessionPanel({
   const isProgrammaticScrollRef = useRef(false);
   const lastLoggedErrorSignatureRef = useRef<string | null>(null);
   const {
-    clearHistory,
+    activities,
     clearError,
+    connectionStatus,
     error,
     isServerStreaming,
     isStreaming,
     messages,
     sendMessage,
+    startNewConversation,
     status,
   } = chat;
   const isSubmitting = status === "submitted";
@@ -908,7 +960,7 @@ export function CoachSheetSessionPanel({
 
   const handleClearThread = async () => {
     clearError();
-    await clearHistory();
+    await startNewConversation();
     setIsBottomLocked(true);
     setDraft("");
   };
@@ -993,6 +1045,7 @@ export function CoachSheetSessionPanel({
             ref={discussionScrollRef}
           >
             <div className="grid min-h-full content-start gap-3">
+              <WorkoutActivityContext activities={activities} connectionStatus={connectionStatus} />
               {messages.length === 0 && !chatErrorMessage ? (
                 <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-4 text-muted-foreground text-sm leading-relaxed">
                   {agentConfig.emptyState}

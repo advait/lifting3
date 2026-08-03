@@ -35,8 +35,11 @@ The coach is integrated into the app shell and runs on the event-sourced [`effec
   - `set_user_profile`
 - Workout data lives in D1 and flows through shared route/service code. Chat does not own workout state.
 - `CoachThreadAttached` durably binds an EDA UUID session to its public thread key.
-- `WorkoutMutationCommitted` carries successful agent mutations to route revalidation without inspecting tool output.
-- The coach sheet replays and streams EDA events over an acknowledged, resumable WebSocket.
+- Every route or coach workout mutation writes a semantic `WorkoutActionCommitted` fact through a transactional D1 outbox.
+- A workout activity reducer projects correction-aware effective sets and concise coach context such as `Deadlift: 3× 115 lb × 5 reps @ RPE 7`.
+- The coach sheet hydrates an authoritative snapshot, then replays and streams EDA events over an acknowledged, resumable WebSocket.
+- `New chat` appends a durable conversation boundary. It clears visible/model conversation state without deleting the EDA session or workout event history.
+- The panel's Coach workout context and Event Lens make the live application-event projection visible to users.
 - The current model is `gpt-5.4` through Cloudflare AI Gateway `default`.
 - The only persisted app setting today is `user_profile`.
 

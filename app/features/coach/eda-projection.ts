@@ -17,6 +17,7 @@ import type {
   UserMessageCommittedPayload,
   UserMessageSubmittedPayload,
 } from "effect-durable-agent/types/events";
+import { formatWorkoutActionSummary, type WorkoutActionRecord } from "~/features/workouts/events";
 
 export interface CoachPositionedEvent {
   readonly event: {
@@ -54,7 +55,14 @@ export interface CoachMessage {
   readonly seq: number;
 }
 
-interface StoredCoachTool extends CoachToolPart {
+export interface CoachWorkoutActivity {
+  readonly id: string;
+  readonly record: WorkoutActionRecord;
+  readonly seq: number;
+  readonly summary: string;
+}
+
+export interface StoredCoachTool extends CoachToolPart {
   readonly inferenceId?: string;
   readonly seq: number;
 }
@@ -62,6 +70,8 @@ interface StoredCoachTool extends CoachToolPart {
 export interface EdaCoachProjectionState {
   readonly activeInferenceId: string | null;
   readonly activeRunIds: ReadonlySet<string>;
+  readonly activities: ReadonlyArray<CoachWorkoutActivity>;
+  readonly conversationStartedSeq: number;
   readonly error: string | null;
   readonly lastSeq: number;
   readonly liveText: string;
@@ -72,6 +82,8 @@ export interface EdaCoachProjectionState {
 export const createEdaCoachProjectionState = (): EdaCoachProjectionState => ({
   activeInferenceId: null,
   activeRunIds: new Set(),
+  activities: [],
+  conversationStartedSeq: 0,
   error: null,
   lastSeq: 0,
   liveText: "",
@@ -146,6 +158,37 @@ const applyEvent = (
     event.durability === "durable" ? Math.max(state.lastSeq, position.seq) : state.lastSeq;
 
   switch (event.type) {
+    case "WorkoutActionCommitted": {
+      const record = eventPayload<WorkoutActionRecord>(item);
+      if (state.activities.some((activity) => activity.id === record.eventId)) {
+        return { ...state, lastSeq };
+      }
+      return {
+        ...state,
+        activities: [
+          ...state.activities,
+          {
+            id: record.eventId,
+            record,
+            seq: position.seq,
+            summary: formatWorkoutActionSummary(record),
+          },
+        ],
+        lastSeq,
+      };
+    }
+    case "CoachConversationStarted":
+      return {
+        ...state,
+        activeInferenceId: null,
+        activeRunIds: new Set(),
+        conversationStartedSeq: position.seq,
+        error: null,
+        lastSeq,
+        liveText: "",
+        messages: new Map(),
+        tools: new Map(),
+      };
     case "UserMessageSubmitted":
     case "UserMessageCommitted": {
       const payload = eventPayload<UserMessageSubmittedPayload | UserMessageCommittedPayload>(item);
@@ -316,6 +359,86 @@ const applyEvent = (
     default:
       return { ...state, lastSeq };
   }
+};
+
+interface CoachSnapshotInput {
+  readonly activeInferenceId?: string | null;
+  readonly activeRunIds?: readonly string[];
+  readonly activities?: readonly {
+    readonly record: WorkoutActionRecord;
+    readonly seq: number;
+  }[];
+  readonly lastSeq: number;
+  readonly messages: readonly unknown[];
+  readonly tools?: readonly StoredCoachTool[];
+}
+
+/** Hydrate the pure client projection before following WebSocket events after its cursor. */
+export const hydrateEdaCoachProjection = (
+  snapshot: CoachSnapshotInput,
+): EdaCoachProjectionState => {
+  let state = createEdaCoachProjectionState();
+  const messages = new Map<string, CoachMessage>();
+
+  for (const rawMessage of snapshot.messages) {
+    if (typeof rawMessage !== "object" || rawMessage === null) {
+      continue;
+    }
+    const message = rawMessage as Record<string, unknown>;
+    const tag = message._tag;
+    const messageId = message.messageId;
+    const seq = message.seq;
+    if (typeof messageId !== "string" || typeof seq !== "number") {
+      continue;
+    }
+    if (tag === "User" || tag === "Steering") {
+      const text = textFromContent(message.content);
+      if (text.trim()) {
+        messages.set(messageId, {
+          id: messageId,
+          parts: [{ text, type: "text" }],
+          role: "user",
+          seq,
+        });
+      }
+      continue;
+    }
+    if (tag === "Assistant" || tag === "AssistantPartial") {
+      const content = message.content;
+      const text =
+        typeof content === "object" &&
+        content !== null &&
+        "text" in content &&
+        typeof content.text === "string"
+          ? content.text
+          : "";
+      messages.set(messageId, {
+        id: messageId,
+        inferenceId: typeof message.inferenceId === "string" ? message.inferenceId : undefined,
+        parts: text.trim() ? [{ text, type: "text" }] : [],
+        role: "assistant",
+        seq,
+      });
+    }
+  }
+
+  const activities = (snapshot.activities ?? []).map(({ record, seq }) => ({
+    id: record.eventId,
+    record,
+    seq,
+    summary: formatWorkoutActionSummary(record),
+  }));
+  const tools = new Map((snapshot.tools ?? []).map((tool) => [tool.toolCallId, tool]));
+  state = {
+    ...state,
+    activeInferenceId: snapshot.activeInferenceId ?? null,
+    activeRunIds: new Set(snapshot.activeRunIds ?? []),
+    activities,
+    lastSeq: snapshot.lastSeq,
+    messages,
+    tools,
+  };
+  return state;
 };
 
 export const applyEdaCoachEvents = (

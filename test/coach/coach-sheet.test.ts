@@ -21,14 +21,16 @@ const { getChatState, resetChatFixture, setChatState, subscribeToChatState } = v
 
   function createEmptyChatState() {
     return {
+      activities: [],
       addToolApprovalResponse: vi.fn(),
       clearError: vi.fn(),
-      clearHistory: vi.fn(),
+      connectionStatus: "live",
       error: undefined,
       isServerStreaming: false,
       isStreaming: false,
       messages: [],
       sendMessage: vi.fn(async () => {}),
+      startNewConversation: vi.fn(async () => {}),
       status: "ready",
       stop: vi.fn(async () => {}),
     };

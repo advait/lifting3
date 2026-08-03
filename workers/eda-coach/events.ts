@@ -9,10 +9,15 @@ import {
   makeRootEDAEventTrace,
   schemaV1,
 } from "effect-durable-agent/types/events";
+import {
+  WorkoutActionRecord,
+  type WorkoutActionRecord as WorkoutActionRecordValue,
+} from "~/features/workouts/events";
 
 export const coachEventNamespace = EventNamespace.make("lifting3.coach");
 export const coachThreadAttachedEventType = makeEventType("CoachThreadAttached");
-export const workoutMutationCommittedEventType = makeEventType("WorkoutMutationCommitted");
+export const workoutActionCommittedEventType = makeEventType("WorkoutActionCommitted");
+export const coachConversationStartedEventType = makeEventType("CoachConversationStarted");
 
 export const CoachTargetEvent = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("general") }),
@@ -32,27 +37,33 @@ export const CoachThreadAttachedEvent = Schema.Struct({
 });
 export type CoachThreadAttachedEvent = typeof CoachThreadAttachedEvent.Type;
 
-export const WorkoutMutationCommittedPayload = Schema.Struct({
-  eventId: Schema.NonEmptyString,
-  invalidate: Schema.NonEmptyArray(Schema.NonEmptyString),
-  type: Schema.Literals(["workout_created", "workout_updated"]),
-  version: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-  workoutId: Schema.NonEmptyString,
-});
-export type WorkoutMutationCommittedPayload = typeof WorkoutMutationCommittedPayload.Type;
-
-export const WorkoutMutationCommittedEvent = Schema.Struct({
+export const WorkoutActionCommittedEvent = Schema.Struct({
   ...DurableEventEnvelope.fields,
   namespace: Schema.Literal(coachEventNamespace),
-  type: Schema.Literal(workoutMutationCommittedEventType),
+  type: Schema.Literal(workoutActionCommittedEventType),
   schemaVersion: Schema.Literal(schemaV1),
-  payload: WorkoutMutationCommittedPayload,
+  payload: WorkoutActionRecord,
 });
-export type WorkoutMutationCommittedEvent = typeof WorkoutMutationCommittedEvent.Type;
+export type WorkoutActionCommittedEvent = typeof WorkoutActionCommittedEvent.Type;
+
+export const CoachConversationStartedPayload = Schema.Struct({
+  reason: Schema.Literal("user-requested"),
+});
+export type CoachConversationStartedPayload = typeof CoachConversationStartedPayload.Type;
+
+export const CoachConversationStartedEvent = Schema.Struct({
+  ...DurableEventEnvelope.fields,
+  namespace: Schema.Literal(coachEventNamespace),
+  type: Schema.Literal(coachConversationStartedEventType),
+  schemaVersion: Schema.Literal(schemaV1),
+  payload: CoachConversationStartedPayload,
+});
+export type CoachConversationStartedEvent = typeof CoachConversationStartedEvent.Type;
 
 export const CoachDurableEvent = Schema.Union([
   CoachThreadAttachedEvent,
-  WorkoutMutationCommittedEvent,
+  WorkoutActionCommittedEvent,
+  CoachConversationStartedEvent,
 ]);
 export type CoachDurableEvent = typeof CoachDurableEvent.Type;
 
@@ -74,35 +85,34 @@ export const makeCoachThreadAttachedEvent = (input: {
     type: coachThreadAttachedEventType,
   });
 
-export const makeWorkoutMutationCommittedEvent = (input: {
-  readonly eventId: EventId;
-  readonly invalidate: readonly string[];
-  readonly mutationType: "workout_created" | "workout_updated";
+export const makeWorkoutActionCommittedEvent = (input: {
+  readonly action: WorkoutActionRecordValue;
   readonly sessionId: SessionId;
-  readonly version: number;
-  readonly workoutId: string;
-}): WorkoutMutationCommittedEvent => {
-  const appEventId = String(input.eventId);
-  const [firstInvalidateKey, ...remainingInvalidateKeys] = input.invalidate;
-  if (firstInvalidateKey === undefined) {
-    throw new Error("Workout mutation events require at least one invalidation key.");
-  }
+}): WorkoutActionCommittedEvent =>
+  WorkoutActionCommittedEvent.make({
+    createdAtMs: UnixEpochMillis.make(Date.parse(input.action.occurredAt)),
+    durability: "durable",
+    eventId: EventId.make(input.action.eventId),
+    namespace: coachEventNamespace,
+    payload: input.action,
+    schemaVersion: schemaV1,
+    sessionId: input.sessionId,
+    trace: makeRootEDAEventTrace(),
+    type: workoutActionCommittedEventType,
+  });
 
-  return WorkoutMutationCommittedEvent.make({
+export const makeCoachConversationStartedEvent = (input: {
+  readonly eventId: EventId;
+  readonly sessionId: SessionId;
+}): CoachConversationStartedEvent =>
+  CoachConversationStartedEvent.make({
     createdAtMs: UnixEpochMillis.make(Date.now()),
     durability: "durable",
     eventId: input.eventId,
     namespace: coachEventNamespace,
-    payload: WorkoutMutationCommittedPayload.make({
-      eventId: appEventId,
-      invalidate: [firstInvalidateKey, ...remainingInvalidateKeys],
-      type: input.mutationType,
-      version: input.version,
-      workoutId: input.workoutId,
-    }),
+    payload: CoachConversationStartedPayload.make({ reason: "user-requested" }),
     schemaVersion: schemaV1,
     sessionId: input.sessionId,
     trace: makeRootEDAEventTrace(),
-    type: workoutMutationCommittedEventType,
+    type: coachConversationStartedEventType,
   });
-};

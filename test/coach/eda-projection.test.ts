@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   applyEdaCoachEvents,
   createEdaCoachProjectionState,
+  hydrateEdaCoachProjection,
   projectEdaCoachMessages,
   type CoachPositionedEvent,
 } from "../../app/features/coach/eda-projection";
@@ -106,5 +107,76 @@ describe("EDA coach panel projection", () => {
     expect(state.tools.get("tool-1")).toEqual(
       expect.objectContaining({ error: "D1 is unavailable", state: "error" }),
     );
+  });
+
+  it("preserves workout truth while a durable conversation boundary clears chat state", () => {
+    const record = {
+      action: {
+        kind: "set_logged" as const,
+        set: {
+          actual: { rpe: 7, weightLbs: 115 },
+          confirmedAt: "2026-08-03T10:00:00.000Z",
+          designation: "working",
+          exerciseId: "exercise-1",
+          exerciseName: "Deadlift",
+          orderIndex: 0,
+          planned: { rpe: 7, weightLbs: 115 },
+          reps: 5,
+          setId: "set-1",
+        },
+      },
+      actor: "user" as const,
+      eventId: "0198c900-0000-7000-8000-000000000001",
+      occurredAt: "2026-08-03T10:00:00.000Z",
+      source: "workout-ui" as const,
+      version: 3,
+      workoutId: "workout-1",
+    };
+    const state = applyEdaCoachEvents(createEdaCoachProjectionState(), [
+      positioned(1, "WorkoutActionCommitted", record),
+      positioned(2, "UserMessageSubmitted", {
+        content: [{ text: "How did that look?", type: "text" }],
+        messageId: "message-user",
+      }),
+      positioned(3, "CoachConversationStarted", { reason: "user-requested" }),
+    ]);
+
+    expect(state.activities).toEqual([
+      expect.objectContaining({
+        id: record.eventId,
+        summary: "Logged Deadlift — 115 lb × 5 @ RPE 7",
+      }),
+    ]);
+    expect(state.conversationStartedSeq).toBe(3);
+    expect(projectEdaCoachMessages(state)).toEqual([]);
+  });
+
+  it("hydrates reconnect-safe active and tool state from a snapshot", () => {
+    const state = hydrateEdaCoachProjection({
+      activeInferenceId: "inference-1",
+      activeRunIds: ["run-1"],
+      lastSeq: 9,
+      messages: [],
+      tools: [
+        {
+          inferenceId: "inference-1",
+          input: { workoutId: "workout-1" },
+          seq: 8,
+          state: "streaming",
+          toolCallId: "tool-1",
+          toolName: "patch_workout",
+          type: "tool",
+        },
+      ],
+    });
+
+    expect(state.activeRunIds).toEqual(new Set(["run-1"]));
+    expect(state.lastSeq).toBe(9);
+    expect(projectEdaCoachMessages(state)).toEqual([
+      expect.objectContaining({
+        id: "live:inference-1",
+        parts: [expect.objectContaining({ toolCallId: "tool-1", state: "streaming" })],
+      }),
+    ]);
   });
 });

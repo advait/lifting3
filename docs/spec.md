@@ -1,6 +1,6 @@
 # lifting3 Current Implementation Spec
 
-Reviewed: 2026-04-21
+Reviewed: 2026-08-03
 
 This document describes the product and architecture that are implemented today. It is intentionally narrower than the older aspirational spec.
 
@@ -89,9 +89,12 @@ Current behavior:
 - the app shell defaults to the `general` thread
 - workout detail routes override the coach target to `workout:{workoutId}`
 - a deterministic UUID v5 maps each public thread key to its EDA session
-- the coach sheet replays durable history and live deltas over EDA's WebSocket protocol
+- the coach sheet hydrates an authoritative projection snapshot, then replays durable history and live deltas over EDA's WebSocket protocol
 - frame acknowledgements and a durable sequence cursor make reconnects resumable
-- workout tool mutations emit durable `WorkoutMutationCommitted` application events
+- every UI or coach workout mutation emits a semantic `WorkoutActionCommitted` event through a transactional D1 outbox
+- the workout activity reducer gives the coach correction-aware effective sets and changes since its previous response
+- `New chat` appends `CoachConversationStarted`, clearing visible/model conversation state while retaining the session and event history
+- the Coach workout context and Event Lens render directly from the EDA client projection
 
 The repo does not currently implement:
 
@@ -154,10 +157,11 @@ Authoritative structured state lives in D1:
 - workout version counters
 - app setting `user_profile`
 - history queries and derived workout/exercise reads
+- transactional `workout_event_outbox` delivery state
 
 ### Agent Runtime
 
-Conversation state lives in the Cloudflare agent runtime used by `CoachAgent`.
+Conversation state, semantic workout events, and application reducer projections live in `EDACoachAgent`.
 
 The app does not currently maintain D1 `sessions` or `messages` tables for chat history.
 
@@ -166,7 +170,7 @@ The app does not currently maintain D1 `sessions` or `messages` tables for chat 
 Route revalidation is currently driven by browser-local app events:
 
 - route actions publish invalidation envelopes
-- successful coach tool calls also publish invalidation envelopes
+- `WorkoutActionCommitted` events adapt to invalidation envelopes when projected from EDA
 - revalidation uses route handles plus `useRevalidator()`
 - cross-tab propagation uses `BroadcastChannel` when available
 
@@ -221,7 +225,7 @@ Inference is currently configured in code, not in D1 settings.
 Current values:
 
 - AI Gateway id: `default`
-- model id: `openai/gpt-5.4`
+- model id: `gpt-5.4`
 
 The older docs described a D1-backed global model preference. That is not implemented yet.
 
@@ -287,7 +291,7 @@ The main current gaps are:
 2. Analytics route is mostly placeholder UI.
 3. Settings route is mostly placeholder UI.
 4. Model selection is hardcoded instead of configurable.
-5. Route invalidation remains browser-local, but coach mutations now arrive as server-pushed EDA events.
+5. Route invalidation remains browser-local, but all semantic workout actions now arrive as server-pushed EDA events.
 6. The direct workout UI exposes fewer restructuring actions than the coach can perform.
 
 ## 14. Current Documentation Rule
@@ -298,7 +302,7 @@ When updating docs for this repo, describe the current implementation using this
 - `effect-durable-agent`
 - `general` thread
 - `workout:{workoutId}` thread
-- durable coach mutation events plus browser app-event invalidation
+- semantic workout action events, reducer projections, and browser app-event invalidation
 - hardcoded AI Gateway model
 
 Do not describe these as current implementation unless they are added later:

@@ -21,7 +21,7 @@
     "preinstall": "node --experimental-strip-types ./scripts/ensure-eda-submodule.ts",
     "postinstall": "corepack pnpm eda:install && corepack pnpm eda:build && corepack pnpm cf-typegen",
     "preview": "pnpm build && vp preview",
-    "test": "vp test",
+    "test": "vp test --run && vp test --config vitest.dom.config.mjs --run",
     "test:watch": "vp test watch",
     "typecheck": "pnpm cf-typegen && react-router typegen && tsc -b",
     "validate:workout-json": "node --experimental-strip-types ./scripts/validate-workout-json.ts",
@@ -30,13 +30,8 @@
     "import:app-state": "node --experimental-strip-types ./scripts/import-app-state.ts"
   },
   "dependencies": {
-    "@cloudflare/ai-chat": "^0.4.4",
-    "@cloudflare/shell": "^0.3.3",
-    "@cloudflare/think": "^0.3.0",
     "@effect/ai-openai": "4.0.0-beta.102",
     "@fontsource/ibm-plex-sans": "^5.2.8",
-    "agents": "^0.11.0",
-    "ai": "^6.0.162",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -53,7 +48,6 @@
     "streamdown": "^2.5.0",
     "tailwind-merge": "^3.5.0",
     "tw-animate-css": "^1.4.0",
-    "workers-ai-provider": "^3.1.11",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -67,7 +61,7 @@
     "@types/react-dom": "^19.2.3",
     "cf": "^0.0.5",
     "drizzle-kit": "^0.31.10",
-    "jsdom": "^29.0.2",
+    "jsdom": "29.0.2",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
     "vite": "npm:@voidzero-dev/vite-plus-core@0.1.18",

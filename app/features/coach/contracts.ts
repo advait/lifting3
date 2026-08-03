@@ -60,7 +60,7 @@ export function parseCoachInstanceName(instanceName: string): CoachThread | null
 
 export function formatCoachApiPath(
   target: CoachTarget,
-  resource: "events" | "messages" | "session" | "stop",
+  resource: "conversation" | "events" | "messages" | "snapshot" | "stop",
 ) {
   return `/api/coach/threads/${encodeURIComponent(formatCoachInstanceName(target))}/${resource}`;
 }

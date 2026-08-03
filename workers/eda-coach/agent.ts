@@ -11,6 +11,7 @@ import { makeCoachPromptProjectorLayer } from "./prompt-projector";
 import { coachThreadReducer } from "./reducer";
 import { COACH_THREAD_STORAGE_KEY, makeCoachToolRegistry } from "./tools";
 import { coachWebSocketWireProtocol } from "./websocket-wire";
+import { workoutActivityReducer } from "./workout-activity-reducer";
 
 const DEFAULT_AI_GATEWAY_ID = "default";
 const DEFAULT_COACH_MODEL_ID = "gpt-5.4";
@@ -32,8 +33,8 @@ export class EDACoachAgent extends EDASessionDurableObject<Env> {
         modelId: DEFAULT_COACH_MODEL_ID,
       }),
       promptProjectorLayer: makeCoachPromptProjectorLayer(db),
-      reducers: [coachThreadReducer],
-      toolRegistry: makeCoachToolRegistry({ db, storage: ctx.storage }),
+      reducers: [coachThreadReducer, workoutActivityReducer],
+      toolRegistry: makeCoachToolRegistry({ db, env, storage: ctx.storage }),
       webSocketProtocol: coachWebSocketWireProtocol,
     });
   }

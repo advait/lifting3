@@ -182,7 +182,8 @@ describe("ExerciseRestTimer", () => {
 
     expect(getStatus()).toBe("running");
     expect(getValue()).toBe("1:30");
-    expect(container.querySelector("[aria-label='Start rest timer']")).not.toBeNull();
+    expect(container.querySelector("[aria-label='Start rest timer']")).toBeNull();
+    expect(container.querySelector("[aria-label='Pause rest timer']")).not.toBeNull();
   });
 
   it("switches to overtime and +30 returns the timer to the countdown state", () => {

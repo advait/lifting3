@@ -16,10 +16,15 @@ import {
   patchWorkoutToolInputSchema,
   queryHistoryToolInputSchema,
 } from "~/features/workouts/agent-tools";
-import { createWorkoutAgentToolService } from "~/features/workouts/d1-service.server";
+import {
+  createWorkoutAgentToolService,
+  loadPendingWorkoutActionRecords,
+  markWorkoutActionDelivered,
+} from "~/features/workouts/d1-service.server";
 import { coachTargetSchema, type CoachTarget } from "~/features/coach/contracts";
 import { describePatchWorkoutTool } from "../coach/prompt";
-import { makeWorkoutMutationCommittedEvent } from "./events";
+import { makeWorkoutActionCommittedEvent } from "./events";
+import { drainWorkoutEventOutbox } from "./workout-outbox";
 
 export const COACH_THREAD_STORAGE_KEY = "lifting3:coach-thread";
 
@@ -82,6 +87,7 @@ const buildWorkoutScopeError = (currentWorkoutId: string, requestedWorkoutId: st
 /** EDA-native registry that reuses lifting3's existing Zod contracts and D1 services. */
 export const makeCoachToolRegistry = (input: {
   readonly db: AppDatabase;
+  readonly env: Env;
   readonly storage: DurableObjectStorage;
 }): EDAToolRegistryShape => {
   const workoutTools = createWorkoutAgentToolService(input.db);
@@ -98,14 +104,8 @@ export const makeCoachToolRegistry = (input: {
             const result = yield* asToolEffect(() => workoutTools.createWorkout(parsed));
 
             if (result.ok) {
-              const eventId = yield* context.makeEventId();
-              yield* context.emitDurable(
-                makeWorkoutMutationCommittedEvent({
-                  eventId,
-                  invalidate: result.invalidate,
-                  mutationType: "workout_created",
-                  sessionId: context.sessionId,
-                  version: result.version,
+              yield* asToolEffect(() =>
+                drainWorkoutEventOutbox(input.db, input.env, {
                   workoutId: result.workoutId,
                 }),
               );
@@ -125,17 +125,26 @@ export const makeCoachToolRegistry = (input: {
             const result = yield* asToolEffect(() => workoutTools.patchWorkout(parsed));
 
             if (result.ok) {
-              const eventId = yield* context.makeEventId();
-              yield* context.emitDurable(
-                makeWorkoutMutationCommittedEvent({
-                  eventId,
-                  invalidate: result.invalidate,
-                  mutationType: "workout_updated",
-                  sessionId: context.sessionId,
-                  version: result.version,
-                  workoutId: result.workoutId,
-                }),
-              );
+              if (target.kind === "workout" && target.workoutId === result.workoutId) {
+                const pending = yield* asToolEffect(() =>
+                  loadPendingWorkoutActionRecords(input.db, { workoutId: result.workoutId }),
+                );
+                for (const action of pending) {
+                  yield* context.emitDurable(
+                    makeWorkoutActionCommittedEvent({
+                      action,
+                      sessionId: context.sessionId,
+                    }),
+                  );
+                  yield* asToolEffect(() => markWorkoutActionDelivered(input.db, action.eventId));
+                }
+              } else {
+                yield* asToolEffect(() =>
+                  drainWorkoutEventOutbox(input.db, input.env, {
+                    workoutId: result.workoutId,
+                  }),
+                );
+              }
             }
 
             return result;

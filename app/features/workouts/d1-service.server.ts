@@ -1,9 +1,25 @@
 import type { BatchItem } from "drizzle-orm/batch";
-import { and, asc, desc, eq, gte, inArray, isNotNull, lt, lte, ne, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import type { AppDatabase } from "../../lib/.server/db/index.ts";
+import { makeEdaEventId } from "../../lib/.server/eda-event-id.ts";
 import {
   exerciseSets,
+  workoutEventOutbox,
   workoutExercises,
   workouts,
   type ExerciseSetRow,
@@ -37,6 +53,13 @@ import type {
   WorkoutSet,
 } from "./contracts.ts";
 import {
+  WorkoutActionRecord,
+  decodeWorkoutActionRecord,
+  encodeWorkoutActionRecord,
+  type WorkoutAction,
+  type WorkoutSetActionSnapshot,
+} from "./events.ts";
+import {
   workoutDetailLoaderDataSchema,
   workoutDetailWorkoutSchema,
   workoutExerciseSchema,
@@ -61,6 +84,7 @@ interface StoredWorkoutRecord {
 type CreateWorkoutToolResult =
   | {
       createdAt: string;
+      eventId: string;
       exerciseCount: number;
       invalidate: ReturnType<typeof uniqueInvalidateKeys>;
       ok: true;
@@ -82,6 +106,7 @@ type PatchWorkoutToolResult =
         summary: string;
         type: PatchWorkoutToolOp["type"];
       }>;
+      eventId: string;
       invalidate: ReturnType<typeof uniqueInvalidateKeys>;
       ok: true;
       reason: string;
@@ -287,6 +312,7 @@ type RouteMutationPlan = {
 
 type ExecutedMutation = {
   applied: MutationOperationEffect[];
+  event: WorkoutActionRecord;
   record: StoredWorkoutRecord;
 };
 
@@ -726,6 +752,7 @@ function buildRouteInvalidateKeys(
 function createMutationResult(
   action: WorkoutMutationInput["action"],
   record: StoredWorkoutRecord,
+  eventId: string,
   eventType: WorkoutMutationResult["eventType"],
   exerciseSchemaIds: readonly string[] = [],
   includeExerciseInvalidations = false,
@@ -742,7 +769,7 @@ function createMutationResult(
   return workoutMutationResultSchema.parse({
     action,
     confirmedSet: options?.confirmedSet,
-    eventId: `${record.workout.id}-v${record.workout.version}-${eventType}`,
+    eventId,
     eventType,
     invalidate,
     ok: true,
@@ -819,6 +846,134 @@ function getMutationTimestamp(input: WorkoutMutationInput) {
 
 function getExerciseDisplayName(exerciseSchemaId: WorkoutExerciseState["exerciseSchemaId"]) {
   return getExerciseSchemaById(exerciseSchemaId)?.displayName ?? exerciseSchemaId;
+}
+
+function buildSetActionSnapshot(
+  record: StoredWorkoutRecord,
+  exerciseId: string,
+  setId: string,
+): WorkoutSetActionSnapshot {
+  const exercise = findExercise(record, exerciseId);
+  const set = findSet(exercise, setId);
+
+  return {
+    actual: set.actual,
+    confirmedAt: set.confirmedAt,
+    designation: set.designation,
+    exerciseId,
+    exerciseName: getExerciseDisplayName(exercise.exerciseSchemaId),
+    orderIndex: set.orderIndex,
+    planned: set.planned,
+    reps: set.reps,
+    setId,
+  };
+}
+
+function buildRouteWorkoutAction(
+  input: WorkoutMutationInput,
+  before: StoredWorkoutRecord,
+  after: StoredWorkoutRecord,
+  summary: string,
+): WorkoutAction {
+  switch (input.action) {
+    case "start_workout":
+      return {
+        kind: "workout_started",
+        startedAt: after.workout.startedAt ?? after.workout.updatedAt,
+        title: after.workout.title,
+      };
+    case "confirm_set": {
+      const wasConfirmed = findSet(findExercise(before, input.exerciseId), input.setId).confirmedAt;
+      return {
+        kind: wasConfirmed === null ? "set_logged" : "set_corrected",
+        set: buildSetActionSnapshot(after, input.exerciseId, input.setId),
+      };
+    }
+    case "update_set_actuals": {
+      const wasConfirmed = findSet(findExercise(before, input.exerciseId), input.setId).confirmedAt;
+      return wasConfirmed === null
+        ? {
+            exerciseId: input.exerciseId,
+            kind: "workout_plan_adjusted",
+            operation: input.action,
+            setId: input.setId,
+            summary,
+          }
+        : {
+            kind: "set_corrected",
+            set: buildSetActionSnapshot(after, input.exerciseId, input.setId),
+          };
+    }
+    case "unconfirm_set":
+      return {
+        kind: "set_log_reverted",
+        set: buildSetActionSnapshot(after, input.exerciseId, input.setId),
+      };
+    case "update_workout_notes":
+      return {
+        coachNotes: after.workout.coachNotes,
+        kind: "workout_note_changed",
+        userNotes: after.workout.userNotes,
+      };
+    case "update_exercise_notes": {
+      const exercise = findExercise(after, input.exerciseId);
+      return {
+        coachNotes: exercise.coachNotes,
+        exerciseId: exercise.id,
+        exerciseName: getExerciseDisplayName(exercise.exerciseSchemaId),
+        kind: "exercise_note_changed",
+        userNotes: exercise.userNotes,
+      };
+    }
+    case "finish_workout":
+      return {
+        completedAt: after.workout.completedAt ?? after.workout.updatedAt,
+        kind: "workout_completed",
+        title: after.workout.title,
+      };
+    case "delete_workout":
+      return { kind: "workout_deleted", title: before.workout.title };
+    default:
+      return {
+        ...(input.action === "update_set_designation" ||
+        input.action === "update_set_planned" ||
+        input.action === "add_set" ||
+        input.action === "remove_set"
+          ? { exerciseId: input.exerciseId }
+          : {}),
+        ...(input.action === "update_set_designation" ||
+        input.action === "update_set_planned" ||
+        input.action === "remove_set"
+          ? { setId: input.setId }
+          : {}),
+        kind: "workout_plan_adjusted",
+        operation: input.action,
+        summary,
+      };
+  }
+}
+
+function makeWorkoutActionRecord(input: {
+  action: WorkoutAction;
+  actor: "coach" | "user";
+  eventId: string;
+  occurredAt: string;
+  source: "coach-tool" | "workout-ui";
+  version: number;
+  workoutId: string;
+}): WorkoutActionRecord {
+  return WorkoutActionRecord.make(input);
+}
+
+function outboxInsertStatement(db: AppDatabase, event: WorkoutActionRecord) {
+  return db.insert(workoutEventOutbox).values({
+    createdAt: event.occurredAt,
+    deliveryAttempts: 0,
+    eventId: event.eventId,
+    eventJson: JSON.stringify(encodeWorkoutActionRecord(event)),
+    workoutId: event.workoutId,
+    workoutVersion: event.version,
+  });
 }
 
 function normalizeRouteMutation(input: NonDeleteWorkoutMutationInput): RouteMutationPlan {
@@ -1465,9 +1620,17 @@ function getInvalidateExerciseSchemaIds(applied: readonly MutationOperationEffec
 async function executeStoredWorkoutMutation(
   db: AppDatabase,
   input: {
+    actor: "coach" | "user";
+    eventId: string;
     expectedVersion: number;
+    makeAction: (
+      before: StoredWorkoutRecord,
+      after: StoredWorkoutRecord,
+      applied: readonly MutationOperationEffect[],
+    ) => WorkoutAction;
     operations: readonly MutationOperation[];
     record?: StoredWorkoutRecord;
+    source: "coach-tool" | "workout-ui";
     updatedAt: string;
     workoutId: string;
   },
@@ -1475,15 +1638,25 @@ async function executeStoredWorkoutMutation(
   const record = input.record ?? (await loadStoredWorkoutRecord(db, input.workoutId));
 
   assertExpectedVersion(record, input.expectedVersion);
+  const before = cloneValue(record);
 
   const applied = input.operations.map((operation) =>
     applyMutationOperation(record, operation, input.updatedAt),
   );
 
   finalizeMutationRecord(record, input.updatedAt);
-  await persistStoredWorkoutRecord(db, record, input.expectedVersion);
+  const event = makeWorkoutActionRecord({
+    action: input.makeAction(before, record, applied),
+    actor: input.actor,
+    eventId: input.eventId,
+    occurredAt: input.updatedAt,
+    source: input.source,
+    version: record.workout.version,
+    workoutId: record.workout.id,
+  });
+  await persistStoredWorkoutRecord(db, record, input.expectedVersion, event);
 
-  return { applied, record };
+  return { applied, event, record };
 }
 
 function buildWhereClause(conditions: Array<ReturnType<typeof eq>>) {
@@ -1770,6 +1943,7 @@ async function persistStoredWorkoutRecord(
   db: AppDatabase,
   record: StoredWorkoutRecord,
   expectedVersion: number,
+  event?: WorkoutActionRecord,
 ) {
   const exerciseRows = toWorkoutExerciseInsertRows(record);
   const setRows = toExerciseSetInsertRows(record);
@@ -1807,6 +1981,7 @@ async function persistStoredWorkoutRecord(
       ...chunkRows(setRows, maxSetRowsPerInsert).map((rows) =>
         db.insert(exerciseSets).values(rows),
       ),
+      ...(event === undefined ? [] : [outboxInsertStatement(db, event)]),
     ];
     const [updateResult] = await db.batch(batchStatements);
 
@@ -1832,12 +2007,14 @@ async function deleteStoredWorkoutRecord(
   db: AppDatabase,
   workoutId: string,
   expectedVersion: number,
+  event: WorkoutActionRecord,
 ) {
   try {
-    const deleteStatements: [BatchItem<"sqlite">] = [
+    const deleteStatements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
       db
         .delete(workouts)
         .where(and(eq(workouts.id, workoutId), eq(workouts.version, expectedVersion))),
+      outboxInsertStatement(db, event),
     ];
     const [deleteResult] = await db.batch(deleteStatements);
 
@@ -1957,7 +2134,11 @@ function createPlannedWorkoutRecord(
   } satisfies StoredWorkoutRecord;
 }
 
-async function insertStoredWorkoutRecord(db: AppDatabase, record: StoredWorkoutRecord) {
+async function insertStoredWorkoutRecord(
+  db: AppDatabase,
+  record: StoredWorkoutRecord,
+  event?: WorkoutActionRecord,
+) {
   const exerciseRows = toWorkoutExerciseInsertRows(record);
   const setRows = toExerciseSetInsertRows(record);
   const maxExerciseRowsPerInsert = Math.max(
@@ -1988,6 +2169,7 @@ async function insertStoredWorkoutRecord(db: AppDatabase, record: StoredWorkoutR
       db.insert(workoutExercises).values(rows),
     ),
     ...chunkRows(setRows, maxSetRowsPerInsert).map((rows) => db.insert(exerciseSets).values(rows)),
+    ...(event === undefined ? [] : [outboxInsertStatement(db, event)]),
   ];
 
   await db.batch(batchStatements);
@@ -2408,6 +2590,7 @@ export function createWorkoutAgentToolService(db: AppDatabase) {
   return {
     async createWorkout(input: CreateWorkoutToolInput): Promise<CreateWorkoutToolResult> {
       const createdAt = new Date().toISOString();
+      const eventId = await makeEdaEventId();
       const sourceRecord = input.sourceWorkoutId
         ? await loadStoredWorkoutRecord(db, input.sourceWorkoutId).catch((error) => {
             if (error instanceof WorkoutNotFoundError) {
@@ -2428,11 +2611,25 @@ export function createWorkoutAgentToolService(db: AppDatabase) {
       }
 
       const record = createPlannedWorkoutRecord(input, createdAt, sourceRecord);
+      const event = makeWorkoutActionRecord({
+        action: {
+          exerciseCount: record.exercises.length,
+          kind: "workout_created",
+          title: record.workout.title,
+        },
+        actor: "coach",
+        eventId,
+        occurredAt: createdAt,
+        source: "coach-tool",
+        version: record.workout.version,
+        workoutId: record.workout.id,
+      });
 
-      await insertStoredWorkoutRecord(db, record);
+      await insertStoredWorkoutRecord(db, record, event);
 
       return {
         createdAt,
+        eventId,
         exerciseCount: record.exercises.length,
         invalidate: createToolInvalidateKeys(
           record.workout.id,
@@ -2448,12 +2645,21 @@ export function createWorkoutAgentToolService(db: AppDatabase) {
 
     async patchWorkout(input: PatchWorkoutToolInput): Promise<PatchWorkoutToolResult> {
       try {
+        const eventId = await makeEdaEventId();
         const normalizedOperations = input.ops.map((operation) =>
           normalizePatchOperation(operation),
         );
         const { applied, record } = await executeStoredWorkoutMutation(db, {
+          actor: "coach",
+          eventId,
           expectedVersion: input.expectedVersion,
+          makeAction: (_before, _after, effects) => ({
+            kind: "workout_plan_adjusted",
+            operation: input.ops.map((operation) => operation.type).join(","),
+            summary: effects.map((effect) => effect.summary).join(" ") || input.reason.trim(),
+          }),
           operations: normalizedOperations,
+          source: "coach-tool",
           updatedAt: new Date().toISOString(),
           workoutId: input.workoutId,
         });
@@ -2463,6 +2669,7 @@ export function createWorkoutAgentToolService(db: AppDatabase) {
             summary: operation.summary,
             type: input.ops[index].type,
           })),
+          eventId,
           invalidate: createToolInvalidateKeys(
             record.workout.id,
             getInvalidateExerciseSchemaIds(applied),
@@ -2638,26 +2845,43 @@ export function createWorkoutRouteService(db: AppDatabase): WorkoutRouteService 
 
     async mutateWorkout(input: WorkoutMutationInput) {
       const record = await loadStoredWorkoutRecord(db, input.workoutId);
+      const eventId = await makeEdaEventId();
+      const occurredAt = getMutationTimestamp(input);
 
       assertExpectedVersion(record, input.expectedVersion);
 
       if (input.action === "delete_workout") {
-        record.workout.updatedAt = getMutationTimestamp(input);
+        const before = cloneValue(record);
+        record.workout.updatedAt = occurredAt;
         record.workout.version += 1;
+        const event = makeWorkoutActionRecord({
+          action: buildRouteWorkoutAction(input, before, record, "Deleted the workout."),
+          actor: "user",
+          eventId,
+          occurredAt,
+          source: "workout-ui",
+          version: record.workout.version,
+          workoutId: record.workout.id,
+        });
 
-        const result = createMutationResult(input.action, record, "workout_deleted");
+        const result = createMutationResult(input.action, record, eventId, "workout_deleted");
 
-        await deleteStoredWorkoutRecord(db, record.workout.id, input.expectedVersion);
+        await deleteStoredWorkoutRecord(db, record.workout.id, input.expectedVersion, event);
 
         return result;
       }
 
       const plan = normalizeRouteMutation(input);
       const { applied, record: updatedRecord } = await executeStoredWorkoutMutation(db, {
+        actor: "user",
+        eventId,
         expectedVersion: input.expectedVersion,
+        makeAction: (before, after, effects) =>
+          buildRouteWorkoutAction(input, before, after, effects[0]?.summary ?? plan.eventType),
         operations: [plan.operation],
         record,
-        updatedAt: getMutationTimestamp(input),
+        source: "workout-ui",
+        updatedAt: occurredAt,
         workoutId: input.workoutId,
       });
       let confirmedSet: ConfirmedSetMutationResult | undefined;
@@ -2680,6 +2904,7 @@ export function createWorkoutRouteService(db: AppDatabase): WorkoutRouteService 
       return createMutationResult(
         input.action,
         updatedRecord,
+        eventId,
         plan.eventType,
         getInvalidateExerciseSchemaIds(applied),
         plan.includeExerciseInvalidations,
@@ -2689,4 +2914,58 @@ export function createWorkoutRouteService(db: AppDatabase): WorkoutRouteService 
       );
     },
   };
+}
+
+/** Load pending semantic workout facts in commit order for idempotent EDA delivery. */
+export async function loadPendingWorkoutActionRecords(
+  db: AppDatabase,
+  options: { readonly limit?: number; readonly workoutId?: string } = {},
+): Promise<readonly WorkoutActionRecord[]> {
+  const pendingCondition =
+    options.workoutId === undefined
+      ? isNull(workoutEventOutbox.deliveredAt)
+      : and(
+          isNull(workoutEventOutbox.deliveredAt),
+          eq(workoutEventOutbox.workoutId, options.workoutId),
+        );
+  const rows = await db
+    .select({ eventJson: workoutEventOutbox.eventJson })
+    .from(workoutEventOutbox)
+    .where(pendingCondition)
+    .orderBy(asc(workoutEventOutbox.createdAt), asc(workoutEventOutbox.workoutVersion))
+    .limit(options.limit ?? 100);
+
+  return rows.map((row) => decodeWorkoutActionRecord(JSON.parse(row.eventJson)));
+}
+
+/** Mark one outbox event delivered after the EDA session accepts it. */
+export async function markWorkoutActionDelivered(
+  db: AppDatabase,
+  eventId: string,
+  deliveredAt = new Date().toISOString(),
+): Promise<void> {
+  await db
+    .update(workoutEventOutbox)
+    .set({
+      deliveredAt,
+      deliveryAttempts: sql`${workoutEventOutbox.deliveryAttempts} + 1`,
+      lastDeliveryError: null,
+    })
+    .where(eq(workoutEventOutbox.eventId, eventId));
+}
+
+/** Retain delivery diagnostics without losing the pending outbox fact. */
+export async function markWorkoutActionDeliveryFailed(
+  db: AppDatabase,
+  eventId: string,
+  error: unknown,
+): Promise<void> {
+  const message = error instanceof Error ? error.message : String(error);
+  await db
+    .update(workoutEventOutbox)
+    .set({
+      deliveryAttempts: sql`${workoutEventOutbox.deliveryAttempts} + 1`,
+      lastDeliveryError: message.slice(0, 1_000),
+    })
+    .where(eq(workoutEventOutbox.eventId, eventId));
 }
