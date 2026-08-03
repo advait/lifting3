@@ -17,7 +17,7 @@ const DEFAULT_AI_GATEWAY_ID = "default";
 const DEFAULT_COACH_MODEL_ID = "gpt-5.4";
 const MAX_TOOL_CALLS_PER_RUN = 5;
 
-export class EDACoachAgent extends EDASessionDurableObject<Env> {
+export class CoachAgent extends EDASessionDurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     const db = createAppDatabase(env);
 

@@ -11,7 +11,7 @@
     "bindings": [
       {
         "name": "CoachAgent",
-        "class_name": "EDACoachAgent",
+        "class_name": "CoachAgent",
       },
     ],
   },
@@ -39,14 +39,6 @@
     {
       "tag": "v6",
       "deleted_classes": ["CoachSheetFixtureAgent"],
-    },
-    {
-      "tag": "v7",
-      "new_sqlite_classes": ["EDACoachAgent"],
-    },
-    {
-      "tag": "v8",
-      "deleted_classes": ["CoachAgent"],
     },
   ],
   "triggers": {

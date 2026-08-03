@@ -23,8 +23,8 @@ The coach is integrated into the app shell and runs on the event-sourced [`effec
 
 ## Coach Architecture Today
 
-- The worker exports `EDACoachAgent` from [workers/eda-coach/agent.ts](workers/eda-coach/agent.ts).
-- `EDACoachAgent` extends EDA's Cloudflare Durable Object host.
+- The worker exports `CoachAgent` from [workers/eda-coach/agent.ts](workers/eda-coach/agent.ts).
+- `CoachAgent` extends EDA's Cloudflare Durable Object host. The export keeps the already-migrated Cloudflare class identity, but the implementation and protocol are entirely EDA-native.
 - Thread identity is encoded in the agent instance name:
   - `general`
   - `workout:{workoutId}`

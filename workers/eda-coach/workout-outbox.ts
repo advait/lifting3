@@ -12,7 +12,7 @@ import {
 } from "~/features/workouts/d1-service.server";
 import type { WorkoutActionRecord } from "~/features/workouts/events";
 import type { AppDatabase } from "~/lib/.server/db";
-import type { EDACoachAgent } from "./agent";
+import type { CoachAgent } from "./agent";
 import { makeCoachThreadAttachedEvent, makeWorkoutActionCommittedEvent } from "./events";
 
 /** Append one D1-outbox fact to its deterministic workout EDA session. */
@@ -22,7 +22,7 @@ export const deliverWorkoutActionRecord = async (
 ): Promise<void> => {
   const target = createWorkoutCoachTarget(action.workoutId);
   const sessionId = SessionId.make(await formatCoachSessionId(target));
-  const stub: DurableObjectStub<EDACoachAgent> = env.CoachAgent.getByName(sessionId);
+  const stub: DurableObjectStub<CoachAgent> = env.CoachAgent.getByName(sessionId);
   await stub.bindThread(target);
   const submitBatch: (
     input: EDASessionSubmitBatchRpcInput,

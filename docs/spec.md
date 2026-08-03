@@ -77,7 +77,7 @@ Important note:
 
 The repo currently uses one EDA Durable Object class:
 
-- `EDACoachAgent extends EDASessionDurableObject<Env>`
+- `CoachAgent extends EDASessionDurableObject<Env>`
 
 Thread identity is encoded in the instance name:
 
@@ -161,7 +161,7 @@ Authoritative structured state lives in D1:
 
 ### Agent Runtime
 
-Conversation state, semantic workout events, and application reducer projections live in `EDACoachAgent`.
+Conversation state, semantic workout events, and application reducer projections live in `CoachAgent`.
 
 The app does not currently maintain D1 `sessions` or `messages` tables for chat history.
 
@@ -298,7 +298,7 @@ The main current gaps are:
 
 When updating docs for this repo, describe the current implementation using this vocabulary:
 
-- `EDACoachAgent`
+- `CoachAgent`
 - `effect-durable-agent`
 - `general` thread
 - `workout:{workoutId}` thread

@@ -23,7 +23,7 @@ import { parseCoachInstanceName, type CoachTarget } from "~/features/coach/contr
 import { formatCoachSessionId } from "~/features/coach/session-id";
 import { makeEdaEventId } from "~/lib/.server/eda-event-id";
 import { normalizeCoachError } from "../coach/errors";
-import type { EDACoachAgent } from "./agent";
+import type { CoachAgent } from "./agent";
 import { makeCoachConversationStartedEvent, makeCoachThreadAttachedEvent } from "./events";
 import { workoutActivityReducer } from "./workout-activity-reducer";
 
@@ -57,7 +57,7 @@ const parseJson = async (request: Request): Promise<unknown> => {
 
 const getSession = async (env: Env, target: CoachTarget) => {
   const sessionId = SessionId.make(await formatCoachSessionId(target));
-  const stub: DurableObjectStub<EDACoachAgent> = env.CoachAgent.getByName(sessionId);
+  const stub: DurableObjectStub<CoachAgent> = env.CoachAgent.getByName(sessionId);
   await stub.bindThread(target);
   return { sessionId, stub };
 };

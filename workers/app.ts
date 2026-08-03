@@ -1,11 +1,11 @@
 import { createRequestHandler } from "react-router";
 import { createAppDatabase } from "~/lib/.server/db";
 import { createAppRouterContext } from "~/lib/.server/router-context";
-import { EDACoachAgent } from "./eda-coach/agent";
+import { CoachAgent } from "./eda-coach/agent";
 import { handleCoachApiRequest } from "./eda-coach/api";
 import { drainWorkoutEventOutbox } from "./eda-coach/workout-outbox";
 
-export { EDACoachAgent };
+export { CoachAgent };
 
 const requestHandler = createRequestHandler(
   () => import("virtual:react-router/server-build"),

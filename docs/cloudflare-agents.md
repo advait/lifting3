@@ -6,7 +6,7 @@ Reviewed: 2026-08-03
 
 ## Runtime
 
-The Worker exports one agent class: `EDACoachAgent extends EDASessionDurableObject<Env>`. Its runtime composes:
+The Worker exports one agent class: `CoachAgent extends EDASessionDurableObject<Env>`. The name preserves the already-migrated Cloudflare Durable Object class identity so preview version uploads need no class migration; it does not preserve the old Think Agent implementation, storage protocol, or behavior. Its runtime composes:
 
 - OpenAI `gpt-5.4` through Cloudflare AI Gateway `default`;
 - the four workout/profile tools;
