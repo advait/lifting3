@@ -10,7 +10,7 @@ Today the app is strongest in three places:
 - running that workout with fast set logging and quick RPE confirmation
 - browsing workouts and exercises as first-class product surfaces
 
-The coach is already integrated into the app shell, but the docs had drifted. The current implementation uses a single Cloudflare `CoachAgent` built on `Think`, not separate `AIChatAgent` classes, and there is not yet a dedicated post-workout review or follow-up agent flow.
+The coach is integrated into the app shell and runs on the event-sourced [`effect-durable-agent`](effect-durable-agent) runtime. This repository is a public, product-sized example of durable command admission, transcript replay, typed application events, and resumable WebSocket UI streaming.
 
 ## What Is Shipped
 
@@ -23,8 +23,8 @@ The coach is already integrated into the app shell, but the docs had drifted. Th
 
 ## Coach Architecture Today
 
-- The worker exports one `CoachAgent` class from [workers/coach-agent.ts](/home/advait/l3-root/l3/workers/coach-agent.ts).
-- `CoachAgent` extends `@cloudflare/think`'s `Think`.
+- The worker exports `CoachAgent` from [workers/eda-coach/agent.ts](workers/eda-coach/agent.ts).
+- `CoachAgent` extends EDA's Cloudflare Durable Object host. The export keeps the already-migrated Cloudflare class identity, but the implementation and protocol are entirely EDA-native.
 - Thread identity is encoded in the agent instance name:
   - `general`
   - `workout:{workoutId}`
@@ -34,7 +34,13 @@ The coach is already integrated into the app shell, but the docs had drifted. Th
   - `query_history`
   - `set_user_profile`
 - Workout data lives in D1 and flows through shared route/service code. Chat does not own workout state.
-- The current model is hardcoded to `openai/gpt-5.4` through Cloudflare AI Gateway `default`.
+- `CoachThreadAttached` durably binds an EDA UUID session to its public thread key.
+- Every route or coach workout mutation writes a semantic `WorkoutActionCommitted` fact through a transactional D1 outbox.
+- A workout activity reducer projects correction-aware effective sets and concise coach context such as `Deadlift: 3× 115 lb × 5 reps @ RPE 7`.
+- The coach sheet hydrates an authoritative snapshot, then replays and streams EDA events over an acknowledged, resumable WebSocket.
+- `New chat` appends a durable conversation boundary. It clears visible/model conversation state without deleting the EDA session or workout event history.
+- The panel's Coach workout context and Event Lens make the live application-event projection visible to users.
+- The current model is `gpt-5.4` through Cloudflare AI Gateway `default`.
 - The only persisted app setting today is `user_profile`.
 
 ## Important Gap
@@ -57,7 +63,7 @@ What does not exist yet:
 - React 19
 - React Router 7
 - Cloudflare Workers
-- Cloudflare Agents
+- effect-durable-agent
 - Cloudflare D1 + Drizzle
 - Tailwind CSS v4
 - shadcn/ui

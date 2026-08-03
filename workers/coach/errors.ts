@@ -1,6 +1,5 @@
-import { DEFAULT_AI_GATEWAY_ID } from "./model";
-
 const COACH_ERROR_PREFIX_PATTERN = /^(?:AI_APICallError|Error|InferenceUpstreamError):\s*/i;
+const DEFAULT_AI_GATEWAY_ID = "default";
 const DEFAULT_COACH_ERROR_MESSAGE = "The coach could not complete this request.";
 
 function isRecord(value: unknown): value is Record<string, unknown> {

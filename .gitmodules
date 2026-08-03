@@ -1,0 +1,3 @@
+[submodule "effect-durable-agent"]
+	path = effect-durable-agent
+	url = https://github.com/advait/effect-durable-agent.git

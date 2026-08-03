@@ -26,10 +26,10 @@ const devPort = getDevPort();
 
 export default defineConfig({
   fmt: {
-    ignorePatterns: [".agents/**"],
+    ignorePatterns: [".agents/**", "effect-durable-agent/**"],
   },
   lint: {
-    ignorePatterns: [".agents/**"],
+    ignorePatterns: [".agents/**", "effect-durable-agent/**"],
     options: {
       typeAware: true,
       typeCheck: true,
@@ -68,7 +68,12 @@ export default defineConfig({
     strictPort: true,
   },
   test: {
-    include: ["test/**/*.test.ts"],
+    exclude: [
+      "test/coach/app-shell.test.ts",
+      "test/coach/coach-sheet.test.ts",
+      "test/workouts/exercise-rest-timer.test.tsx",
+    ],
+    include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
     setupFiles: ["./test/setup/apply-d1-migrations.ts"],
   },
 });

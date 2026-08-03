@@ -1,6 +1,6 @@
-import type { UIMessage } from "ai";
+import type { CoachMessage, CoachMessagePart, CoachToolState } from "./eda-projection";
 
-type CoachSheetFixturePart = UIMessage["parts"][number];
+type CoachSheetFixturePart = CoachMessagePart;
 
 export interface CoachSheetFixtureConfig {
   readonly toolCount: number;
@@ -12,10 +12,7 @@ export const DEFAULT_FIXTURE_TOOL_COUNT = 4;
 export const DEFAULT_FIXTURE_UPDATES_PER_TOOL = 20;
 export const DEFAULT_FIXTURE_USER_TEXT = "Make a lot of coach sheet changes.";
 
-function createPatchToolPart(
-  index: number,
-  state: "input-available" | "input-streaming" | "output-available",
-): CoachSheetFixturePart {
+function createPatchToolPart(index: number, state: CoachToolState): CoachSheetFixturePart {
   const toolCallId = `fixture-tool-${index + 1}`;
   const input = {
     ops: [
@@ -28,7 +25,7 @@ function createPatchToolPart(
     reason: `Apply change ${index + 1}`,
   };
 
-  if (state === "output-available") {
+  if (state === "complete") {
     return {
       input,
       output: {
@@ -40,7 +37,8 @@ function createPatchToolPart(
       },
       state,
       toolCallId,
-      type: "tool-patch_workout",
+      toolName: "patch_workout",
+      type: "tool",
     };
   }
 
@@ -48,7 +46,8 @@ function createPatchToolPart(
     input,
     state,
     toolCallId,
-    type: "tool-patch_workout",
+    toolName: "patch_workout",
+    type: "tool",
   };
 }
 
@@ -70,11 +69,12 @@ function createStreamingText(
   ].join("\n");
 }
 
-function createUserMessage(userText: string): UIMessage {
+function createUserMessage(userText: string): CoachMessage {
   return {
     id: "fixture-user-message",
     parts: [{ text: userText, type: "text" }],
     role: "user",
+    seq: 1,
   };
 }
 
@@ -84,7 +84,7 @@ export function getCoachSheetFixtureTotalSteps(config: CoachSheetFixtureConfig) 
 
 export function createCoachSheetFixtureSnapshot(
   config: Partial<CoachSheetFixtureConfig> & { readonly step: number },
-): UIMessage[] {
+): CoachMessage[] {
   const userText = config.userText?.trim() || DEFAULT_FIXTURE_USER_TEXT;
   const toolCount = Math.max(1, config.toolCount ?? DEFAULT_FIXTURE_TOOL_COUNT);
   const updatesPerTool = Math.max(1, config.updatesPerTool ?? DEFAULT_FIXTURE_UPDATES_PER_TOOL);
@@ -101,10 +101,10 @@ export function createCoachSheetFixtureSnapshot(
   for (let toolIndex = 0; toolIndex < toolCount; toolIndex += 1) {
     const toolState =
       toolIndex < completedTools
-        ? "output-available"
+        ? "complete"
         : toolIndex === completedTools
-          ? "input-streaming"
-          : "input-available";
+          ? "streaming"
+          : "loading";
 
     parts.push(createPatchToolPart(toolIndex, toolState));
   }
@@ -115,13 +115,14 @@ export function createCoachSheetFixtureSnapshot(
       id: "fixture-assistant-message",
       parts,
       role: "assistant",
+      seq: 2,
     },
   ];
 }
 
 export function createCoachSheetFixtureCompletedSnapshot(
   config: Partial<Omit<CoachSheetFixtureConfig, "updatesPerTool">>,
-): UIMessage[] {
+): CoachMessage[] {
   const userText = config.userText?.trim() || DEFAULT_FIXTURE_USER_TEXT;
   const toolCount = Math.max(1, config.toolCount ?? DEFAULT_FIXTURE_TOOL_COUNT);
 
@@ -134,11 +135,10 @@ export function createCoachSheetFixtureCompletedSnapshot(
           text: "Finished applying the requested workout updates.",
           type: "text",
         },
-        ...Array.from({ length: toolCount }, (_, index) =>
-          createPatchToolPart(index, "output-available"),
-        ),
+        ...Array.from({ length: toolCount }, (_, index) => createPatchToolPart(index, "complete")),
       ],
       role: "assistant",
+      seq: 2,
     },
   ];
 }

@@ -106,6 +106,29 @@ export const exerciseSets = sqliteTable(
   ],
 );
 
+/**
+ * Transactional outbox for semantic workout facts. The workout write and this
+ * row commit in one D1 batch; delivery to the workout EDA session is retried
+ * independently and is idempotent by event id.
+ */
+export const workoutEventOutbox = sqliteTable(
+  "workout_event_outbox",
+  {
+    eventId: text("event_id").primaryKey(),
+    workoutId: text("workout_id").notNull(),
+    workoutVersion: integer("workout_version").notNull(),
+    eventJson: text("event_json").notNull(),
+    createdAt: text("created_at").notNull(),
+    deliveredAt: text("delivered_at"),
+    deliveryAttempts: integer("delivery_attempts").notNull().default(0),
+    lastDeliveryError: text("last_delivery_error"),
+  },
+  (table) => [
+    index("workout_event_outbox_pending_idx").on(table.deliveredAt, table.createdAt),
+    index("workout_event_outbox_workout_idx").on(table.workoutId, table.workoutVersion),
+  ],
+);
+
 export const workoutsRelations = relations(workouts, ({ many }) => ({
   exercises: many(workoutExercises),
 }));
@@ -133,3 +156,5 @@ export type WorkoutExerciseRow = typeof workoutExercises.$inferSelect;
 export type NewWorkoutExerciseRow = typeof workoutExercises.$inferInsert;
 export type ExerciseSetRow = typeof exerciseSets.$inferSelect;
 export type NewExerciseSetRow = typeof exerciseSets.$inferInsert;
+export type WorkoutEventOutboxRow = typeof workoutEventOutbox.$inferSelect;
+export type NewWorkoutEventOutboxRow = typeof workoutEventOutbox.$inferInsert;

@@ -1,14 +1,4 @@
 import {
-  getToolCallId,
-  getToolApproval,
-  getToolInput,
-  getToolOutput,
-  getToolPartState,
-  useAgentChat,
-} from "@cloudflare/ai-chat/react";
-import { getToolName, isToolUIPart, type UIMessage } from "ai";
-import { useAgent } from "agents/react";
-import {
   AlertTriangleIcon,
   ArrowDownIcon,
   CalendarIcon,
@@ -35,9 +25,15 @@ import { Streamdown } from "streamdown";
 import { LocalDateTime } from "~/components/atoms/local-date-time";
 import { Badge } from "~/components/atoms/badge";
 import { Button } from "~/components/atoms/button";
-import { publishAppEvent } from "~/features/app-events/client";
-import { type AppEventEnvelope, appInvalidateKeySchema } from "~/features/app-events/schema";
-import { formatCoachInstanceName, type CoachTarget } from "~/features/coach/contracts";
+import { type CoachTarget } from "~/features/coach/contracts";
+import { useEdaCoachSession, type CoachSendMessageInput } from "~/features/coach/eda-client";
+import {
+  type CoachMessage,
+  type CoachMessagePart,
+  type CoachToolPart,
+  type CoachToolState,
+  type CoachWorkoutActivity,
+} from "~/features/coach/eda-projection";
 import type { CoachSessionRequest } from "~/features/coach/session-request";
 import { cn } from "~/lib/utils";
 
@@ -56,107 +52,33 @@ const SHEET_EXPANDED_HEIGHT = "92dvh";
 const SHEET_MAX_UPWARD_DRAG_PX = 160;
 const SHEET_MAX_DOWNWARD_DRAG_PX = 160;
 const TOOL_SUMMARY_LIMIT = 3;
-const COACH_AGENT_RUNTIME_NAME = "CoachAgent";
 export const COACH_CHAT_STREAM_THROTTLE_MS = 50;
 
-type CoachMessagePart = UIMessage["parts"][number];
-type CoachSheetSendMessage = (message: Pick<UIMessage, "parts" | "role">) => Promise<unknown>;
+type CoachSheetSendMessage = (message: CoachSendMessageInput) => Promise<unknown>;
+type CoachToolDisplayState = CoachToolState | "approved" | "denied" | "waiting-approval";
 
 export interface CoachSheetChatController {
-  addToolApprovalResponse: (args: { approved: boolean; id: string }) => void;
+  activities: readonly CoachWorkoutActivity[];
   clearError: () => void;
-  clearHistory: () => void;
+  connectionStatus: "connecting" | "error" | "live";
   error: Error | undefined;
   isServerStreaming: boolean;
   isStreaming: boolean;
-  messages: readonly UIMessage[];
+  messages: readonly CoachMessage[];
   sendMessage: CoachSheetSendMessage;
+  startNewConversation: () => void | Promise<void>;
   status: string;
-  stop: () => void | Promise<unknown>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function parseInvalidateKeys(value: unknown) {
-  if (!Array.isArray(value) || value.length === 0) {
-    return null;
-  }
-
-  const parsedKeys = value.flatMap((item) => {
-    const parsedKey = appInvalidateKeySchema.safeParse(item);
-
-    return parsedKey.success ? [parsedKey.data] : [];
-  });
-
-  return parsedKeys.length === value.length ? parsedKeys : null;
-}
-
-export async function getInitialCoachMessages({ url }: { url: string }): Promise<UIMessage[]> {
-  try {
-    const getMessagesUrl = new URL(url);
-
-    getMessagesUrl.pathname += "/get-messages";
-
-    const response = await fetch(getMessagesUrl.toString());
-
-    if (!response.ok) {
-      return [];
-    }
-
-    const text = await response.text();
-
-    if (!text.trim()) {
-      return [];
-    }
-
-    const parsedMessages = JSON.parse(text);
-
-    return Array.isArray(parsedMessages) ? parsedMessages : [];
-  } catch {
-    return [];
-  }
-}
-
-function parseToolMutationEnvelope(
-  toolName: string,
-  toolCallId: string,
-  output: unknown,
-): AppEventEnvelope | null {
-  if (!isRecord(output) || output.ok !== true) {
-    return null;
-  }
-
-  const invalidate = parseInvalidateKeys(output.invalidate);
-  const workoutId = typeof output.workoutId === "string" ? output.workoutId : null;
-  const version = typeof output.version === "number" ? output.version : null;
-
-  if (!invalidate || !workoutId || version == null) {
-    return null;
-  }
-
-  switch (toolName) {
-    case "create_workout":
-      return {
-        eventId: `${workoutId}-v${version}-workout_created-${toolCallId}`,
-        invalidate,
-        type: "workout_created",
-        version,
-        workoutId,
-      };
-    case "patch_workout":
-      return {
-        eventId: `${workoutId}-v${version}-workout_updated-${toolCallId}`,
-        invalidate,
-        type: "workout_updated",
-        version,
-        workoutId,
-      };
-    default:
-      return null;
-  }
-}
+const isToolUIPart = (part: CoachMessagePart): part is CoachToolPart => part.type === "tool";
+const getToolName = (part: CoachToolPart) => part.toolName;
+const getToolInput = (part: CoachToolPart) => part.input;
+const getToolOutput = (part: CoachToolPart) => part.output;
+const getToolPartState = (part: CoachToolPart): CoachToolDisplayState => part.state;
 
 function getTextPartText(part: CoachMessagePart) {
   if (part.type !== "text") {
@@ -183,7 +105,7 @@ function getToolLabel(toolName: string) {
   }
 }
 
-function getToolStatusLabel(state: ReturnType<typeof getToolPartState>, toolName: string) {
+function getToolStatusLabel(state: CoachToolDisplayState, toolName: string) {
   switch (state) {
     case "complete":
       return "Done";
@@ -204,7 +126,7 @@ function getToolStatusLabel(state: ReturnType<typeof getToolPartState>, toolName
   }
 }
 
-function getToolStatusVariant(state: ReturnType<typeof getToolPartState>) {
+function getToolStatusVariant(state: CoachToolDisplayState) {
   switch (state) {
     case "complete":
       return "secondary" as const;
@@ -234,7 +156,7 @@ function getToolIcon(toolName: string) {
   }
 }
 
-function isToolRunningState(state: ReturnType<typeof getToolPartState>) {
+function isToolRunningState(state: CoachToolDisplayState) {
   return state === "loading" || state === "streaming";
 }
 
@@ -581,13 +503,7 @@ function renderToolBody(
   }
 }
 
-function ToolPartCard({
-  onApprovalResponse,
-  part,
-}: {
-  onApprovalResponse: (approvalId: string, approved: boolean) => void;
-  part: CoachMessagePart;
-}) {
+function ToolPartCard({ part }: { part: CoachMessagePart }) {
   if (!isToolUIPart(part)) {
     return null;
   }
@@ -597,7 +513,6 @@ function ToolPartCard({
   const toolState = getToolPartState(part);
   const input = getToolInput(part);
   const output = getToolOutput(part);
-  const approval = getToolApproval(part);
   const Icon = getToolIcon(toolName);
   const isRunning = isToolRunningState(toolState);
 
@@ -623,39 +538,14 @@ function ToolPartCard({
       </div>
 
       {renderToolBody(toolName, toolState, input, output)}
-
-      {toolState === "waiting-approval" && approval ? (
-        <div className="flex flex-wrap gap-2">
-          <Button
-            onClick={() => {
-              onApprovalResponse(approval.id, true);
-            }}
-            size="sm"
-            type="button"
-          >
-            Approve
-          </Button>
-          <Button
-            onClick={() => {
-              onApprovalResponse(approval.id, false);
-            }}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Reject
-          </Button>
-        </div>
-      ) : null}
     </div>
   );
 }
 
 function renderMessagePart(
-  onApprovalResponse: (approvalId: string, approved: boolean) => void,
   options: {
     isAnimating: boolean;
-    role: UIMessage["role"];
+    role: CoachMessage["role"];
   },
   part: CoachMessagePart,
   key: string,
@@ -684,7 +574,7 @@ function renderMessagePart(
   }
 
   if (isToolUIPart(part)) {
-    return <ToolPartCard key={key} onApprovalResponse={onApprovalResponse} part={part} />;
+    return <ToolPartCard key={key} part={part} />;
   }
 
   return null;
@@ -723,18 +613,62 @@ function CoachErrorCard({ message, onDismiss }: { message: string; onDismiss: ()
   );
 }
 
+function WorkoutActivityContext({
+  activities,
+  connectionStatus,
+}: {
+  activities: readonly CoachWorkoutActivity[];
+  connectionStatus: CoachSheetChatController["connectionStatus"];
+}) {
+  if (activities.length === 0) {
+    return null;
+  }
+
+  const recent = activities.slice(-6);
+  return (
+    <details className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2.5">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm">
+        <DumbbellIcon aria-hidden className="size-4 text-primary" />
+        <span className="min-w-0 flex-1 font-medium text-foreground">Coach workout context</span>
+        <Badge variant="outline">{connectionStatus === "live" ? "Synced" : "Reconnecting"}</Badge>
+      </summary>
+      <div className="mt-3 grid gap-2 border-border/60 border-t pt-3">
+        {recent.map((activity) => (
+          <div className="flex items-start gap-2 text-xs" key={activity.id}>
+            <CheckCircle2Icon aria-hidden className="mt-0.5 size-3.5 shrink-0 text-primary" />
+            <span className="min-w-0 flex-1 text-foreground">{activity.summary}</span>
+            <span className="shrink-0 text-muted-foreground">#{activity.seq}</span>
+          </div>
+        ))}
+        <details className="text-xs">
+          <summary className="cursor-pointer text-muted-foreground">Event lens</summary>
+          <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-background/80 p-2 text-[10px] leading-relaxed">
+            {JSON.stringify(
+              recent.map((activity) => ({
+                action: activity.record.action,
+                eventId: activity.id,
+                seq: activity.seq,
+              })),
+              null,
+              2,
+            )}
+          </pre>
+        </details>
+      </div>
+    </details>
+  );
+}
+
 function getAgentConfig(target: CoachTarget) {
   switch (target.kind) {
     case "workout":
       return {
-        agent: COACH_AGENT_RUNTIME_NAME,
         emptyState: "Ask about this workout. The discussion stays attached to the current session.",
         placeholder: "Ask about progress, next sets, or exercise context",
       } as const;
     case "general":
     default:
       return {
-        agent: COACH_AGENT_RUNTIME_NAME,
         emptyState: "Ask for planning or general coaching guidance.",
         placeholder: "Ask about planning, structure, or next steps",
       } as const;
@@ -764,11 +698,12 @@ function CoachSheetHeader({
           disabled={clearDisabled}
           onClick={onClear}
           size="sm"
+          title="Start a new conversation while preserving workout history"
           type="button"
           variant="outline"
         >
           <EraserIcon />
-          Clear
+          New chat
         </Button>
 
         <button
@@ -860,19 +795,7 @@ function CoachSheetClosedContent({
 }
 
 function useCoachSheetLiveChat(target: CoachTarget): CoachSheetChatController {
-  const agentConfig = getAgentConfig(target);
-  const agent = useAgent({
-    agent: agentConfig.agent,
-    name: formatCoachInstanceName(target),
-  });
-
-  const chat = useAgentChat({
-    agent,
-    experimental_throttle: COACH_CHAT_STREAM_THROTTLE_MS,
-    getInitialMessages: getInitialCoachMessages,
-  });
-
-  return chat;
+  return useEdaCoachSession(target);
 }
 
 export function CoachSheetSessionPanel({
@@ -899,64 +822,23 @@ export function CoachSheetSessionPanel({
   const discussionEndRef = useRef<HTMLDivElement | null>(null);
   const programmaticScrollFrameRef = useRef<number | null>(null);
   const isProgrammaticScrollRef = useRef(false);
-  const observedToolStatesRef = useRef<Map<string, ReturnType<typeof getToolPartState>>>(new Map());
-  const publishedToolEventIdsRef = useRef<Set<string>>(new Set());
-  const hasObservedLiveAgentActivityRef = useRef(false);
   const lastLoggedErrorSignatureRef = useRef<string | null>(null);
   const {
-    addToolApprovalResponse,
-    clearHistory,
+    activities,
     clearError,
+    connectionStatus,
     error,
     isServerStreaming,
     isStreaming,
     messages,
     sendMessage,
+    startNewConversation,
     status,
-    stop,
   } = chat;
   const isSubmitting = status === "submitted";
   const isBusy = isSubmitting || isStreaming;
   const chatErrorMessage = error ? getChatErrorMessage(error) : null;
   const targetKey = target.kind === "workout" ? `${target.kind}:${target.workoutId}` : target.kind;
-  const publishToolMutationEvents = useEffectEvent((nextMessages: readonly UIMessage[]) => {
-    const nextObservedToolStates = new Map<string, ReturnType<typeof getToolPartState>>();
-
-    for (const message of nextMessages) {
-      for (const part of message.parts) {
-        if (!isToolUIPart(part)) {
-          continue;
-        }
-
-        const toolCallId = getToolCallId(part);
-        const toolState = getToolPartState(part);
-        const previousToolState = observedToolStatesRef.current.get(toolCallId);
-        const shouldPublishFromTransition =
-          toolState === "complete" &&
-          (previousToolState != null
-            ? previousToolState !== "complete"
-            : hasObservedLiveAgentActivityRef.current);
-
-        if (shouldPublishFromTransition) {
-          const envelope = parseToolMutationEnvelope(
-            getToolName(part),
-            toolCallId,
-            getToolOutput(part),
-          );
-
-          if (envelope && !publishedToolEventIdsRef.current.has(envelope.eventId)) {
-            publishedToolEventIdsRef.current.add(envelope.eventId);
-            publishAppEvent(envelope);
-          }
-        }
-
-        nextObservedToolStates.set(toolCallId, toolState);
-      }
-    }
-
-    observedToolStatesRef.current = nextObservedToolStates;
-  });
-
   const syncBottomLock = useEffectEvent((nextValue: boolean) => {
     setIsBottomLocked((currentValue) => (currentValue === nextValue ? currentValue : nextValue));
   });
@@ -1006,14 +888,6 @@ export function CoachSheetSessionPanel({
 
     syncBottomLock(isDiscussionTailVisible());
   });
-
-  useEffect(() => {
-    if (isBusy) {
-      hasObservedLiveAgentActivityRef.current = true;
-    }
-
-    publishToolMutationEvents(messages);
-  }, [isBusy, messages]);
 
   useEffect(() => {
     if (!error) {
@@ -1084,13 +958,9 @@ export function CoachSheetSessionPanel({
     };
   }, [isBottomLocked, messages, status]);
 
-  const handleClearThread = () => {
-    void stop();
+  const handleClearThread = async () => {
     clearError();
-    clearHistory();
-    observedToolStatesRef.current = new Map();
-    publishedToolEventIdsRef.current = new Set();
-    hasObservedLiveAgentActivityRef.current = false;
+    await startNewConversation();
     setIsBottomLocked(true);
     setDraft("");
   };
@@ -1175,6 +1045,7 @@ export function CoachSheetSessionPanel({
             ref={discussionScrollRef}
           >
             <div className="grid min-h-full content-start gap-3">
+              <WorkoutActivityContext activities={activities} connectionStatus={connectionStatus} />
               {messages.length === 0 && !chatErrorMessage ? (
                 <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-4 text-muted-foreground text-sm leading-relaxed">
                   {agentConfig.emptyState}
@@ -1188,9 +1059,6 @@ export function CoachSheetSessionPanel({
                   const renderedParts = message.parts
                     .map((part, index) =>
                       renderMessagePart(
-                        (approvalId, approved) => {
-                          addToolApprovalResponse({ approved, id: approvalId });
-                        },
                         {
                           isAnimating: isAnimatingAssistantMessage,
                           role: message.role,

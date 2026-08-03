@@ -6,6 +6,7 @@ import {
   createWorkoutAgentToolService,
   createWorkoutRouteService,
 } from "../../app/features/workouts/d1-service.server";
+import { decodeWorkoutActionRecord } from "../../app/features/workouts/events";
 import type { SetKind, WorkoutStatus } from "../../app/features/workouts/file";
 import * as dbSchema from "../../app/lib/.server/db/schema";
 const db = drizzle(env.DB, { schema: dbSchema });
@@ -53,6 +54,7 @@ type SeedWorkout = {
   version?: number;
 };
 const DEFAULT_CREATED_AT = "2026-04-16T09:00:00.000Z";
+const UUID_V7_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 function createStoredLoadValues(values?: SeedValues) {
   return {
     rpe: values?.rpe ?? null,
@@ -63,6 +65,7 @@ function isSetConfirmed(set: { confirmedAt: string | null }) {
   return set.confirmedAt != null;
 }
 async function resetWorkoutTables() {
+  await db.delete(dbSchema.workoutEventOutbox);
   await db.delete(dbSchema.exerciseSets);
   await db.delete(dbSchema.workoutExercises);
   await db.delete(dbSchema.workouts);
@@ -482,7 +485,7 @@ describe("createWorkoutRouteService.mutateWorkout", () => {
       version: 2,
       workoutId: "route-workout-add-set",
     });
-    expect(result.eventId).toBe("route-workout-add-set-v2-set_added");
+    expect(result.eventId).toMatch(UUID_V7_PATTERN);
     const detail = await workoutRouteService.loadWorkoutDetail({
       workoutId: "route-workout-add-set",
     });
@@ -852,7 +855,7 @@ describe("createWorkoutRouteService.mutateWorkout", () => {
       version: 4,
       workoutId: "route-workout-reorder",
     });
-    expect(result.eventId).toBe("route-workout-reorder-v4-exercise_reordered");
+    expect(result.eventId).toMatch(UUID_V7_PATTERN);
     const detail = await workoutRouteService.loadWorkoutDetail({
       workoutId: "route-workout-reorder",
     });
@@ -908,7 +911,7 @@ describe("createWorkoutRouteService.mutateWorkout", () => {
       version: 2,
       workoutId: "route-workout-confirm-no-rpe",
     });
-    expect(result.eventId).toBe("route-workout-confirm-no-rpe-v2-set_confirmed");
+    expect(result.eventId).toMatch(UUID_V7_PATTERN);
     const detail = await workoutRouteService.loadWorkoutDetail({
       workoutId: "route-workout-confirm-no-rpe",
     });
@@ -920,6 +923,23 @@ describe("createWorkoutRouteService.mutateWorkout", () => {
     });
     expect(confirmedSet?.reps).toBe(5);
     expect(confirmedSet?.confirmedAt).not.toBeNull();
+    const outboxRows = await db.select().from(dbSchema.workoutEventOutbox);
+    const outboxRow = outboxRows.find((row) => row.eventId === result.eventId);
+    expect(outboxRow).toBeDefined();
+    expect(decodeWorkoutActionRecord(JSON.parse(outboxRow?.eventJson ?? "null"))).toMatchObject({
+      action: {
+        kind: "set_logged",
+        set: {
+          actual: { rpe: null, weightLbs: 225 },
+          exerciseName: "Bench Press (Barbell)",
+          reps: 5,
+          setId: "route-confirm-no-rpe-set-1",
+        },
+      },
+      eventId: result.eventId,
+      version: 2,
+      workoutId: "route-workout-confirm-no-rpe",
+    });
   });
   it("unconfirms a set while retaining its logged values", async () => {
     await insertSeedWorkout({
@@ -965,7 +985,7 @@ describe("createWorkoutRouteService.mutateWorkout", () => {
       version: 2,
       workoutId: "route-workout-unconfirm",
     });
-    expect(result.eventId).toBe("route-workout-unconfirm-v2-set_unconfirmed");
+    expect(result.eventId).toMatch(UUID_V7_PATTERN);
     const detail = await workoutRouteService.loadWorkoutDetail({
       workoutId: "route-workout-unconfirm",
     });
